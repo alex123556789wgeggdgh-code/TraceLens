@@ -25,7 +25,7 @@ HasPrivateKey : True
 ```
 
 * 证书**已存在**，脚本走的是「复用现有自签名证书」分支，本轮**没有**新建证书，也**没有**造假签名。
-* 脚本的证书选取是 `Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert` 里 Subject 精确匹配 + 未过期的 `existing[0]`。本机另有一张同名旧证书 `CCACB81DE5B7458EDEA31B94B1F08DE9228732C7`（2027 到期，非 Code Signing EKU，因此不进 `-CodeSigningCert` 列表），实测列表里只有一张匹配 → 选中的正是任务指定的 `DF1CB56A…`（脚本日志原文：`复用现有自签名证书：<redacted-thumbprint>（有效期至 2028-11-11）`）。
+* 脚本的证书选取是 `Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert` 里 Subject 精确匹配 + 未过期的 `existing[0]`。本机另有一张同名旧证书 `<redacted-thumbprint>`（2027 到期，非 Code Signing EKU，因此不进 `-CodeSigningCert` 列表），实测列表里只有一张匹配 → 选中的正是任务指定的 `DF1CB56A…`（脚本日志原文：`复用现有自签名证书：<redacted-thumbprint>（有效期至 2028-11-11）`）。
 * `TraceLens-SelfSigned.cer`（814 B，sha256 前缀 `5f8a6044ab2fef48`）与 0.4.5 发布件里的三张 `.cer` **逐字节相同** → 同一张钥匙，导出没有改变历史发布件的信任事实。
 
 ## 2. 签名执行实录（含两次真实失败，不粉饰）
