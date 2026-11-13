@@ -1,0 +1,49 @@
+# TraceLens 仓库忽略清单（5.3b / t26 新增）
+#
+# 背景：t12 的发布清单写过「.gitignore 已排除 node_modules」，但仓库根当时**没有**
+# .gitignore —— 那句话当时是不成立的，本轮补齐并改正。
+# 本仓库当前是普通目录（非 git 工作副本），这份清单用于将来入库与打包时的取舍依据。
+
+# 依赖与构建产物：体积大、可复现，绝不入仓库
+node_modules/
+desktop/node_modules/
+desktop/build/
+var/
+.cache/
+.npm-cache/
+*.tmp/
+tmp-*/
+tests/tmp-*/
+_t*_*/
+.tmp-*/
+
+# Python 字节码与打包中间物
+__pycache__/
+*.py[cod]
+.spec
+build/
+dist/
+*.manifest
+
+# 签名私钥与证书库文件：只允许提交 .cer（公钥），私钥一律不入仓库
+*.pfx
+*.pkcs12
+*.key
+*.pvk
+
+# 编辑器与系统噪声
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# 打包缓存（Electron / electron-builder / PyInstaller 工作目录）
+electron/Cache/
+tracelens-build/
+
+# 运行期数据、日志与交付产物（生成物，不入库）
+data/
+logs/
+release/
+.env

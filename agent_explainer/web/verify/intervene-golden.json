@@ -1,0 +1,1508 @@
+{
+  "_meta": {
+    "title": "TraceLens t8 干预黄金样本：agent_explainer/server.apply_decision 的输入/输出对照",
+    "generated_by": "agent_explainer.server.apply_decision (python, deterministic decided_at)",
+    "generated_at": "2026-11-10T09:11:37Z",
+    "python": "3.14.7",
+    "source_records": "samples/action_records.json",
+    "consumer": "web/selfcheck.mjs check: browser local transition parity with the Python rules",
+    "parity_fields": [
+      "status",
+      "requires_action",
+      "user_intervention.decision",
+      "user_intervention.option_id",
+      "user_intervention.recorded",
+      "user_intervention.decided_by_role",
+      "user_intervention.decided_at",
+      "user_intervention.reason",
+      "user_intervention.original_params",
+      "user_intervention.modified_params",
+      "user_intervention.modified_fields",
+      "execution_receipt.state",
+      "execution_receipt.effect_notice"
+    ],
+    "excluded_fields": [
+      "human_readable (the browser cannot re-render the Python templates; the local simulation is labelled as such)",
+      "user_intervention.request_id / audit_entry_hash (server-only evidence)"
+    ],
+    "synthetic": true,
+    "note": "全部为自造演示数据；决定只记录，不代表执行生效。"
+  },
+  "cases": [
+    {
+      "name": "approve-0004",
+      "decision": "approve",
+      "option_id": "opt-demo-0004-approve",
+      "form_values": {},
+      "reason": null,
+      "decided_at": "2026-11-10T08:00:00Z",
+      "input_record": {
+        "schema_version": "1.1",
+        "id": "act-demo-0004",
+        "timestamp": "2026-11-09T09:00:20.000+08:00",
+        "received_at": "2026-11-09T09:00:20.300+08:00",
+        "sequence_no": 4,
+        "agent_id": "demo-photo-bot",
+        "agent_name": "相册助手（演示）",
+        "actor_id": "local",
+        "workspace_id": "default",
+        "session_id": "sess-demo-native-01",
+        "run_id": "run-1",
+        "parent_action_id": "act-demo-0001",
+        "depth": 1,
+        "action_type": "confirm",
+        "tool_used": null,
+        "intent": "请求你确认：是否按清单整理演示相册",
+        "rationale": "整理会移动文件位置，属于需要你点头的操作",
+        "result_summary": null,
+        "human_readable": {
+          "l1": "它请求确认：按清单整理相册",
+          "l2": [
+            "整理会移动文件位置，不改内容",
+            "移动后可以按清单逐项检查",
+            "不同意可以只导出清单"
+          ],
+          "l3": "confirm · 1 个相册目录 · 可撤回（保留原路径映射）· 演示数据",
+          "language": "zh",
+          "generated_by": "template",
+          "template_id": "confirm.generic.v1",
+          "model": null,
+          "generated_at": "2026-11-09T09:00:20.350+08:00",
+          "source_facts_hash": "sha256:fc12b074ca2738307a4075848a5115e7e81ce5500e22b92c0d9194eb36ba770b",
+          "may_contain_inference": false
+        },
+        "confidence": 0.8,
+        "uncertainty": null,
+        "cost": null,
+        "latency_ms": 0,
+        "status": "pending_confirmation",
+        "requires_action": true,
+        "requires_action_reason": "整理会移动文件位置，需要你先同意才动手",
+        "action_due_at": "2026-11-09T09:30:20+08:00",
+        "intervention_options": [
+          {
+            "id": "opt-demo-0004-approve",
+            "kind": "approve",
+            "label": "同意整理",
+            "description": "按清单移动文件",
+            "consequence": "按清单整理相册目录，移动 188 个文件位置，内容不变",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": false,
+            "risk_note": "移动会改变目录结构，可据清单还原",
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0004-modify",
+            "kind": "modify",
+            "label": "改范围后同意",
+            "description": "只整理你允许的部分",
+            "consequence": "只整理你设定的范围，其余保持原样并在清单标注已跳过",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [
+              {
+                "name": "max_move_count",
+                "label": "最多移动文件数",
+                "type": "integer",
+                "required": true,
+                "default": 188,
+                "min": 0,
+                "max": 200,
+                "unit": "个",
+                "help_text": "填 0 表示不移动任何文件"
+              }
+            ],
+            "requires_reason": false,
+            "risk_note": null,
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0004-reject",
+            "kind": "reject",
+            "label": "先不整理",
+            "description": "只出清单，不动文件",
+            "consequence": "跳过整理步骤，只导出清单，相册保持原样",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": true,
+            "risk_note": null,
+            "dangerous": true
+          }
+        ],
+        "user_intervention": null,
+        "execution_receipt": {
+          "state": "unreported",
+          "reported_by": null,
+          "reported_at": null,
+          "detail": "尚未有人决定，执行端也未回执",
+          "sdk_version": null,
+          "effect_notice": "intervention.effect.recorded_only"
+        },
+        "risk_level": "medium",
+        "impact_scope": {
+          "targets": [
+            {
+              "kind": "directory",
+              "ref": "DemoAlbum/**",
+              "change": "update",
+              "count": 188
+            }
+          ],
+          "money": null,
+          "external_endpoint": null,
+          "data_categories": [
+            "none"
+          ],
+          "reversible": true,
+          "summary": "188 个演示文件的目录位置会变化，内容不变"
+        },
+        "policy": {
+          "requires_human_confirmation": true,
+          "auto_approve_forbidden": true,
+          "timeout_behavior": "keep_pending",
+          "queue_serial": true,
+          "min_role_to_decide": "editor"
+        },
+        "error": null,
+        "suggested_next": [
+          {
+            "text": "先看清清单再决定",
+            "kind": "other",
+            "target_action_id": "act-demo-0002"
+          }
+        ],
+        "context": {
+          "task_name": "整理演示相册并去重",
+          "audience_profile": "A",
+          "default_granularity": "L1",
+          "user_language": "zh"
+        },
+        "trace_link": {
+          "trace_id": "trc-demo-native-01",
+          "span_id": "spn-0004",
+          "observation_id": "obs-demo-1004",
+          "source_url": "local://samples/action_records.json"
+        },
+        "source": {
+          "kind": "demo",
+          "adapter": "native",
+          "format_version": "ActionRecord schema 1.1",
+          "source_uri": "samples/action_records.json",
+          "ingested_at": "2026-11-09T09:00:20.300+08:00",
+          "raw_ref": "local://raw/native/act-demo-0004/source.json"
+        },
+        "demo_data": true,
+        "synthetic": true,
+        "labels": [
+          "demo",
+          "synthetic",
+          "native",
+          "needs-you"
+        ]
+      },
+      "result_record": {
+        "schema_version": "1.1",
+        "id": "act-demo-0004",
+        "timestamp": "2026-11-09T09:00:20.000+08:00",
+        "received_at": "2026-11-09T09:00:20.300+08:00",
+        "sequence_no": 4,
+        "agent_id": "demo-photo-bot",
+        "agent_name": "相册助手（演示）",
+        "actor_id": "local",
+        "workspace_id": "default",
+        "session_id": "sess-demo-native-01",
+        "run_id": "run-1",
+        "parent_action_id": "act-demo-0001",
+        "depth": 1,
+        "action_type": "confirm",
+        "tool_used": null,
+        "intent": "请求你确认：是否按清单整理演示相册",
+        "rationale": "整理会移动文件位置，属于需要你点头的操作",
+        "result_summary": null,
+        "human_readable": {
+          "l1": "请求确认 DemoAlbum/**｜已同意",
+          "l2": [
+            "请求确认——DemoAlbum/**",
+            "因为整理会移动文件位置，属于需要你点头的操作",
+            "结果：你选了同意，未回报（是否生效未知）",
+            "你的决定：同意（执行端没回报，是否生效未知）",
+            "影响：188 项，可撤回，中风险"
+          ],
+          "l3": "工具 无 · 入参 无 · 耗时 0ms · 成本 无 · 决定 同意 · 执行端 未回报（是否生效未知） · 来源 native · id act-demo-0004",
+          "language": "zh",
+          "generated_by": "template",
+          "template_id": "explainer.sentence.v1+explainer.l1.v2+explainer.l2.v2+explainer.l3.v1",
+          "model": null,
+          "generated_at": "2026-11-10T08:00:00Z",
+          "source_facts_hash": "sha256:0b554c11a39213ddb6eb825a9253ed574cf7f437b6d9c293a85d9ac3ff78afc6",
+          "may_contain_inference": false
+        },
+        "confidence": 0.8,
+        "uncertainty": null,
+        "cost": null,
+        "latency_ms": 0,
+        "status": "approved",
+        "requires_action": false,
+        "requires_action_reason": "整理会移动文件位置，需要你先同意才动手",
+        "action_due_at": "2026-11-09T09:30:20+08:00",
+        "intervention_options": [
+          {
+            "id": "opt-demo-0004-approve",
+            "kind": "approve",
+            "label": "同意整理",
+            "description": "按清单移动文件",
+            "consequence": "按清单整理相册目录，移动 188 个文件位置，内容不变",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": false,
+            "risk_note": "移动会改变目录结构，可据清单还原",
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0004-modify",
+            "kind": "modify",
+            "label": "改范围后同意",
+            "description": "只整理你允许的部分",
+            "consequence": "只整理你设定的范围，其余保持原样并在清单标注已跳过",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [
+              {
+                "name": "max_move_count",
+                "label": "最多移动文件数",
+                "type": "integer",
+                "required": true,
+                "default": 188,
+                "min": 0,
+                "max": 200,
+                "unit": "个",
+                "help_text": "填 0 表示不移动任何文件"
+              }
+            ],
+            "requires_reason": false,
+            "risk_note": null,
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0004-reject",
+            "kind": "reject",
+            "label": "先不整理",
+            "description": "只出清单，不动文件",
+            "consequence": "跳过整理步骤，只导出清单，相册保持原样",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": true,
+            "risk_note": null,
+            "dangerous": true
+          }
+        ],
+        "user_intervention": {
+          "decision": "approve",
+          "option_id": "opt-demo-0004-approve",
+          "decided_by": "local-user",
+          "decided_by_role": "local",
+          "decided_at": "2026-11-10T08:00:00Z",
+          "recorded": true,
+          "request_id": "req-golden",
+          "audit_entry_hash": null,
+          "original_params": {}
+        },
+        "execution_receipt": {
+          "state": "unreported",
+          "reported_by": null,
+          "reported_at": null,
+          "detail": "尚未有人决定，执行端也未回执",
+          "sdk_version": null,
+          "effect_notice": "intervention.effect.recorded_only"
+        },
+        "risk_level": "medium",
+        "impact_scope": {
+          "targets": [
+            {
+              "kind": "directory",
+              "ref": "DemoAlbum/**",
+              "change": "update",
+              "count": 188
+            }
+          ],
+          "money": null,
+          "external_endpoint": null,
+          "data_categories": [
+            "none"
+          ],
+          "reversible": true,
+          "summary": "188 个演示文件的目录位置会变化，内容不变"
+        },
+        "policy": {
+          "requires_human_confirmation": true,
+          "auto_approve_forbidden": true,
+          "timeout_behavior": "keep_pending",
+          "queue_serial": true,
+          "min_role_to_decide": "editor"
+        },
+        "error": null,
+        "suggested_next": [
+          {
+            "text": "先看清清单再决定",
+            "kind": "other",
+            "target_action_id": "act-demo-0002"
+          }
+        ],
+        "context": {
+          "task_name": "整理演示相册并去重",
+          "audience_profile": "A",
+          "default_granularity": "L1",
+          "user_language": "zh"
+        },
+        "trace_link": {
+          "trace_id": "trc-demo-native-01",
+          "span_id": "spn-0004",
+          "observation_id": "obs-demo-1004",
+          "source_url": "local://samples/action_records.json"
+        },
+        "source": {
+          "kind": "demo",
+          "adapter": "native",
+          "format_version": "ActionRecord schema 1.1",
+          "source_uri": "samples/action_records.json",
+          "ingested_at": "2026-11-09T09:00:20.300+08:00",
+          "raw_ref": "local://raw/native/act-demo-0004/source.json"
+        },
+        "demo_data": true,
+        "synthetic": true,
+        "labels": [
+          "demo",
+          "synthetic",
+          "native",
+          "needs-you"
+        ]
+      }
+    },
+    {
+      "name": "modify-0005",
+      "decision": "modify",
+      "option_id": "opt-demo-0005-modify",
+      "form_values": {
+        "max_delete_count": "3",
+        "move_to_trash": "true"
+      },
+      "reason": null,
+      "decided_at": "2026-11-10T08:00:00Z",
+      "input_record": {
+        "schema_version": "1.1",
+        "id": "act-demo-0005",
+        "timestamp": "2026-11-09T09:01:03.000+08:00",
+        "received_at": "2026-11-09T09:01:03.350+08:00",
+        "sequence_no": 5,
+        "agent_id": "demo-photo-bot",
+        "agent_name": "相册助手（演示）",
+        "actor_id": "local",
+        "workspace_id": "default",
+        "session_id": "sess-demo-native-01",
+        "run_id": "run-1",
+        "parent_action_id": "act-demo-0001",
+        "depth": 1,
+        "action_type": "delete",
+        "tool_used": {
+          "name": "filesystem.remove",
+          "version": "1.4",
+          "provider": "builtin",
+          "call_id": "call-demo-1003",
+          "params_summary": "target=DemoAlbum/duplicates/*；count=12；move_to_trash=false",
+          "result_ref": "local://raw/native/act-demo-0005/result.json"
+        },
+        "intent": "删除 12 个内容重复的演示文件",
+        "rationale": "这 12 个文件的 sha256 与已保留文件完全一致，删除不改变内容集合",
+        "result_summary": null,
+        "human_readable": {
+          "l1": "要删除 12 个重复文件，等你确认",
+          "l2": [
+            "12 个文件与保留项内容完全相同",
+            "删除后无法恢复（不进回收站）",
+            "删除后相册保留 188 个文件"
+          ],
+          "l3": "filesystem.remove · 12 个目标 · 预计释放 46 MB · 依据 sha256 · 不可撤回 · 演示数据",
+          "language": "zh",
+          "generated_by": "template",
+          "template_id": "delete.batch.v1",
+          "model": null,
+          "generated_at": "2026-11-09T09:01:03.400+08:00",
+          "source_facts_hash": "sha256:16002bc8710595afa1ab8938be5aaea1b1675aaeb0e4752d7faf0a504243f898",
+          "may_contain_inference": false
+        },
+        "confidence": 0.92,
+        "uncertainty": null,
+        "cost": {
+          "currency": "CNY",
+          "amount": 0.02,
+          "tokens_in": 820,
+          "tokens_out": 96,
+          "estimated": true
+        },
+        "latency_ms": 0,
+        "status": "pending_confirmation",
+        "requires_action": true,
+        "requires_action_reason": "删除不可恢复，且一次涉及 12 个文件，需要你点头",
+        "action_due_at": "2026-11-09T09:31:03+08:00",
+        "intervention_options": [
+          {
+            "id": "opt-demo-0005-approve",
+            "kind": "approve",
+            "label": "同意删除",
+            "description": "按原计划删除这 12 个文件",
+            "consequence": "立即删除 12 个文件，释放约 46 MB，删除后无法恢复",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": false,
+            "risk_note": "此操作不可撤销",
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0005-modify",
+            "kind": "modify",
+            "label": "缩小范围后同意",
+            "description": "只删你允许的部分",
+            "consequence": "只删除你设定的数量，其余保留并在清单中标为已跳过",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [
+              {
+                "name": "max_delete_count",
+                "label": "最多删除文件数",
+                "type": "integer",
+                "required": true,
+                "default": 12,
+                "min": 0,
+                "max": 12,
+                "unit": "个",
+                "help_text": "填 0 表示全部保留，等于拒绝本次删除"
+              },
+              {
+                "name": "move_to_trash",
+                "label": "改为移入回收站",
+                "type": "boolean",
+                "required": true,
+                "default": false,
+                "help_text": "勾选后可从回收站恢复"
+              }
+            ],
+            "requires_reason": false,
+            "risk_note": null,
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0005-reject",
+            "kind": "reject",
+            "label": "拒绝删除",
+            "description": "全部保留",
+            "consequence": "跳过删除步骤，200 个演示文件全部保留，任务标记为部分完成",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": true,
+            "risk_note": "拒绝只记录决定；是否真的停下取决于执行端是否接入 SDK",
+            "dangerous": true
+          }
+        ],
+        "user_intervention": null,
+        "execution_receipt": {
+          "state": "unreported",
+          "reported_by": null,
+          "reported_at": null,
+          "detail": "尚未有人决定，执行端也未回执",
+          "sdk_version": null,
+          "effect_notice": "intervention.effect.recorded_only"
+        },
+        "risk_level": "critical",
+        "impact_scope": {
+          "targets": [
+            {
+              "kind": "file",
+              "ref": "DemoAlbum/duplicates/*",
+              "change": "delete",
+              "count": 12
+            }
+          ],
+          "money": null,
+          "external_endpoint": null,
+          "data_categories": [
+            "none"
+          ],
+          "reversible": false,
+          "summary": "12 个演示照片将被永久删除，不进入回收站"
+        },
+        "policy": {
+          "requires_human_confirmation": true,
+          "auto_approve_forbidden": true,
+          "timeout_behavior": "keep_pending",
+          "queue_serial": true,
+          "min_role_to_decide": "editor"
+        },
+        "error": null,
+        "suggested_next": [
+          {
+            "text": "先看 12 组配对明细，确认没有同名不同图",
+            "kind": "other",
+            "target_action_id": "act-demo-0003"
+          },
+          {
+            "text": "想留底就选『移入回收站』",
+            "kind": "edit_params",
+            "target_action_id": "act-demo-0005"
+          }
+        ],
+        "context": {
+          "task_name": "整理演示相册并去重",
+          "audience_profile": "C",
+          "default_granularity": "L2",
+          "user_language": "zh"
+        },
+        "trace_link": {
+          "trace_id": "trc-demo-native-01",
+          "span_id": "spn-0005",
+          "observation_id": "obs-demo-1005",
+          "source_url": "local://samples/action_records.json"
+        },
+        "source": {
+          "kind": "demo",
+          "adapter": "native",
+          "format_version": "ActionRecord schema 1.1",
+          "source_uri": "samples/action_records.json",
+          "ingested_at": "2026-11-09T09:01:03.350+08:00",
+          "raw_ref": "local://raw/native/act-demo-0005/source.json"
+        },
+        "demo_data": true,
+        "synthetic": true,
+        "labels": [
+          "demo",
+          "synthetic",
+          "native",
+          "needs-you",
+          "irreversible"
+        ]
+      },
+      "result_record": {
+        "schema_version": "1.1",
+        "id": "act-demo-0005",
+        "timestamp": "2026-11-09T09:01:03.000+08:00",
+        "received_at": "2026-11-09T09:01:03.350+08:00",
+        "sequence_no": 5,
+        "agent_id": "demo-photo-bot",
+        "agent_name": "相册助手（演示）",
+        "actor_id": "local",
+        "workspace_id": "default",
+        "session_id": "sess-demo-native-01",
+        "run_id": "run-1",
+        "parent_action_id": "act-demo-0001",
+        "depth": 1,
+        "action_type": "delete",
+        "tool_used": {
+          "name": "filesystem.remove",
+          "version": "1.4",
+          "provider": "builtin",
+          "call_id": "call-demo-1003",
+          "params_summary": "target=DemoAlbum/duplicates/*；count=12；move_to_trash=false",
+          "result_ref": "local://raw/native/act-demo-0005/result.json"
+        },
+        "intent": "删除 12 个内容重复的演示文件",
+        "rationale": "这 12 个文件的 sha256 与已保留文件完全一致，删除不改变内容集合",
+        "result_summary": null,
+        "human_readable": {
+          "l1": "删除 filesystem.remove target=D…｜改后已同意",
+          "l2": [
+            "删除了 12 项：filesystem.remove ta…",
+            "因为这 12 个文件的 sha256 与已保留文件完全一致…",
+            "结果：你选了改后同意，未回报（是否生效未知）",
+            "你的决定：改后同意（执行端没回报，是否生效未知）",
+            "影响：12 项，不可撤回，极高风险",
+            "成本 ¥0.02"
+          ],
+          "l3": "工具 filesystem.remove@builtin#1.4 · 入参 target=DemoAlbum/duplicates/*；count=12；move_to_trash=false · 耗时 0ms · 成本 ¥0.02 · 决定 改后同意 · 执行端 未回报（是否生效未知） · 来源…",
+          "language": "zh",
+          "generated_by": "template",
+          "template_id": "explainer.sentence.v1+explainer.l1.v2+explainer.l2.v2+explainer.l3.v1",
+          "model": null,
+          "generated_at": "2026-11-10T08:00:00Z",
+          "source_facts_hash": "sha256:a74fc81506200e277e9e5fe7c6280e3bed02f41ac9318a4a8c5348378f7a381c",
+          "may_contain_inference": false
+        },
+        "confidence": 0.92,
+        "uncertainty": null,
+        "cost": {
+          "currency": "CNY",
+          "amount": 0.02,
+          "tokens_in": 820,
+          "tokens_out": 96,
+          "estimated": true
+        },
+        "latency_ms": 0,
+        "status": "modified",
+        "requires_action": false,
+        "requires_action_reason": "删除不可恢复，且一次涉及 12 个文件，需要你点头",
+        "action_due_at": "2026-11-09T09:31:03+08:00",
+        "intervention_options": [
+          {
+            "id": "opt-demo-0005-approve",
+            "kind": "approve",
+            "label": "同意删除",
+            "description": "按原计划删除这 12 个文件",
+            "consequence": "立即删除 12 个文件，释放约 46 MB，删除后无法恢复",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": false,
+            "risk_note": "此操作不可撤销",
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0005-modify",
+            "kind": "modify",
+            "label": "缩小范围后同意",
+            "description": "只删你允许的部分",
+            "consequence": "只删除你设定的数量，其余保留并在清单中标为已跳过",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [
+              {
+                "name": "max_delete_count",
+                "label": "最多删除文件数",
+                "type": "integer",
+                "required": true,
+                "default": 12,
+                "min": 0,
+                "max": 12,
+                "unit": "个",
+                "help_text": "填 0 表示全部保留，等于拒绝本次删除"
+              },
+              {
+                "name": "move_to_trash",
+                "label": "改为移入回收站",
+                "type": "boolean",
+                "required": true,
+                "default": false,
+                "help_text": "勾选后可从回收站恢复"
+              }
+            ],
+            "requires_reason": false,
+            "risk_note": null,
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0005-reject",
+            "kind": "reject",
+            "label": "拒绝删除",
+            "description": "全部保留",
+            "consequence": "跳过删除步骤，200 个演示文件全部保留，任务标记为部分完成",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": true,
+            "risk_note": "拒绝只记录决定；是否真的停下取决于执行端是否接入 SDK",
+            "dangerous": true
+          }
+        ],
+        "user_intervention": {
+          "decision": "modify",
+          "option_id": "opt-demo-0005-modify",
+          "decided_by": "local-user",
+          "decided_by_role": "local",
+          "decided_at": "2026-11-10T08:00:00Z",
+          "recorded": true,
+          "request_id": "req-golden",
+          "audit_entry_hash": null,
+          "original_params": {
+            "target": "DemoAlbum/duplicates/*",
+            "count": 12,
+            "move_to_trash": false,
+            "max_delete_count": 12
+          },
+          "modified_params": {
+            "max_delete_count": 3,
+            "move_to_trash": true
+          },
+          "modified_fields": [
+            {
+              "name": "max_delete_count",
+              "before": 12,
+              "after": 3
+            },
+            {
+              "name": "move_to_trash",
+              "before": false,
+              "after": true
+            }
+          ]
+        },
+        "execution_receipt": {
+          "state": "unreported",
+          "reported_by": null,
+          "reported_at": null,
+          "detail": "尚未有人决定，执行端也未回执",
+          "sdk_version": null,
+          "effect_notice": "intervention.effect.recorded_only"
+        },
+        "risk_level": "critical",
+        "impact_scope": {
+          "targets": [
+            {
+              "kind": "file",
+              "ref": "DemoAlbum/duplicates/*",
+              "change": "delete",
+              "count": 12
+            }
+          ],
+          "money": null,
+          "external_endpoint": null,
+          "data_categories": [
+            "none"
+          ],
+          "reversible": false,
+          "summary": "12 个演示照片将被永久删除，不进入回收站"
+        },
+        "policy": {
+          "requires_human_confirmation": true,
+          "auto_approve_forbidden": true,
+          "timeout_behavior": "keep_pending",
+          "queue_serial": true,
+          "min_role_to_decide": "editor"
+        },
+        "error": null,
+        "suggested_next": [
+          {
+            "text": "先看 12 组配对明细，确认没有同名不同图",
+            "kind": "other",
+            "target_action_id": "act-demo-0003"
+          },
+          {
+            "text": "想留底就选『移入回收站』",
+            "kind": "edit_params",
+            "target_action_id": "act-demo-0005"
+          }
+        ],
+        "context": {
+          "task_name": "整理演示相册并去重",
+          "audience_profile": "C",
+          "default_granularity": "L2",
+          "user_language": "zh"
+        },
+        "trace_link": {
+          "trace_id": "trc-demo-native-01",
+          "span_id": "spn-0005",
+          "observation_id": "obs-demo-1005",
+          "source_url": "local://samples/action_records.json"
+        },
+        "source": {
+          "kind": "demo",
+          "adapter": "native",
+          "format_version": "ActionRecord schema 1.1",
+          "source_uri": "samples/action_records.json",
+          "ingested_at": "2026-11-09T09:01:03.350+08:00",
+          "raw_ref": "local://raw/native/act-demo-0005/source.json"
+        },
+        "demo_data": true,
+        "synthetic": true,
+        "labels": [
+          "demo",
+          "synthetic",
+          "native",
+          "needs-you",
+          "irreversible"
+        ]
+      }
+    },
+    {
+      "name": "reject-0008",
+      "decision": "reject",
+      "option_id": "opt-demo-0008-reject",
+      "form_values": {},
+      "reason": "发送前没让我确认收件人",
+      "decided_at": "2026-11-10T08:00:00Z",
+      "input_record": {
+        "schema_version": "1.1",
+        "id": "act-demo-0008",
+        "timestamp": "2026-11-09T09:04:00.000+08:00",
+        "received_at": "2026-11-09T09:04:00.300+08:00",
+        "sequence_no": 8,
+        "agent_id": "demo-photo-bot",
+        "agent_name": "相册助手（演示）",
+        "actor_id": "local",
+        "workspace_id": "default",
+        "session_id": "sess-demo-native-01",
+        "run_id": "run-1",
+        "parent_action_id": "act-demo-0001",
+        "depth": 1,
+        "action_type": "send",
+        "tool_used": {
+          "name": "message.send_email",
+          "version": "2.0",
+          "provider": "builtin",
+          "call_id": "call-demo-1006",
+          "params_summary": "to=3 个演示联系人；attachments=1",
+          "result_ref": "local://raw/native/act-demo-0008/result.json"
+        },
+        "intent": "把整理结果发给 3 个演示联系人",
+        "rationale": "报告需要发给别人看，所以要先让你确认内容",
+        "result_summary": null,
+        "human_readable": {
+          "l1": "它要发信给 3 个人，等你确认",
+          "l2": [
+            "收件人是 3 个演示联系人",
+            "附件含 12 个文件的清单",
+            "发出后无法收回，先看清内容"
+          ],
+          "l3": "message.send_email · 3 个收件人 · 1 个附件 · 含个人数据类别演示 · 不可撤回 · 演示数据",
+          "language": "zh",
+          "generated_by": "template",
+          "template_id": "send.external.v1",
+          "model": null,
+          "generated_at": "2026-11-09T09:04:00.350+08:00",
+          "source_facts_hash": "sha256:11b0cc24b4236a6e30d33dbbc145c98146ed1cab0863743388edc6dd98485bdc",
+          "may_contain_inference": false
+        },
+        "confidence": 0.85,
+        "uncertainty": null,
+        "cost": null,
+        "latency_ms": 0,
+        "status": "pending_confirmation",
+        "requires_action": true,
+        "requires_action_reason": "邮件会离开本机并包含个人信息，发出后收不回",
+        "action_due_at": "2026-11-09T09:34:00+08:00",
+        "intervention_options": [
+          {
+            "id": "opt-demo-0008-approve",
+            "kind": "approve",
+            "label": "同意发送",
+            "description": "按现内容发给 3 个联系人",
+            "consequence": "邮件与附件立即发出，本机无法撤回",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": false,
+            "risk_note": "包含个人信息，发出后不可收回",
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0008-modify",
+            "kind": "modify",
+            "label": "改收件人后同意",
+            "description": "换收件人或去掉个人信息",
+            "consequence": "只发给你设定的收件人，脱敏后的附件版本会一并替换",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [
+              {
+                "name": "recipients",
+                "label": "收件人列表",
+                "type": "text",
+                "required": true,
+                "default": "demo-contact-1;demo-contact-2",
+                "help_text": "用分号分隔，留空等于不发送"
+              },
+              {
+                "name": "redact_personal",
+                "label": "导出时脱敏个人信息",
+                "type": "boolean",
+                "required": true,
+                "default": true
+              }
+            ],
+            "requires_reason": false,
+            "risk_note": null,
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0008-reject",
+            "kind": "reject",
+            "label": "不要发送",
+            "description": "只在本地保留报告",
+            "consequence": "跳过发送，报告只存在本机，收件人收不到任何东西",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": true,
+            "risk_note": "拒绝只记录决定；是否真的不发取决于执行端是否接入 SDK",
+            "dangerous": true
+          }
+        ],
+        "user_intervention": null,
+        "execution_receipt": {
+          "state": "unreported",
+          "reported_by": null,
+          "reported_at": null,
+          "detail": "尚未有人决定，执行端也未回执",
+          "sdk_version": null,
+          "effect_notice": "intervention.effect.recorded_only"
+        },
+        "risk_level": "high",
+        "impact_scope": {
+          "targets": [
+            {
+              "kind": "mailbox",
+              "ref": "DemoInbox/演示联系人",
+              "change": "send",
+              "count": 3
+            }
+          ],
+          "money": null,
+          "external_endpoint": {
+            "url": "https://demo.example.local/mail",
+            "method": "POST",
+            "audience": "3 个演示联系人（合成）"
+          },
+          "data_categories": [
+            "personal_data"
+          ],
+          "reversible": false,
+          "summary": "3 个演示联系人将收到含个人数据类别标注的邮件与 1 个附件"
+        },
+        "policy": {
+          "requires_human_confirmation": true,
+          "auto_approve_forbidden": true,
+          "timeout_behavior": "keep_pending",
+          "queue_serial": true,
+          "min_role_to_decide": "admin"
+        },
+        "error": null,
+        "suggested_next": [
+          {
+            "text": "先看邮件正文与附件，再决定是否脱敏",
+            "kind": "other",
+            "target_action_id": null
+          }
+        ],
+        "context": {
+          "task_name": "整理演示相册并去重",
+          "audience_profile": "C",
+          "default_granularity": "L2",
+          "user_language": "zh"
+        },
+        "trace_link": {
+          "trace_id": "trc-demo-native-01",
+          "span_id": "spn-0008",
+          "observation_id": "obs-demo-1008",
+          "source_url": "local://samples/action_records.json"
+        },
+        "source": {
+          "kind": "demo",
+          "adapter": "native",
+          "format_version": "ActionRecord schema 1.1",
+          "source_uri": "samples/action_records.json",
+          "ingested_at": "2026-11-09T09:04:00.300+08:00",
+          "raw_ref": "local://raw/native/act-demo-0008/source.json"
+        },
+        "demo_data": true,
+        "synthetic": true,
+        "labels": [
+          "demo",
+          "synthetic",
+          "native",
+          "needs-you",
+          "personal-data"
+        ]
+      },
+      "result_record": {
+        "schema_version": "1.1",
+        "id": "act-demo-0008",
+        "timestamp": "2026-11-09T09:04:00.000+08:00",
+        "received_at": "2026-11-09T09:04:00.300+08:00",
+        "sequence_no": 8,
+        "agent_id": "demo-photo-bot",
+        "agent_name": "相册助手（演示）",
+        "actor_id": "local",
+        "workspace_id": "default",
+        "session_id": "sess-demo-native-01",
+        "run_id": "run-1",
+        "parent_action_id": "act-demo-0001",
+        "depth": 1,
+        "action_type": "send",
+        "tool_used": {
+          "name": "message.send_email",
+          "version": "2.0",
+          "provider": "builtin",
+          "call_id": "call-demo-1006",
+          "params_summary": "to=3 个演示联系人；attachments=1",
+          "result_ref": "local://raw/native/act-demo-0008/result.json"
+        },
+        "intent": "把整理结果发给 3 个演示联系人",
+        "rationale": "报告需要发给别人看，所以要先让你确认内容",
+        "result_summary": null,
+        "human_readable": {
+          "l1": "发送 message.send_email to=3 个演示联…｜已拒绝",
+          "l2": [
+            "发送了 message.send_email to=3 个…",
+            "因为报告需要发给别人看，所以要先让你确认内容",
+            "结果：你选了拒绝，未回报（是否生效未知）",
+            "你的决定：拒绝（执行端没回报，是否生效未知）",
+            "影响：3 项，不可撤回，高风险"
+          ],
+          "l3": "工具 message.send_email@builtin#2.0 · 入参 to=3 个演示联系人；attachments=1 · 耗时 0ms · 成本 无 · 决定 拒绝 · 执行端 未回报（是否生效未知） · 来源 native · id act-demo-0008",
+          "language": "zh",
+          "generated_by": "template",
+          "template_id": "explainer.sentence.v1+explainer.l1.v2+explainer.l2.v2+explainer.l3.v1",
+          "model": null,
+          "generated_at": "2026-11-10T08:00:00Z",
+          "source_facts_hash": "sha256:1c024a632f88568669471b1f7a040e6c4d9700f76ad272452c385aeba9a1fa00",
+          "may_contain_inference": false
+        },
+        "confidence": 0.85,
+        "uncertainty": null,
+        "cost": null,
+        "latency_ms": 0,
+        "status": "rejected",
+        "requires_action": false,
+        "requires_action_reason": "邮件会离开本机并包含个人信息，发出后收不回",
+        "action_due_at": "2026-11-09T09:34:00+08:00",
+        "intervention_options": [
+          {
+            "id": "opt-demo-0008-approve",
+            "kind": "approve",
+            "label": "同意发送",
+            "description": "按现内容发给 3 个联系人",
+            "consequence": "邮件与附件立即发出，本机无法撤回",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": false,
+            "risk_note": "包含个人信息，发出后不可收回",
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0008-modify",
+            "kind": "modify",
+            "label": "改收件人后同意",
+            "description": "换收件人或去掉个人信息",
+            "consequence": "只发给你设定的收件人，脱敏后的附件版本会一并替换",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [
+              {
+                "name": "recipients",
+                "label": "收件人列表",
+                "type": "text",
+                "required": true,
+                "default": "demo-contact-1;demo-contact-2",
+                "help_text": "用分号分隔，留空等于不发送"
+              },
+              {
+                "name": "redact_personal",
+                "label": "导出时脱敏个人信息",
+                "type": "boolean",
+                "required": true,
+                "default": true
+              }
+            ],
+            "requires_reason": false,
+            "risk_note": null,
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0008-reject",
+            "kind": "reject",
+            "label": "不要发送",
+            "description": "只在本地保留报告",
+            "consequence": "跳过发送，报告只存在本机，收件人收不到任何东西",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": true,
+            "risk_note": "拒绝只记录决定；是否真的不发取决于执行端是否接入 SDK",
+            "dangerous": true
+          }
+        ],
+        "user_intervention": {
+          "decision": "reject",
+          "option_id": "opt-demo-0008-reject",
+          "decided_by": "local-user",
+          "decided_by_role": "local",
+          "decided_at": "2026-11-10T08:00:00Z",
+          "recorded": true,
+          "request_id": "req-golden",
+          "audit_entry_hash": null,
+          "original_params": {
+            "to": "3 个演示联系人",
+            "attachments": 1
+          },
+          "reason": "发送前没让我确认收件人"
+        },
+        "execution_receipt": {
+          "state": "unreported",
+          "reported_by": null,
+          "reported_at": null,
+          "detail": "尚未有人决定，执行端也未回执",
+          "sdk_version": null,
+          "effect_notice": "intervention.effect.recorded_only"
+        },
+        "risk_level": "high",
+        "impact_scope": {
+          "targets": [
+            {
+              "kind": "mailbox",
+              "ref": "DemoInbox/演示联系人",
+              "change": "send",
+              "count": 3
+            }
+          ],
+          "money": null,
+          "external_endpoint": {
+            "url": "https://demo.example.local/mail",
+            "method": "POST",
+            "audience": "3 个演示联系人（合成）"
+          },
+          "data_categories": [
+            "personal_data"
+          ],
+          "reversible": false,
+          "summary": "3 个演示联系人将收到含个人数据类别标注的邮件与 1 个附件"
+        },
+        "policy": {
+          "requires_human_confirmation": true,
+          "auto_approve_forbidden": true,
+          "timeout_behavior": "keep_pending",
+          "queue_serial": true,
+          "min_role_to_decide": "admin"
+        },
+        "error": null,
+        "suggested_next": [
+          {
+            "text": "先看邮件正文与附件，再决定是否脱敏",
+            "kind": "other",
+            "target_action_id": null
+          }
+        ],
+        "context": {
+          "task_name": "整理演示相册并去重",
+          "audience_profile": "C",
+          "default_granularity": "L2",
+          "user_language": "zh"
+        },
+        "trace_link": {
+          "trace_id": "trc-demo-native-01",
+          "span_id": "spn-0008",
+          "observation_id": "obs-demo-1008",
+          "source_url": "local://samples/action_records.json"
+        },
+        "source": {
+          "kind": "demo",
+          "adapter": "native",
+          "format_version": "ActionRecord schema 1.1",
+          "source_uri": "samples/action_records.json",
+          "ingested_at": "2026-11-09T09:04:00.300+08:00",
+          "raw_ref": "local://raw/native/act-demo-0008/source.json"
+        },
+        "demo_data": true,
+        "synthetic": true,
+        "labels": [
+          "demo",
+          "synthetic",
+          "native",
+          "needs-you",
+          "personal-data"
+        ]
+      }
+    },
+    {
+      "name": "approve-expired-0011",
+      "decision": "approve",
+      "option_id": "opt-demo-0011-approve",
+      "form_values": {},
+      "reason": null,
+      "decided_at": "2026-11-10T08:00:00Z",
+      "input_record": {
+        "schema_version": "1.1",
+        "id": "act-demo-0011",
+        "timestamp": "2026-11-09T09:07:00.000+08:00",
+        "received_at": "2026-11-09T09:07:00.250+08:00",
+        "sequence_no": 11,
+        "agent_id": "demo-photo-bot",
+        "agent_name": "相册助手（演示）",
+        "actor_id": "local",
+        "workspace_id": "default",
+        "session_id": "sess-demo-native-01",
+        "run_id": "run-1",
+        "parent_action_id": "act-demo-0001",
+        "depth": 1,
+        "action_type": "wait",
+        "tool_used": null,
+        "intent": "等你回答视频是否参与去重，超过 30 分钟",
+        "rationale": "它不会替你决定，也不会因为超时就自己往下跑",
+        "result_summary": null,
+        "human_readable": {
+          "l1": "超时了：还在等你回答",
+          "l2": [
+            "已等待超过 30 分钟",
+            "它没有替你决定，也没继续跑",
+            "你随时回答，它接着做"
+          ],
+          "l3": "wait · 超时 keep_pending · 到期 2026-11-09 09:37 · 未自动执行任何操作 · 演示数据",
+          "language": "zh",
+          "generated_by": "template",
+          "template_id": "wait.expired.v1",
+          "model": null,
+          "generated_at": "2026-11-09T09:37:00.300+08:00",
+          "source_facts_hash": "sha256:2d6d9dcc72dcd7a54a3f0f5923b7186495995bb1c522426d055c06e7c81c1f05",
+          "may_contain_inference": false
+        },
+        "confidence": 1.0,
+        "uncertainty": null,
+        "cost": null,
+        "latency_ms": 1800000,
+        "status": "expired",
+        "requires_action": true,
+        "requires_action_reason": "这一步要你回答，超时也不会自动执行，需要你拍板",
+        "action_due_at": "2026-11-09T09:37:00+08:00",
+        "intervention_options": [
+          {
+            "id": "opt-demo-0011-approve",
+            "kind": "approve",
+            "label": "视频一起比对",
+            "description": "继续做，含视频",
+            "consequence": "继续跑视频哈希比对，预计额外 20 分钟，期间可以继续做别的",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": false,
+            "risk_note": null,
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0011-modify",
+            "kind": "modify",
+            "label": "只比对最近一个月",
+            "description": "缩小范围继续",
+            "consequence": "只比对最近一个月的视频，预计额外 3 分钟",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [
+              {
+                "name": "months_back",
+                "label": "回溯月数",
+                "type": "integer",
+                "required": true,
+                "default": 1,
+                "min": 1,
+                "max": 24,
+                "unit": "个月"
+              }
+            ],
+            "requires_reason": false,
+            "risk_note": null,
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0011-reject",
+            "kind": "reject",
+            "label": "视频不参与",
+            "description": "只处理图片",
+            "consequence": "跳过视频比对，任务只处理图片并立即进入汇总",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": true,
+            "risk_note": null,
+            "dangerous": true
+          }
+        ],
+        "user_intervention": null,
+        "execution_receipt": {
+          "state": "unreported",
+          "reported_by": null,
+          "reported_at": null,
+          "detail": "超时挂起，没有任何操作被执行",
+          "sdk_version": null,
+          "effect_notice": "intervention.effect.recorded_only"
+        },
+        "risk_level": "low",
+        "impact_scope": null,
+        "policy": {
+          "requires_human_confirmation": true,
+          "auto_approve_forbidden": true,
+          "timeout_behavior": "keep_pending",
+          "queue_serial": true,
+          "min_role_to_decide": "editor"
+        },
+        "error": null,
+        "suggested_next": [
+          {
+            "text": "回答要不要比对视频，它接着跑",
+            "kind": "provide_input",
+            "target_action_id": "act-demo-0011"
+          }
+        ],
+        "context": {
+          "task_name": "整理演示相册并去重",
+          "audience_profile": "A",
+          "default_granularity": "L1",
+          "user_language": "zh"
+        },
+        "trace_link": {
+          "trace_id": "trc-demo-native-01",
+          "span_id": "spn-0011",
+          "observation_id": "obs-demo-1011",
+          "source_url": "local://samples/action_records.json"
+        },
+        "source": {
+          "kind": "demo",
+          "adapter": "native",
+          "format_version": "ActionRecord schema 1.1",
+          "source_uri": "samples/action_records.json",
+          "ingested_at": "2026-11-09T09:07:00.250+08:00",
+          "raw_ref": "local://raw/native/act-demo-0011/source.json"
+        },
+        "demo_data": true,
+        "synthetic": true,
+        "labels": [
+          "demo",
+          "synthetic",
+          "native",
+          "needs-you",
+          "expired"
+        ]
+      },
+      "result_record": {
+        "schema_version": "1.1",
+        "id": "act-demo-0011",
+        "timestamp": "2026-11-09T09:07:00.000+08:00",
+        "received_at": "2026-11-09T09:07:00.250+08:00",
+        "sequence_no": 11,
+        "agent_id": "demo-photo-bot",
+        "agent_name": "相册助手（演示）",
+        "actor_id": "local",
+        "workspace_id": "default",
+        "session_id": "sess-demo-native-01",
+        "run_id": "run-1",
+        "parent_action_id": "act-demo-0001",
+        "depth": 1,
+        "action_type": "wait",
+        "tool_used": null,
+        "intent": "等你回答视频是否参与去重，超过 30 分钟",
+        "rationale": "它不会替你决定，也不会因为超时就自己往下跑",
+        "result_summary": null,
+        "human_readable": {
+          "l1": "等待 等你回答视频是否参与去重，超过 30 分钟｜已同意",
+          "l2": [
+            "等待：等你回答视频是否参与去重，超过 30 分钟",
+            "因为它不会替你决定，也不会因为超时就自己往下跑",
+            "结果：你选了同意，未回报（是否生效未知）",
+            "你的决定：同意（执行端没回报，是否生效未知）",
+            "耗时 30m00s"
+          ],
+          "l3": "工具 无 · 入参 无 · 耗时 30m00s · 成本 无 · 决定 同意 · 执行端 未回报（是否生效未知） · 来源 native · id act-demo-0011",
+          "language": "zh",
+          "generated_by": "template",
+          "template_id": "explainer.sentence.v1+explainer.l1.v2+explainer.l2.v2+explainer.l3.v1",
+          "model": null,
+          "generated_at": "2026-11-10T08:00:00Z",
+          "source_facts_hash": "sha256:b593f35a46e5fae98d8ef98a98519a8f064b1b7b271e64f986407d64af734d79",
+          "may_contain_inference": false
+        },
+        "confidence": 1.0,
+        "uncertainty": null,
+        "cost": null,
+        "latency_ms": 1800000,
+        "status": "approved",
+        "requires_action": false,
+        "requires_action_reason": "这一步要你回答，超时也不会自动执行，需要你拍板",
+        "action_due_at": "2026-11-09T09:37:00+08:00",
+        "intervention_options": [
+          {
+            "id": "opt-demo-0011-approve",
+            "kind": "approve",
+            "label": "视频一起比对",
+            "description": "继续做，含视频",
+            "consequence": "继续跑视频哈希比对，预计额外 20 分钟，期间可以继续做别的",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": false,
+            "risk_note": null,
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0011-modify",
+            "kind": "modify",
+            "label": "只比对最近一个月",
+            "description": "缩小范围继续",
+            "consequence": "只比对最近一个月的视频，预计额外 3 分钟",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [
+              {
+                "name": "months_back",
+                "label": "回溯月数",
+                "type": "integer",
+                "required": true,
+                "default": 1,
+                "min": 1,
+                "max": 24,
+                "unit": "个月"
+              }
+            ],
+            "requires_reason": false,
+            "risk_note": null,
+            "dangerous": false
+          },
+          {
+            "id": "opt-demo-0011-reject",
+            "kind": "reject",
+            "label": "视频不参与",
+            "description": "只处理图片",
+            "consequence": "跳过视频比对，任务只处理图片并立即进入汇总",
+            "effect_notice": "intervention.effect.recorded_only",
+            "editable_fields": [],
+            "requires_reason": true,
+            "risk_note": null,
+            "dangerous": true
+          }
+        ],
+        "user_intervention": {
+          "decision": "approve",
+          "option_id": "opt-demo-0011-approve",
+          "decided_by": "local-user",
+          "decided_by_role": "local",
+          "decided_at": "2026-11-10T08:00:00Z",
+          "recorded": true,
+          "request_id": "req-golden",
+          "audit_entry_hash": null,
+          "original_params": {}
+        },
+        "execution_receipt": {
+          "state": "unreported",
+          "reported_by": null,
+          "reported_at": null,
+          "detail": "超时挂起，没有任何操作被执行",
+          "sdk_version": null,
+          "effect_notice": "intervention.effect.recorded_only"
+        },
+        "risk_level": "low",
+        "impact_scope": null,
+        "policy": {
+          "requires_human_confirmation": true,
+          "auto_approve_forbidden": true,
+          "timeout_behavior": "keep_pending",
+          "queue_serial": true,
+          "min_role_to_decide": "editor"
+        },
+        "error": null,
+        "suggested_next": [
+          {
+            "text": "回答要不要比对视频，它接着跑",
+            "kind": "provide_input",
+            "target_action_id": "act-demo-0011"
+          }
+        ],
+        "context": {
+          "task_name": "整理演示相册并去重",
+          "audience_profile": "A",
+          "default_granularity": "L1",
+          "user_language": "zh"
+        },
+        "trace_link": {
+          "trace_id": "trc-demo-native-01",
+          "span_id": "spn-0011",
+          "observation_id": "obs-demo-1011",
+          "source_url": "local://samples/action_records.json"
+        },
+        "source": {
+          "kind": "demo",
+          "adapter": "native",
+          "format_version": "ActionRecord schema 1.1",
+          "source_uri": "samples/action_records.json",
+          "ingested_at": "2026-11-09T09:07:00.250+08:00",
+          "raw_ref": "local://raw/native/act-demo-0011/source.json"
+        },
+        "demo_data": true,
+        "synthetic": true,
+        "labels": [
+          "demo",
+          "synthetic",
+          "native",
+          "needs-you",
+          "expired"
+        ]
+      }
+    }
+  ]
+}

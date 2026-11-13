@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-view="mobile" data-lang="zh" data-demo="unknown" data-compare="off">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="TraceLens static demo skeleton">
+  <title>TraceLens</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- 5.0 trust layer (docs/07 §6): one stylesheet per extension module so the
+       nine new surfaces never edit the same file. Everything loads from the
+       package itself - no CDN, no build step, works from file:// too. -->
+  <link rel="stylesheet" href="ext/core.css">
+  <link rel="stylesheet" href="ext/cards.css">
+  <link rel="stylesheet" href="ext/secretariat.css">
+  <link rel="stylesheet" href="ext/collab.css">
+  <link rel="stylesheet" href="ext/insights.css">
+  <link rel="stylesheet" href="ext/compliance.css">
+</head>
+<body>
+  <a class="skip-link" id="skip-link" href="#zones"></a>
+
+  <div class="app" id="app" data-view="mobile" data-lang="zh" data-demo="unknown" data-compare="off" data-open="false" data-auth-state="unchecked" data-auth-mode="unchecked" data-auth-role="none" data-auth-required="false">
+
+    <!-- 4.3 login page: app.js fills it only when the server says the mode is
+         team and nobody is signed in; the record list is aria-hidden then. -->
+    <section class="auth" id="auth-panel" data-hook="auth-panel" data-auth-state="unchecked" role="dialog" aria-modal="true" aria-labelledby="auth-title" hidden></section>
+
+    <aside class="sidebar" id="sidebar" data-hook="sidebar" aria-hidden="true"></aside>
+
+    <main class="main" id="main" data-hook="main" data-auth-blocked="false">
+      <header class="topbar" id="topbar" data-hook="topbar"></header>
+
+      <div class="banner banner--hidden" id="demo-banner" data-hook="demo-banner" hidden></div>
+
+      <!-- 4.3 user administration page: rendered for the admin role only
+           (the server enforces the same rule with 403 ROLE_FORBIDDEN). -->
+      <section class="users" id="users-panel" data-hook="users-panel" aria-labelledby="users-title" hidden></section>
+
+      <!-- 4.5 settings centre: model configuration, language switch, data
+           management and the security posture. app.js fills it from
+           GET /api/settings; the key is only ever a mask, and every write
+           control stays disabled without settings.write (the server answers
+           403 ROLE_FORBIDDEN for the same rule). -->
+      <section class="settings" id="settings-center" data-hook="settings-center" aria-labelledby="settings-title" hidden></section>
+
+      <!-- desktop / tablet timeline: scrubber + one-step preview (phone keeps
+           the ball + sheet and never shows this strip) -->
+      <section class="timeline" id="timeline-main" data-hook="timeline-main" aria-hidden="true"></section>
+
+      <section class="sheet" id="sheet" data-hook="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+        <button class="sheet__grab" id="sheet-grab" type="button" tabindex="0"></button>
+        <h2 class="sheet__title" id="sheet-title"></h2>
+        <p class="sheet__subtitle" id="sheet-subtitle"></p>
+        <button class="sheet__close" id="sheet-close" type="button" tabindex="0"></button>
+        <div class="zones" id="zones" data-hook="zones" role="region"></div>
+        <!-- 4.9 (QA 5.1 D1): the import entry lives where the phone user is.
+             The desktop copy hangs off the rail; both are rendered by app.js. -->
+        <div class="import" id="sheet-import" data-hook="sheet-import" role="region" aria-labelledby="sheet-import-title"></div>
+        <footer class="sheet__foot" id="sheet-foot" data-hook="sheet-foot"></footer>
+      </section>
+
+      <!-- 4.10 (QA 5.1 D-4): the phone entry list, filled by app.js. An entry
+           opens the panel that already exists (settings centre, audit rail,
+           users screen, import block, export rail, language switch), so no
+           panel is rendered twice. Hidden at >=1024px, where the sidebar is
+           the entry point. -->
+      <section class="more" id="more-sheet" data-hook="more-sheet" role="dialog" aria-modal="true" aria-labelledby="more-title" hidden></section>
+    </main>
+
+    <nav class="rail" id="timeline" data-hook="timeline" aria-hidden="true"></nav>
+
+    <section class="compare" id="compare" data-hook="compare" aria-hidden="true"></section>
+
+    <button class="fab" id="fab" type="button" tabindex="0" data-hook="fab" hidden></button>
+  </div>
+
+  <!-- Headless verification rig (filled only with ?probe=1 / ?frame=WxH):
+       app.js writes the measured layout numbers here as visible text. -->
+  <pre class="probe" id="probe-text" hidden></pre>
+
+  <!-- Dictionaries are generated from i18n/zh.json + i18n/en.json by
+       "node selfcheck.mjs --sync-embed" so that the static file:// demo needs
+       no fetch (the canonical JSON is re-read when served over http(s)). -->
+  <script src="i18n/embed.js"></script>
+  <script src="demo-data.js"></script>
+  <!-- English twin of the demo set (byte copy of
+       samples/action_records_en.json, node selfcheck.mjs --sync-demo).
+       app.js picks the dataset by interface language, so the English UI never
+       renders Chinese demo data. -->
+  <script src="demo-data-en.js"></script>
+  <!-- Run B for desktop compare mode: generated variant of the same synthetic
+       fixture (node selfcheck.mjs --sync-compare), never used by the zone list. -->
+  <script src="compare-data.js"></script>
+  <script src="app.js"></script>
+
+  <!-- 5.0 trust layer (docs/07 §6): extension modules. `ext/core.js` owns the
+       shell (launcher, tabbed panel, toast, modal, api/i18n bridge); every
+       other file registers one feature into it. They are classic scripts on
+       purpose: the page must keep working with file:// and zero dependencies. -->
+  <script src="ext/core.js"></script>
+  <script src="ext/cards.js"></script>
+  <script src="ext/secretariat.js"></script>
+  <script src="ext/collab.js"></script>
+  <script src="ext/insights.js"></script>
+  <script src="ext/compliance.js"></script>
+
+  <!-- Headless verification hook: append ?probe=1 to dump the rendered
+       structure as JSON, and ?frame=WxH to pin a phone viewport. The boot
+       lines make a failure self-describing (no user-visible copy). -->
+  <script>
+    (function () {
+      'use strict';
+      var search = '';
+      try { search = String(window.location.search || ''); } catch (e) { search = ''; }
+      if (!/[?&](?:probe=1|frame=[^&]+)/.test(search)) return;
+      var text = document.getElementById('probe-text');
+      var reported = false;
+      function line(msg) {
+        if (!text) return;
+        text.hidden = false;
+        text.textContent = (text.textContent ? text.textContent + '\n' : '') + msg;
+      }
+      function flag(v) { return v ? 'yes' : 'NO'; }
+      line('boot: inline probe ran, readyState=' + document.readyState +
+        ', styles=' + flag(document.styleSheets && document.styleSheets.length) +
+        ', dicts=' + flag(window.TraceLensDicts) +
+        ', data=' + flag(window.TraceLensDemoData) +
+        ', ui=' + flag(window.TraceLensUI));
+      function report() {
+        var ui = window.TraceLensUI;
+        if (!ui || typeof ui.probe !== 'function') return false;
+        var p = ui.probe();
+        line('probe: renders=' + p.stats.renders + ' records=' + p.records +
+          ' cards=' + (p.rendered.cards || 0) + ' i18nNodes=' + p.rendered.i18nNodes +
+          ' missingKeys=' + p.missingKeys.length + ' rigError=' + (p.rigError || 'none'));
+        var node = document.createElement('script');
+        node.type = 'application/json';
+        node.id = 'probe-result';
+        node.textContent = JSON.stringify(p);
+        document.body.appendChild(node);
+        document.documentElement.setAttribute('data-probe', 'ok');
+        return true;
+      }
+      function poll() {
+        if (report()) return;
+        var tries = 0;
+        var timer = window.setInterval(function () {
+          tries += 1;
+          if (report()) { window.clearInterval(timer); return; }
+          if (tries >= 20) {
+            window.clearInterval(timer);
+            line('probe: window.TraceLensUI never appeared - app.js did not finish loading');
+          }
+        }, 100);
+      }
+      if (document.readyState === 'complete') {
+        window.setTimeout(poll, 0);
+      } else {
+        window.addEventListener('load', function () { window.setTimeout(poll, 0); });
+      }
+    }());
+  </script>
+</body>
+</html>

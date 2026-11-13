@@ -1,0 +1,1659 @@
+{
+  "_meta": {
+    "title": "TraceLens native demo set (ActionRecord v1.1, synthetic examples, not real captures)",
+    "synthetic": true,
+    "real_data": false,
+    "demo_data": true,
+    "author_note": "All 12 records were written by hand by the team (synthetic=true / demo_data=true / source.kind=demo). Nothing was captured from a real system: no real names, real paths, real amounts or real customer data. Basis: docs/01-product-and-users.md assumptions A1/A2, the captain's ruling that we never ask users for a real trace, and the fixture spec in docs/02-data-model.md section 8.4.",
+    "spec_basis": "ActionRecord JSON Schema v1.1 (Draft 2020-12): docs/schemas/action_record.schema.json",
+    "spec_version": "ActionRecord schema 1.1",
+    "record_count": 12,
+    "action_type_coverage": [
+      "plan",
+      "read",
+      "tool_call",
+      "confirm",
+      "delete",
+      "error",
+      "write",
+      "send",
+      "ask",
+      "config_change",
+      "wait",
+      "finish"
+    ],
+    "dm_8_4_checklist": {
+      "requires_action_with_three_options": [
+        "act-demo-0004",
+        "act-demo-0005",
+        "act-demo-0011"
+      ],
+      "failed_with_human_reason_and_suggested_next": [
+        "act-demo-0006"
+      ],
+      "high_or_critical_with_impact_irreversible": [
+        "act-demo-0005",
+        "act-demo-0008"
+      ],
+      "modified_decision_with_executed_receipt": [
+        "act-demo-0007"
+      ],
+      "rejected_with_refused_by_runtime": [
+        "act-demo-0010"
+      ],
+      "expired": [
+        "act-demo-0011"
+      ],
+      "low_confidence_with_uncertainty": [
+        "act-demo-0003"
+      ],
+      "personal_data_category": [
+        "act-demo-0008"
+      ],
+      "llm_rendered_may_contain_inference": [
+        "act-demo-0003"
+      ]
+    },
+    "bilingual_note": "This file is the English (language=en) demo set; the Chinese twin is samples/action_records.json. English copy is authored natively for the English UI, not machine translated. Spec: docs/03-architecture.md section 6.",
+    "hash_note": "human_readable.source_facts_hash is recomputed by tools/facts_hash.py (the same code behind tools/validate_schema.py --fix-facts); tools/i18n_lint.py verifies it record by record for this English set.",
+    "generated_by": "backend-engineer (t3)",
+    "generated_at": "2026-11-10T10:00:00+08:00",
+    "offline": true,
+    "no_secrets": true,
+    "language": "en",
+    "copy_of": "samples/action_records.json",
+    "copy_generated_by": "tools/gen_samples_en.py",
+    "source_language": "zh"
+  },
+  "records": [
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0001",
+      "timestamp": "2026-11-09T09:00:05.420+08:00",
+      "received_at": "2026-11-09T09:00:05.900+08:00",
+      "sequence_no": 1,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": null,
+      "depth": 0,
+      "action_type": "plan",
+      "tool_used": null,
+      "intent": "Split \"tidy the demo album and remove duplicates\" into 4 checkable steps",
+      "rationale": "A plan first, so you can change your mind midway, not after it is done",
+      "result_summary": "4 steps: scan album -> compare content hashes -> delete duplicates (needs approval) -> report",
+      "human_readable": {
+        "l1": "It started with a plan: tidy the album in 4 steps",
+        "l2": [
+          "1 - list all album files",
+          "2 - match files by content",
+          "3 - ask you before deleting",
+          "4 - output a checkable list"
+        ],
+        "l3": "plan v1 - 4 steps - content hashes (sha256) - 3620ms - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "plan.steps.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:00:06.000+08:00",
+        "source_facts_hash": "sha256:ed0495dc048e6d52feb54ffcf183f38c60205714788ca4e590595e50e526a76f",
+        "may_contain_inference": false
+      },
+      "confidence": 0.9,
+      "uncertainty": null,
+      "cost": {
+        "currency": "CNY",
+        "amount": 0.03,
+        "tokens_in": 820,
+        "tokens_out": 210,
+        "estimated": true
+      },
+      "latency_ms": 3620,
+      "status": "succeeded",
+      "requires_action": false,
+      "requires_action_reason": null,
+      "action_due_at": null,
+      "intervention_options": [],
+      "user_intervention": null,
+      "execution_receipt": {
+        "state": "unreported",
+        "reported_by": null,
+        "reported_at": null,
+        "detail": "Plan steps need no execution receipt",
+        "sdk_version": null,
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "low",
+      "impact_scope": null,
+      "policy": {
+        "requires_human_confirmation": false,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": false,
+        "min_role_to_decide": "admin"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Expand the plan step by step, or jump ahead",
+          "kind": "other",
+          "target_action_id": null
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "A",
+        "default_granularity": "L1",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": null,
+        "observation_id": null,
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:00:05.900+08:00",
+        "raw_ref": "local://raw/native/act-demo-0001/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0002",
+      "timestamp": "2026-11-09T09:00:10.000+08:00",
+      "received_at": "2026-11-09T09:00:10.400+08:00",
+      "sequence_no": 2,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "read",
+      "tool_used": {
+        "name": "filesystem.scan_album",
+        "version": "1.4",
+        "provider": "builtin",
+        "call_id": "call-demo-1001",
+        "params_summary": "album=DemoAlbum; recursive=true",
+        "result_ref": "local://raw/native/act-demo-0002/result.json"
+      },
+      "intent": "List every file in the demo album",
+      "rationale": "You need the full list before you can count duplicates",
+      "result_summary": "Found 200 demo files, about 812 MB in total",
+      "human_readable": {
+        "l1": "It listed the album: 200 demo files",
+        "l2": [
+          "Demo album, read-only",
+          "200 files, about 812 MB",
+          "List archived, check it"
+        ],
+        "l3": "filesystem.scan_album - album=DemoAlbum - 200 files - 740ms - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "read.list.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:00:10.450+08:00",
+        "source_facts_hash": "sha256:8161f74c55c9e1dbf81c72095f52167591b0c7f0e89f601f026a55ab2141f53b",
+        "may_contain_inference": false
+      },
+      "confidence": 0.98,
+      "uncertainty": null,
+      "cost": null,
+      "latency_ms": 740,
+      "status": "succeeded",
+      "requires_action": false,
+      "requires_action_reason": null,
+      "action_due_at": null,
+      "intervention_options": [],
+      "user_intervention": null,
+      "execution_receipt": {
+        "state": "unreported",
+        "reported_by": null,
+        "reported_at": null,
+        "detail": "Read-only work needs no execution receipt",
+        "sdk_version": null,
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "low",
+      "impact_scope": null,
+      "policy": {
+        "requires_human_confirmation": false,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": false,
+        "min_role_to_decide": "admin"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Expand the file list",
+          "kind": "other",
+          "target_action_id": null
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "A",
+        "default_granularity": "L1",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0002",
+        "observation_id": "obs-demo-1002",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:00:10.400+08:00",
+        "raw_ref": "local://raw/native/act-demo-0002/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0003",
+      "timestamp": "2026-11-09T09:00:16.100+08:00",
+      "received_at": "2026-11-09T09:00:18.600+08:00",
+      "sequence_no": 3,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "tool_call",
+      "tool_used": {
+        "name": "image.hash_compare",
+        "version": "0.9",
+        "provider": "builtin",
+        "call_id": "call-demo-1002",
+        "params_summary": "candidates=200; method=sha256",
+        "result_ref": "local://raw/native/act-demo-0003/result.json"
+      },
+      "intent": "Compare content hashes to find duplicate demo photos",
+      "rationale": "Only identical content counts as a duplicate; matching by name deletes the wrong files",
+      "result_summary": "12 files match kept files by content (same sha256)",
+      "human_readable": {
+        "l1": "It compared content: 12 suspected duplicates",
+        "l2": [
+          "sha256 content comparison",
+          "12 files match kept ones",
+          "Low confidence, check the list"
+        ],
+        "l3": "image.hash_compare - 200 candidates - 12 hits - 2500ms - LLM wrote the copy (facts come from tool output)",
+        "language": "en",
+        "generated_by": "hybrid",
+        "template_id": "tool.compare.v1",
+        "model": "demo-llm-1",
+        "generated_at": "2026-11-09T09:00:18.700+08:00",
+        "source_facts_hash": "sha256:5acc884ce05f48d1eb414be6837bc415a9cbef91e642554141f4281f431cf5d4",
+        "may_contain_inference": true
+      },
+      "confidence": 0.55,
+      "uncertainty": {
+        "reason": "The compare tool returned a hit count, not the per-pair matches",
+        "what_to_check": "Open the 12 pairs and check for same name, different image",
+        "affected_fields": [
+          "result_summary",
+          "risk_level"
+        ]
+      },
+      "cost": {
+        "currency": "CNY",
+        "amount": 0.01,
+        "tokens_in": 640,
+        "tokens_out": 120,
+        "estimated": true
+      },
+      "latency_ms": 2500,
+      "status": "succeeded",
+      "requires_action": false,
+      "requires_action_reason": null,
+      "action_due_at": null,
+      "intervention_options": [],
+      "user_intervention": null,
+      "execution_receipt": {
+        "state": "unreported",
+        "reported_by": null,
+        "reported_at": null,
+        "detail": "Read-only comparison needs no receipt",
+        "sdk_version": null,
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "low",
+      "impact_scope": null,
+      "policy": {
+        "requires_human_confirmation": false,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": false,
+        "min_role_to_decide": "admin"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Open the 12 pair details",
+          "kind": "other",
+          "target_action_id": "act-demo-0005"
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "B",
+        "default_granularity": "L2",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0003",
+        "observation_id": "obs-demo-1003",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:00:18.600+08:00",
+        "raw_ref": "local://raw/native/act-demo-0003/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native",
+        "low-confidence"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0004",
+      "timestamp": "2026-11-09T09:00:20.000+08:00",
+      "received_at": "2026-11-09T09:00:20.300+08:00",
+      "sequence_no": 4,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "confirm",
+      "tool_used": null,
+      "intent": "Ask you to approve tidying the demo album by the list",
+      "rationale": "Tidying moves files, so it needs your approval",
+      "result_summary": null,
+      "human_readable": {
+        "l1": "It asks for confirmation: tidy the album by the list",
+        "l2": [
+          "Moves files, not content",
+          "Check the list after moving",
+          "Disagree? Export the list"
+        ],
+        "l3": "confirm - 1 album directory - reversible (path map kept) - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "confirm.generic.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:00:20.350+08:00",
+        "source_facts_hash": "sha256:d435a4d40f56b6aa759d7f64a6956b0a8a66f05fa840bcae48621e33352bc2be",
+        "may_contain_inference": false
+      },
+      "confidence": 0.8,
+      "uncertainty": null,
+      "cost": null,
+      "latency_ms": 0,
+      "status": "pending_confirmation",
+      "requires_action": true,
+      "requires_action_reason": "Tidying moves file locations, so it waits for your approval",
+      "action_due_at": "2026-11-09T09:30:20+08:00",
+      "intervention_options": [
+        {
+          "id": "opt-demo-0004-approve",
+          "kind": "approve",
+          "label": "Approve tidy-up",
+          "description": "Move files per the list",
+          "consequence": "Reorganise the album folders, moving 188 files; content unchanged",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [],
+          "requires_reason": false,
+          "risk_note": "Moving changes the folder layout; restore from the list",
+          "dangerous": false
+        },
+        {
+          "id": "opt-demo-0004-modify",
+          "kind": "modify",
+          "label": "Approve with a smaller scope",
+          "description": "Only the part you allow",
+          "consequence": "Only your scope is tidied; the rest stays as is and is marked skipped in the list",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [
+            {
+              "name": "max_move_count",
+              "label": "Maximum files to move",
+              "type": "integer",
+              "required": true,
+              "default": 188,
+              "min": 0,
+              "max": 200,
+              "unit": "files",
+              "help_text": "0 means move no files at all"
+            }
+          ],
+          "requires_reason": false,
+          "risk_note": null,
+          "dangerous": false
+        },
+        {
+          "id": "opt-demo-0004-reject",
+          "kind": "reject",
+          "label": "Do not tidy yet",
+          "description": "List only, no file changes",
+          "consequence": "Skip tidying; export the list and leave the album untouched",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [],
+          "requires_reason": true,
+          "risk_note": null,
+          "dangerous": true
+        }
+      ],
+      "user_intervention": null,
+      "execution_receipt": {
+        "state": "unreported",
+        "reported_by": null,
+        "reported_at": null,
+        "detail": "Nobody has decided; no execution receipt",
+        "sdk_version": null,
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "medium",
+      "impact_scope": {
+        "targets": [
+          {
+            "kind": "directory",
+            "ref": "DemoAlbum/**",
+            "change": "update",
+            "count": 188
+          }
+        ],
+        "money": null,
+        "external_endpoint": null,
+        "data_categories": [
+          "none"
+        ],
+        "reversible": true,
+        "summary": "Folder locations of 188 demo files change; content unchanged"
+      },
+      "policy": {
+        "requires_human_confirmation": true,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": true,
+        "min_role_to_decide": "editor"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Read the list before deciding",
+          "kind": "other",
+          "target_action_id": "act-demo-0002"
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "A",
+        "default_granularity": "L1",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0004",
+        "observation_id": "obs-demo-1004",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:00:20.300+08:00",
+        "raw_ref": "local://raw/native/act-demo-0004/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native",
+        "needs-you"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0005",
+      "timestamp": "2026-11-09T09:01:03.000+08:00",
+      "received_at": "2026-11-09T09:01:03.350+08:00",
+      "sequence_no": 5,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "delete",
+      "tool_used": {
+        "name": "filesystem.remove",
+        "version": "1.4",
+        "provider": "builtin",
+        "call_id": "call-demo-1003",
+        "params_summary": "target=DemoAlbum/duplicates/*; count=12; move_to_trash=false",
+        "result_ref": "local://raw/native/act-demo-0005/result.json"
+      },
+      "intent": "Delete 12 demo files that duplicate kept content",
+      "rationale": "These 12 files match kept files by sha256, so deleting them does not change the content set",
+      "result_summary": null,
+      "human_readable": {
+        "l1": "12 duplicate files are queued for deletion, awaiting you",
+        "l2": [
+          "12 files match kept ones",
+          "Delete is permanent (no bin)",
+          "188 files remain after delete"
+        ],
+        "l3": "filesystem.remove - 12 targets - est. 46 MB freed - sha256 based - irreversible - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "delete.batch.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:01:03.400+08:00",
+        "source_facts_hash": "sha256:656874e4916dcffb7ebdc7b5a06f8766d10b5b9730b1b675f696081844497163",
+        "may_contain_inference": false
+      },
+      "confidence": 0.92,
+      "uncertainty": null,
+      "cost": {
+        "currency": "CNY",
+        "amount": 0.02,
+        "tokens_in": 820,
+        "tokens_out": 96,
+        "estimated": true
+      },
+      "latency_ms": 0,
+      "status": "pending_confirmation",
+      "requires_action": true,
+      "requires_action_reason": "Deletion cannot be undone and touches 12 files at once, so it needs your approval",
+      "action_due_at": "2026-11-09T09:31:03+08:00",
+      "intervention_options": [
+        {
+          "id": "opt-demo-0005-approve",
+          "kind": "approve",
+          "label": "Approve delete",
+          "description": "Delete these 12 files as planned",
+          "consequence": "Delete 12 files now, freeing about 46 MB; this cannot be undone",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [],
+          "requires_reason": false,
+          "risk_note": "This action cannot be undone",
+          "dangerous": false
+        },
+        {
+          "id": "opt-demo-0005-modify",
+          "kind": "modify",
+          "label": "Approve with fewer files",
+          "description": "Only delete what you allow",
+          "consequence": "Only your count is deleted; the rest is kept and marked skipped in the list",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [
+            {
+              "name": "max_delete_count",
+              "label": "Maximum files to delete",
+              "type": "integer",
+              "required": true,
+              "default": 12,
+              "min": 0,
+              "max": 12,
+              "unit": "files",
+              "help_text": "0 keeps everything, i.e. refuses this delete"
+            },
+            {
+              "name": "move_to_trash",
+              "label": "Move to recycle bin instead",
+              "type": "boolean",
+              "required": true,
+              "default": false,
+              "help_text": "Tick to allow recovery from the bin"
+            }
+          ],
+          "requires_reason": false,
+          "risk_note": null,
+          "dangerous": false
+        },
+        {
+          "id": "opt-demo-0005-reject",
+          "kind": "reject",
+          "label": "Reject delete",
+          "description": "Keep everything",
+          "consequence": "Skip the delete step; all 200 demo files are kept and the task is marked partially done",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [],
+          "requires_reason": true,
+          "risk_note": "A rejection only records a decision; whether it truly stops depends on the runtime SDK",
+          "dangerous": true
+        }
+      ],
+      "user_intervention": null,
+      "execution_receipt": {
+        "state": "unreported",
+        "reported_by": null,
+        "reported_at": null,
+        "detail": "Nobody has decided; no execution receipt",
+        "sdk_version": null,
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "critical",
+      "impact_scope": {
+        "targets": [
+          {
+            "kind": "file",
+            "ref": "DemoAlbum/duplicates/*",
+            "change": "delete",
+            "count": 12
+          }
+        ],
+        "money": null,
+        "external_endpoint": null,
+        "data_categories": [
+          "none"
+        ],
+        "reversible": false,
+        "summary": "12 demo photos would be deleted permanently, not sent to a recycle bin"
+      },
+      "policy": {
+        "requires_human_confirmation": true,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": true,
+        "min_role_to_decide": "editor"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Check the 12 pairs for same name, different image",
+          "kind": "other",
+          "target_action_id": "act-demo-0003"
+        },
+        {
+          "text": "Want a safety net? Choose move to recycle bin",
+          "kind": "edit_params",
+          "target_action_id": "act-demo-0005"
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "C",
+        "default_granularity": "L2",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0005",
+        "observation_id": "obs-demo-1005",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:01:03.350+08:00",
+        "raw_ref": "local://raw/native/act-demo-0005/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native",
+        "needs-you",
+        "irreversible"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0006",
+      "timestamp": "2026-11-09T09:02:05.000+08:00",
+      "received_at": "2026-11-09T09:02:05.900+08:00",
+      "sequence_no": 6,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "error",
+      "tool_used": {
+        "name": "thumbnail.generate_preview",
+        "version": "0.6",
+        "provider": "builtin",
+        "call_id": "call-demo-1004",
+        "params_summary": "album=DemoAlbum; size=thumbnail",
+        "result_ref": "local://raw/native/act-demo-0006/result.json"
+      },
+      "intent": "Generate a thumbnail preview so people can check what stays",
+      "rationale": "A preview shows at a glance what was removed",
+      "result_summary": null,
+      "human_readable": {
+        "l1": "Preview failed: not enough disk space",
+        "l2": [
+          "Thumbnail cache write failed",
+          "Scan and compare unaffected",
+          "No auto retry; your call"
+        ],
+        "l3": "thumbnail.generate_preview - ENOSPC - 900ms - no auto retry - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "error.generic.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:02:05.950+08:00",
+        "source_facts_hash": "sha256:f682adec31a21abb347a30fecb003c4d13f598f291571135e8c7c7db77e95314",
+        "may_contain_inference": false
+      },
+      "confidence": 1.0,
+      "uncertainty": null,
+      "cost": null,
+      "latency_ms": 900,
+      "status": "failed",
+      "requires_action": false,
+      "requires_action_reason": null,
+      "action_due_at": null,
+      "intervention_options": [],
+      "user_intervention": null,
+      "execution_receipt": {
+        "state": "unreported",
+        "reported_by": null,
+        "reported_at": null,
+        "detail": "Failure reported by the source; no extra receipt",
+        "sdk_version": null,
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "low",
+      "impact_scope": null,
+      "policy": {
+        "requires_human_confirmation": false,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": false,
+        "min_role_to_decide": "admin"
+      },
+      "error": {
+        "code": "ENOSPC",
+        "human_reason": "Disk space ran out, so thumbnails could not be written (demo scenario, not a real machine state)",
+        "technical_detail_ref": "local://raw/native/act-demo-0006/stderr.log",
+        "retryable": true,
+        "failed_step": "Generate thumbnail preview"
+      },
+      "suggested_next": [
+        {
+          "text": "Free disk space, then retry this step",
+          "kind": "retry",
+          "target_action_id": "act-demo-0006"
+        },
+        {
+          "text": "Skip the preview, read the text list",
+          "kind": "ignore",
+          "target_action_id": "act-demo-0006"
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "A",
+        "default_granularity": "L1",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0006",
+        "observation_id": "obs-demo-1006",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:02:05.900+08:00",
+        "raw_ref": "local://raw/native/act-demo-0006/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native",
+        "failed"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0007",
+      "timestamp": "2026-11-09T09:03:00.000+08:00",
+      "received_at": "2026-11-09T09:03:00.400+08:00",
+      "sequence_no": 7,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "write",
+      "tool_used": {
+        "name": "notes.write",
+        "version": "1.1",
+        "provider": "builtin",
+        "call_id": "call-demo-1005",
+        "params_summary": "path=DemoAlbum/notes/limited.md; bytes=128",
+        "result_ref": "local://raw/native/act-demo-0007/result.json"
+      },
+      "intent": "Write a dedupe note recording why this judgement was made",
+      "rationale": "A written basis lets you check the reasoning afterwards",
+      "result_summary": "Note written with your modified parameters (128 bytes)",
+      "human_readable": {
+        "l1": "Wrote the note using the parameters you changed",
+        "l2": [
+          "Plan: 512 bytes to all.md",
+          "You set 128B to limited.md",
+          "Receipt: write finished"
+        ],
+        "l3": "notes.write - 128 bytes - decision=int modified - receipt=executed - request_id int-demo-0007 - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "write.modified.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:03:12.000+08:00",
+        "source_facts_hash": "sha256:5bb813ca111c218048265ff037265410e5b605185b9c8cfc471a134d3eee8486",
+        "may_contain_inference": false
+      },
+      "confidence": 0.95,
+      "uncertainty": null,
+      "cost": null,
+      "latency_ms": 320,
+      "status": "modified",
+      "requires_action": false,
+      "requires_action_reason": null,
+      "action_due_at": null,
+      "intervention_options": [],
+      "user_intervention": {
+        "decision": "modify",
+        "decided_by": "local",
+        "decided_at": "2026-11-09T09:03:10.000+08:00",
+        "reason": "One summary page is enough; do not write the whole list into the album",
+        "original_params": {
+          "path": "DemoAlbum/notes/all.md",
+          "bytes": 512
+        },
+        "modified_params": {
+          "path": "DemoAlbum/notes/limited.md",
+          "bytes": 128
+        },
+        "decided_by_role": "editor",
+        "request_id": "int-demo-0007",
+        "recorded": true,
+        "option_id": null
+      },
+      "execution_receipt": {
+        "state": "executed",
+        "reported_by": "demo-runtime@0.3.1",
+        "reported_at": "2026-11-09T09:03:11.200+08:00",
+        "detail": "The runtime executed the modified parameters (demo SDK receipt)",
+        "sdk_version": "0.3.1",
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "low",
+      "impact_scope": null,
+      "policy": {
+        "requires_human_confirmation": false,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": false,
+        "min_role_to_decide": "editor"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Open the note to check the reasoning",
+          "kind": "other",
+          "target_action_id": null
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "C",
+        "default_granularity": "L3",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0007",
+        "observation_id": "obs-demo-1007",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:03:00.400+08:00",
+        "raw_ref": "local://raw/native/act-demo-0007/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native",
+        "modified",
+        "executed"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0008",
+      "timestamp": "2026-11-09T09:04:00.000+08:00",
+      "received_at": "2026-11-09T09:04:00.300+08:00",
+      "sequence_no": 8,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "send",
+      "tool_used": {
+        "name": "message.send_email",
+        "version": "2.0",
+        "provider": "builtin",
+        "call_id": "call-demo-1006",
+        "params_summary": "to=3 demo contacts; attachments=1",
+        "result_ref": "local://raw/native/act-demo-0008/result.json"
+      },
+      "intent": "Send the tidying result to 3 demo contacts",
+      "rationale": "The report is for other people, so you approve the content first",
+      "result_summary": null,
+      "human_readable": {
+        "l1": "It wants to email 3 people, awaiting your approval",
+        "l2": [
+          "Recipients: 3 demo contacts",
+          "Attachment: list of 12 files",
+          "Sent means sent, no recall"
+        ],
+        "l3": "message.send_email - 3 recipients - 1 attachment - personal-data demo - irreversible - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "send.external.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:04:00.350+08:00",
+        "source_facts_hash": "sha256:7fa30d070eb66d9464d39d540d78dcac9779dfa03aa273a014be2f76846038b8",
+        "may_contain_inference": false
+      },
+      "confidence": 0.85,
+      "uncertainty": null,
+      "cost": null,
+      "latency_ms": 0,
+      "status": "pending_confirmation",
+      "requires_action": true,
+      "requires_action_reason": "The email leaves this machine and contains personal information; sent means sent",
+      "action_due_at": "2026-11-09T09:34:00+08:00",
+      "intervention_options": [
+        {
+          "id": "opt-demo-0008-approve",
+          "kind": "approve",
+          "label": "Approve send",
+          "description": "Send as-is to the 3 contacts",
+          "consequence": "Email and attachment go out immediately; this machine cannot recall them",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [],
+          "requires_reason": false,
+          "risk_note": "Contains personal information; cannot be recalled once sent",
+          "dangerous": false
+        },
+        {
+          "id": "opt-demo-0008-modify",
+          "kind": "modify",
+          "label": "Approve with new recipients",
+          "description": "Change recipients or strip personal data",
+          "consequence": "Only your recipients get it, and the attachment is replaced by the redacted version",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [
+            {
+              "name": "recipients",
+              "label": "Recipient list",
+              "type": "text",
+              "required": true,
+              "default": "demo-contact-1;demo-contact-2",
+              "help_text": "Separate with semicolons; empty means do not send"
+            },
+            {
+              "name": "redact_personal",
+              "label": "Redact personal data on export",
+              "type": "boolean",
+              "required": true,
+              "default": true
+            }
+          ],
+          "requires_reason": false,
+          "risk_note": null,
+          "dangerous": false
+        },
+        {
+          "id": "opt-demo-0008-reject",
+          "kind": "reject",
+          "label": "Do not send",
+          "description": "Keep the report on this machine only",
+          "consequence": "Skip sending; the report stays on this machine and recipients get nothing",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [],
+          "requires_reason": true,
+          "risk_note": "A rejection only records a decision; whether sending truly stops depends on the runtime SDK",
+          "dangerous": true
+        }
+      ],
+      "user_intervention": null,
+      "execution_receipt": {
+        "state": "unreported",
+        "reported_by": null,
+        "reported_at": null,
+        "detail": "Nobody has decided; no execution receipt",
+        "sdk_version": null,
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "high",
+      "impact_scope": {
+        "targets": [
+          {
+            "kind": "mailbox",
+            "ref": "DemoInbox/demo-contacts",
+            "change": "send",
+            "count": 3
+          }
+        ],
+        "money": null,
+        "external_endpoint": {
+          "url": "https://demo.example.local/mail",
+          "method": "POST",
+          "audience": "3 demo contacts (synthetic)"
+        },
+        "data_categories": [
+          "personal_data"
+        ],
+        "reversible": false,
+        "summary": "3 demo contacts would receive an email flagged with personal-data categories plus 1 attachment"
+      },
+      "policy": {
+        "requires_human_confirmation": true,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": true,
+        "min_role_to_decide": "admin"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Read the email body and attachment, then decide on redaction",
+          "kind": "other",
+          "target_action_id": null
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "C",
+        "default_granularity": "L2",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0008",
+        "observation_id": "obs-demo-1008",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:04:00.300+08:00",
+        "raw_ref": "local://raw/native/act-demo-0008/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native",
+        "needs-you",
+        "personal-data"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0009",
+      "timestamp": "2026-11-09T09:05:00.000+08:00",
+      "received_at": "2026-11-09T09:05:00.200+08:00",
+      "sequence_no": 9,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "ask",
+      "tool_used": null,
+      "intent": "Ask you whether video files join the dedupe",
+      "rationale": "Hashing video is slow; you decide, it does not decide for you",
+      "result_summary": null,
+      "human_readable": {
+        "l1": "It is asking: include video in the comparison?",
+        "l2": [
+          "Video hashing: ~20 min",
+          "Without it, images only",
+          "It waits until you answer"
+        ],
+        "l3": "ask - video dedupe scope - about 20 extra minutes - a question is not an approval card - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "ask.question.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:05:00.250+08:00",
+        "source_facts_hash": "sha256:925a77420f58340940d42cfea66eea781d548f5e097c33939cae033fbdb79ee1",
+        "may_contain_inference": false
+      },
+      "confidence": 0.7,
+      "uncertainty": null,
+      "cost": null,
+      "latency_ms": 0,
+      "status": "running",
+      "requires_action": false,
+      "requires_action_reason": null,
+      "action_due_at": null,
+      "intervention_options": [],
+      "user_intervention": null,
+      "execution_receipt": {
+        "state": "unreported",
+        "reported_by": null,
+        "reported_at": null,
+        "detail": "A pending question needs no execution receipt",
+        "sdk_version": null,
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "low",
+      "impact_scope": null,
+      "policy": {
+        "requires_human_confirmation": false,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": false,
+        "min_role_to_decide": "local"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Answer yes or no and it continues",
+          "kind": "provide_input",
+          "target_action_id": "act-demo-0009"
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "B",
+        "default_granularity": "L1",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0009",
+        "observation_id": "obs-demo-1009",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:05:00.200+08:00",
+        "raw_ref": "local://raw/native/act-demo-0009/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native",
+        "question"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0010",
+      "timestamp": "2026-11-09T09:06:00.000+08:00",
+      "received_at": "2026-11-09T09:06:00.300+08:00",
+      "sequence_no": 10,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "config_change",
+      "tool_used": {
+        "name": "plugin.set_permission",
+        "version": "0.8",
+        "provider": "builtin",
+        "call_id": "call-demo-1007",
+        "params_summary": "plugin=demo-album-plugin; grant=filesystem.write",
+        "result_ref": "local://raw/native/act-demo-0010/result.json"
+      },
+      "intent": "Enable write permission for the demo plugin",
+      "rationale": "Only then can it write the list file; this widens permissions",
+      "result_summary": "You refused the widening; permissions unchanged",
+      "human_readable": {
+        "l1": "You refused: no new write permission",
+        "l2": [
+          "Plugin asked for write access",
+          "You rejected with a reason",
+          "Receipt: aborted on rejection"
+        ],
+        "l3": "plugin.set_permission - decision=rejected - receipt=refused_by_runtime - request_id int-demo-0010 - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "config.rejected.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:06:12.000+08:00",
+        "source_facts_hash": "sha256:5bb908492d4c8be2b5f63efcbb90e00be40ad2861e4a9c1f56cef27c7befb3fa",
+        "may_contain_inference": false
+      },
+      "confidence": 1.0,
+      "uncertainty": null,
+      "cost": null,
+      "latency_ms": 120,
+      "status": "rejected",
+      "requires_action": false,
+      "requires_action_reason": null,
+      "action_due_at": null,
+      "intervention_options": [],
+      "user_intervention": {
+        "decision": "reject",
+        "decided_by": "local",
+        "decided_at": "2026-11-09T09:06:10.000+08:00",
+        "reason": "No write permission for the plugin; manual export is enough",
+        "decided_by_role": "admin",
+        "request_id": "int-demo-0010",
+        "recorded": true,
+        "option_id": null
+      },
+      "execution_receipt": {
+        "state": "refused_by_runtime",
+        "reported_by": "demo-runtime@0.3.1",
+        "reported_at": "2026-11-09T09:06:11.000+08:00",
+        "detail": "The demo SDK read the rejected decision and stopped this step (real blocking needs a runtime SDK)",
+        "sdk_version": "0.3.1",
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "medium",
+      "impact_scope": {
+        "targets": [
+          {
+            "kind": "service",
+            "ref": "demo-album-plugin/permissions",
+            "change": "update",
+            "count": 1
+          }
+        ],
+        "money": null,
+        "external_endpoint": null,
+        "data_categories": [
+          "credentials"
+        ],
+        "reversible": true,
+        "summary": "Demo plugin permission scope change (ultimately not executed)"
+      },
+      "policy": {
+        "requires_human_confirmation": true,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": true,
+        "min_role_to_decide": "admin"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Keep manual export, change no permissions",
+          "kind": "ignore",
+          "target_action_id": "act-demo-0010"
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "C",
+        "default_granularity": "L3",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0010",
+        "observation_id": "obs-demo-1010",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:06:00.300+08:00",
+        "raw_ref": "local://raw/native/act-demo-0010/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native",
+        "rejected",
+        "refused-by-runtime"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0011",
+      "timestamp": "2026-11-09T09:07:00.000+08:00",
+      "received_at": "2026-11-09T09:07:00.250+08:00",
+      "sequence_no": 11,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "wait",
+      "tool_used": null,
+      "intent": "Waiting over 30 minutes for your answer on video dedupe",
+      "rationale": "It will not decide for you, and a timeout does not make it run on",
+      "result_summary": null,
+      "human_readable": {
+        "l1": "Timed out: still waiting for your answer",
+        "l2": [
+          "Waiting over 30 minutes",
+          "It did not decide or run on",
+          "Answer any time and it resumes"
+        ],
+        "l3": "wait - timeout keep_pending - due 2026-11-09 09:37 - nothing executed automatically - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "wait.expired.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:37:00.300+08:00",
+        "source_facts_hash": "sha256:a6730ef6e0fbe05d3f3d7d97c7bed91e5256789fe48380a023acdb8f1e253758",
+        "may_contain_inference": false
+      },
+      "confidence": 1.0,
+      "uncertainty": null,
+      "cost": null,
+      "latency_ms": 1800000,
+      "status": "expired",
+      "requires_action": true,
+      "requires_action_reason": "This step needs your answer; a timeout executes nothing, you decide",
+      "action_due_at": "2026-11-09T09:37:00+08:00",
+      "intervention_options": [
+        {
+          "id": "opt-demo-0011-approve",
+          "kind": "approve",
+          "label": "Include video",
+          "description": "Continue, video included",
+          "consequence": "Run video hashing, about 20 extra minutes; other work can continue meanwhile",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [],
+          "requires_reason": false,
+          "risk_note": null,
+          "dangerous": false
+        },
+        {
+          "id": "opt-demo-0011-modify",
+          "kind": "modify",
+          "label": "Last month only",
+          "description": "Narrow the scope and continue",
+          "consequence": "Only videos from the last month, about 3 extra minutes",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [
+            {
+              "name": "months_back",
+              "label": "Months to look back",
+              "type": "integer",
+              "required": true,
+              "default": 1,
+              "min": 1,
+              "max": 24,
+              "unit": "months"
+            }
+          ],
+          "requires_reason": false,
+          "risk_note": null,
+          "dangerous": false
+        },
+        {
+          "id": "opt-demo-0011-reject",
+          "kind": "reject",
+          "label": "No video",
+          "description": "Images only",
+          "consequence": "Skip video comparison; images only, straight to the summary",
+          "effect_notice": "intervention.effect.recorded_only",
+          "editable_fields": [],
+          "requires_reason": true,
+          "risk_note": null,
+          "dangerous": true
+        }
+      ],
+      "user_intervention": null,
+      "execution_receipt": {
+        "state": "unreported",
+        "reported_by": null,
+        "reported_at": null,
+        "detail": "Timed out and paused; no action was executed",
+        "sdk_version": null,
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "low",
+      "impact_scope": null,
+      "policy": {
+        "requires_human_confirmation": true,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": true,
+        "min_role_to_decide": "editor"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Answer whether to compare video and it resumes",
+          "kind": "provide_input",
+          "target_action_id": "act-demo-0011"
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "A",
+        "default_granularity": "L1",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0011",
+        "observation_id": "obs-demo-1011",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:07:00.250+08:00",
+        "raw_ref": "local://raw/native/act-demo-0011/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native",
+        "needs-you",
+        "expired"
+      ]
+    },
+    {
+      "schema_version": "1.1",
+      "id": "act-demo-0012",
+      "timestamp": "2026-11-09T09:10:00.000+08:00",
+      "received_at": "2026-11-09T09:10:00.300+08:00",
+      "sequence_no": 12,
+      "agent_id": "demo-photo-bot",
+      "agent_name": "Album Assistant (demo)",
+      "actor_id": "local",
+      "workspace_id": "default",
+      "session_id": "sess-demo-native-01",
+      "run_id": "run-1",
+      "parent_action_id": "act-demo-0001",
+      "depth": 1,
+      "action_type": "finish",
+      "tool_used": null,
+      "intent": "Summarise this demo task and hand over what is left",
+      "rationale": "At the end, state what was done, what was not, and what still waits for you",
+      "result_summary": "Scan and compare done; delete rejected; note written; video comparison awaits your answer",
+      "human_readable": {
+        "l1": "Finished: 0 deleted, 1 item waiting for you",
+        "l2": [
+          "200 scanned, 12 duplicates",
+          "Delete rejected, files kept",
+          "Video comparison awaits you"
+        ],
+        "l3": "finish - scanned 200 - 12 duplicates - 0 deleted (rejected) - 1 open item - demo data",
+        "language": "en",
+        "generated_by": "template",
+        "template_id": "finish.summary.v1",
+        "model": null,
+        "generated_at": "2026-11-09T09:10:00.350+08:00",
+        "source_facts_hash": "sha256:f6675b35b4ee4bbb9844685170636de3e82ee376ece09ec9268fe76d5b1c62e0",
+        "may_contain_inference": false
+      },
+      "confidence": 1.0,
+      "uncertainty": null,
+      "cost": {
+        "currency": "CNY",
+        "amount": 0.04,
+        "tokens_in": 1450,
+        "tokens_out": 330,
+        "estimated": true
+      },
+      "latency_ms": 520,
+      "status": "succeeded",
+      "requires_action": false,
+      "requires_action_reason": null,
+      "action_due_at": null,
+      "intervention_options": [],
+      "user_intervention": null,
+      "execution_receipt": {
+        "state": "unreported",
+        "reported_by": null,
+        "reported_at": null,
+        "detail": "A summary is explanatory; no execution receipt",
+        "sdk_version": null,
+        "effect_notice": "intervention.effect.recorded_only"
+      },
+      "risk_level": "low",
+      "impact_scope": null,
+      "policy": {
+        "requires_human_confirmation": false,
+        "auto_approve_forbidden": true,
+        "timeout_behavior": "keep_pending",
+        "queue_serial": false,
+        "min_role_to_decide": "admin"
+      },
+      "error": null,
+      "suggested_next": [
+        {
+          "text": "Back to the open item: answer the video question",
+          "kind": "provide_input",
+          "target_action_id": "act-demo-0011"
+        }
+      ],
+      "context": {
+        "task_name": "Tidy the demo album and remove duplicates",
+        "audience_profile": "A",
+        "default_granularity": "L1",
+        "user_language": "zh"
+      },
+      "trace_link": {
+        "trace_id": "trc-demo-native-01",
+        "span_id": "spn-0012",
+        "observation_id": "obs-demo-1012",
+        "source_url": "local://samples/action_records.json"
+      },
+      "source": {
+        "kind": "demo",
+        "adapter": "native",
+        "format_version": "ActionRecord schema 1.1",
+        "source_uri": "samples/action_records_en.json",
+        "ingested_at": "2026-11-09T09:10:00.300+08:00",
+        "raw_ref": "local://raw/native/act-demo-0012/source.json"
+      },
+      "demo_data": true,
+      "synthetic": true,
+      "labels": [
+        "demo",
+        "synthetic",
+        "native",
+        "finish"
+      ]
+    }
+  ]
+}

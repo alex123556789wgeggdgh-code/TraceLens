@@ -1,0 +1,51 @@
+# Docker 构建上下文排除清单（子任务 5.4 / t17）
+#
+# 构建上下文 = 仓库根 agent-explainer/。下面这些**都不该进镜像**：
+# 它们要么是本机打包前置（desktop/node_modules 上 GB）、要么是运行期数据、
+# 要么是构建/测试脚手架。Dockerfile 只 COPY agent_explainer/ 与 samples/，
+# 这份清单的作用是把上下文 tar 本身也压小（否则 docker 客户端要先把 1 GB
+# 无关文件传给 daemon）。
+
+# ---- 版本控制 / 编辑器 ----
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+
+# ---- 运行期数据与产物（绝不打进镜像）----
+var/
+data/
+logs/
+release/
+desktop/node_modules/
+node_modules/
+.npm-cache/
+.cache/
+.tmp*
+*.log
+
+# ---- 本机打包前置与证据（t12 / t26 的桌面产物，镜像不需要）----
+desktop/
+_pylibs/
+_wheels/
+_sidecartest/
+_sidecartest2/
+_tmp/
+
+# ---- 构建/测试脚手架（运行时一行都用不上）----
+tests/
+tools/__pycache__/
+docs/
+README.md
+
+# ---- Python 缓存 ----
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# ---- 本地密钥/证书（万一有人把私钥放进来，不要进镜像层）----
+*.pfx
+*.key
+*.cer
+.env

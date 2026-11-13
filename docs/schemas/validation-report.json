@@ -1,0 +1,270 @@
+{
+  "checks": [
+    {
+      "name": "stdlib_mini 元校验（自研纯标准库）",
+      "detail": "ok",
+      "passed": true
+    },
+    {
+      "name": "jsonschema 元校验（Draft 2020-12 元模式）",
+      "detail": "ok",
+      "passed": true
+    },
+    {
+      "name": "正向记录 act-0012-del-duplicates",
+      "detail": "act-0012-del-duplicates: stdlib=ok, jsonschema=ok, facts_hash=一致",
+      "passed": true
+    },
+    {
+      "name": "正向记录 act-0031-tool-run-tests",
+      "detail": "act-0031-tool-run-tests: stdlib=ok, jsonschema=ok, facts_hash=一致",
+      "passed": true
+    },
+    {
+      "name": "正向记录 act-0004-read-contracts",
+      "detail": "act-0004-read-contracts: stdlib=ok, jsonschema=ok, facts_hash=一致",
+      "passed": true
+    },
+    {
+      "name": "正向记录 act-0058-config-change",
+      "detail": "act-0058-config-change: stdlib=ok, jsonschema=ok, facts_hash=一致",
+      "passed": true
+    },
+    {
+      "name": "正向记录 act-0071-send-announce",
+      "detail": "act-0071-send-announce: stdlib=ok, jsonschema=ok, facts_hash=一致",
+      "passed": true
+    },
+    {
+      "name": "正向记录 act-0083-ask-missing-info",
+      "detail": "act-0083-ask-missing-info: stdlib=ok, jsonschema=ok, facts_hash=一致",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N01_missing_actor_id",
+      "detail": "N01_missing_actor_id: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N02_missing_workspace_id",
+      "detail": "N02_missing_workspace_id: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N03_bad_id_pattern",
+      "detail": "N03_bad_id_pattern: 命中关键字 stdlib=['pattern'] jsonschema=['pattern']；期望 ['pattern']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N04_only_two_options",
+      "detail": "N04_only_two_options: 命中关键字 stdlib=['contains', 'minItems'] jsonschema=['contains', 'minItems']；期望 ['contains', 'minItems']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N05_options_without_consequence",
+      "detail": "N05_options_without_consequence: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N06_reject_not_requiring_reason",
+      "detail": "N06_reject_not_requiring_reason: 命中关键字 stdlib=['const'] jsonschema=['const']；期望 ['const']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N07_modify_without_fields",
+      "detail": "N07_modify_without_fields: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['minItems', 'required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N08_no_reason_for_human",
+      "detail": "N08_no_reason_for_human: 命中关键字 stdlib=['type'] jsonschema=['type']；期望 ['minLength', 'required', 'type']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N09_pending_but_running",
+      "detail": "N09_pending_but_running: 命中关键字 stdlib=['enum'] jsonschema=['enum']；期望 ['enum']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N10_pending_with_decision",
+      "detail": "N10_pending_with_decision: 命中关键字 stdlib=['type'] jsonschema=['type']；期望 ['type']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N11_status_decision_mismatch",
+      "detail": "N11_status_decision_mismatch: 命中关键字 stdlib=['const'] jsonschema=['const']；期望 ['const']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N12_executed_without_receipt_time",
+      "detail": "N12_executed_without_receipt_time: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N13_invented_execution_state",
+      "detail": "N13_invented_execution_state: 命中关键字 stdlib=['enum'] jsonschema=['enum']；期望 ['enum']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N14_expired_with_executed",
+      "detail": "N14_expired_with_executed: 命中关键字 stdlib=['enum'] jsonschema=['enum']；期望 ['const', 'enum']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N15_auto_approve_allowed",
+      "detail": "N15_auto_approve_allowed: 命中关键字 stdlib=['const'] jsonschema=['const']；期望 ['const']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N16_timeout_auto_approve",
+      "detail": "N16_timeout_auto_approve: 命中关键字 stdlib=['const'] jsonschema=['const']；期望 ['const']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N17_timestamp_without_timezone",
+      "detail": "N17_timestamp_without_timezone: 命中关键字 stdlib=['pattern'] jsonschema=['pattern']；期望 ['format', 'pattern']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N18_failed_without_error",
+      "detail": "N18_failed_without_error: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N19_failed_without_suggestion",
+      "detail": "N19_failed_without_suggestion: 命中关键字 stdlib=['minItems'] jsonschema=['minItems']；期望 ['minItems', 'required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N20_succeeded_without_summary",
+      "detail": "N20_succeeded_without_summary: 命中关键字 stdlib=['type'] jsonschema=['type']；期望 ['minLength', 'required', 'type']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N21_llm_without_inference_flag",
+      "detail": "N21_llm_without_inference_flag: 命中关键字 stdlib=['const'] jsonschema=['const']；期望 ['const']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N22_low_confidence_no_uncertainty",
+      "detail": "N22_low_confidence_no_uncertainty: 命中关键字 stdlib=['type'] jsonschema=['type']；期望 ['required', 'type']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N23_missing_facts_hash",
+      "detail": "N23_missing_facts_hash: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N24_l1_too_long",
+      "detail": "N24_l1_too_long: 命中关键字 stdlib=['maxLength'] jsonschema=['maxLength']；期望 ['maxLength']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N25_critical_without_impact",
+      "detail": "N25_critical_without_impact: 命中关键字 stdlib=['type'] jsonschema=['type']；期望 ['required', 'type']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N26_critical_without_human",
+      "detail": "N26_critical_without_human: 命中关键字 stdlib=['const'] jsonschema=['const']；期望 ['const']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N27_impact_targets_empty",
+      "detail": "N27_impact_targets_empty: 命中关键字 stdlib=['minItems'] jsonschema=['minItems']；期望 ['minItems']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N28_external_send_no_impact",
+      "detail": "N28_external_send_no_impact: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required', 'type']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N29_demo_from_webhook",
+      "detail": "N29_demo_from_webhook: 命中关键字 stdlib=['const'] jsonschema=['const']；期望 ['const']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N30_demo_flag_lost",
+      "detail": "N30_demo_flag_lost: 命中关键字 stdlib=['const'] jsonschema=['const']；期望 ['const']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N31_duplicate_labels",
+      "detail": "N31_duplicate_labels: 命中关键字 stdlib=['uniqueItems'] jsonschema=['uniqueItems']；期望 ['uniqueItems']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N39_missing_source",
+      "detail": "N39_missing_source: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N32_unknown_top_level_field",
+      "detail": "N32_unknown_top_level_field: 命中关键字 stdlib=['additionalProperties'] jsonschema=['additionalProperties']；期望 ['additionalProperties']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N33_old_schema_version",
+      "detail": "N33_old_schema_version: 命中关键字 stdlib=['const'] jsonschema=['const']；期望 ['const']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N34_negative_latency",
+      "detail": "N34_negative_latency: 命中关键字 stdlib=['minimum'] jsonschema=['minimum']；期望 ['minimum']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N35_cost_missing_currency",
+      "detail": "N35_cost_missing_currency: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N36_modify_without_params",
+      "detail": "N36_modify_without_params: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N37_reject_without_reason",
+      "detail": "N37_reject_without_reason: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "负向用例 N38_rendering_no_language",
+      "detail": "N38_rendering_no_language: 命中关键字 stdlib=['required'] jsonschema=['required']；期望 ['required']",
+      "passed": true
+    },
+    {
+      "name": "产品级语义约束（A9 长度/三选项/隐私 lint/时序）",
+      "detail": "全部通过",
+      "passed": true
+    },
+    {
+      "name": "隐私 lint 自检（真实路径/密钥必须被抓到且不误伤）",
+      "detail": "坏样本 5 条全部命中；好样本 4 条零误报",
+      "passed": true
+    },
+    {
+      "name": "任务点名字段与 10 类动作覆盖",
+      "detail": "action_type 枚举 16 类，缺 无；任务点名字段 20 个，缺 无",
+      "passed": true
+    }
+  ],
+  "engine_mismatches": 0,
+  "schema": "E:\\DEEPSEEK 黑奴\\agent-explainer\\docs\\schemas\\action_record.schema.json",
+  "engine_status": {
+    "stdlib_mini": "active",
+    "jsonschema": "active"
+  },
+  "covered_action_types": [
+    "ask",
+    "config_change",
+    "delete",
+    "read",
+    "send",
+    "tool_call"
+  ],
+  "passed": true,
+  "summary": "检查项 50 项：通过 50，失败 0；正向示例 6 条（要求 ≥3），负向用例 39 条（要求 ≥1）"
+}

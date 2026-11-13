@@ -1,0 +1,2378 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracelens.local/schemas/action_record.schema.json",
+  "title": "ActionRecord",
+  "description": "TraceLens（行动透镜）行动记录 v1.1 —— AI 助手一个动作的『最小可解释单元』。一条记录回答四件事：做了什么 / 为什么 / 结果如何 / 现在需不需要你拍板。设计约束：(P3) 人话文案必须能由结构化事实重建，human_readable 不是唯一事实来源；(P4) 决定已记录 ≠ 执行已发生，决策状态与执行回执严格分离；(P5) 未知原始数据只收指针 raw_ref，不收明文。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "timestamp",
+    "agent_id",
+    "actor_id",
+    "workspace_id",
+    "session_id",
+    "parent_action_id",
+    "action_type",
+    "tool_used",
+    "intent",
+    "rationale",
+    "result_summary",
+    "human_readable",
+    "confidence",
+    "cost",
+    "latency_ms",
+    "status",
+    "requires_action",
+    "intervention_options",
+    "user_intervention",
+    "execution_receipt",
+    "risk_level",
+    "policy",
+    "source",
+    "demo_data",
+    "synthetic"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.1",
+      "description": "本 schema 的语义化版本。写入 SQLite 前由 trace_adapter 校验；不匹配 → 返回错误码 SCHEMA_VERSION_UNSUPPORTED，禁止静默兼容。"
+    },
+    "id": {
+      "$ref": "#/$defs/identifier",
+      "description": "记录唯一 ID（幂等键）。webhook/SDK 重复上报同一 id 必须去重，不得产生重复卡片。"
+    },
+    "timestamp": {
+      "$ref": "#/$defs/timestamp",
+      "description": "动作发生时间（来源系统时间），必须带时区偏移；用于排序与时间轴回放。"
+    },
+    "received_at": {
+      "$ref": "#/typelets/nullableTimestamp",
+      "description": "TraceLens 入库时间（本机时间）。与 timestamp 的差 = 管道延迟，是 K-04『SSE 端到端 < 1s』的度量依据。"
+    },
+    "sequence_no": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "同一 session 内的单调递增序号，解决同一毫秒多条记录的排序稳定性；缺失时由 store 层按 timestamp + id 补齐。"
+    },
+    "agent_id": {
+      "$ref": "#/$defs/identifier",
+      "description": "产生该动作的 AI 助手标识（例如 deepseek-harness、my-ops-bot）。翻译模板按 agent_id 选词。"
+    },
+    "agent_name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "展示用助手名（可中文）。"
+    },
+    "actor_id": {
+      "$ref": "#/$defs/identifier",
+      "description": "数据归属者 = 本机默认用户（local 模式固定为 local）或团队模式的用户 ID。用于 6.4 权限矩阵的数据隔离与责任归属，禁止为空。"
+    },
+    "workspace_id": {
+      "$ref": "#/$defs/identifier",
+      "description": "数据空间 ID。v1 单一 workspace（Q3 裁决）固定为 default；字段先落库，避免未来多空间时改表。"
+    },
+    "session_id": {
+      "$ref": "#/$defs/identifier",
+      "description": "一次会话/一个任务的容器，三区视图与时间轴的分组单位。"
+    },
+    "run_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128,
+      "description": "会话内的一次执行尝试（可选）；用于失败重试的分组。"
+    },
+    "parent_action_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "description": "父动作 ID，构成动作树（S3 层级回放）。顶层动作必须显式为 null，不允许缺字段。"
+    },
+    "depth": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 32,
+      "description": "层级深度，由 store 层从 parent_action_id 推导；冗余存储换取筛选性能（<200ms 基线）。"
+    },
+    "action_type": {
+      "type": "string",
+      "enum": [
+        "read",
+        "write",
+        "delete",
+        "plan",
+        "confirm",
+        "ask",
+        "error",
+        "tool_call",
+        "wait",
+        "finish",
+        "intervention",
+        "rollback",
+        "config_change",
+        "send",
+        "payment",
+        "export",
+        "other"
+      ],
+      "description": "动作类别（17 类，5.0 起新增 rollback）。必须覆盖 t1 点名的 10 类（read/write/plan/confirm/error/ask/tool_call/wait/finish/intervention）；error 表示来源上报的错误事件（失败详情看 status+error），其余为高危与副作用扩展；rollback = 撤销某个已发生动作的补偿动作（功能一），它本身也是一条被审计、被签名的记录，并且必须给出 rollback_ref 指明撤销的是谁。"
+    },
+    "tool_used": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "所用工具（L3 参数级展示的证据来源）。非工具类动作必须显式为 null。",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 40
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "call_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "params_summary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500,
+          "description": "入参的脱敏人话摘要（禁止写入完整参数明文；隐私要求：参数不落日志、导出可选脱敏）。"
+        },
+        "result_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 300,
+          "description": "出参在本地存储中的指针（不内联大对象）。"
+        }
+      }
+    },
+    "tool": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 120,
+      "description": "5.0 行为签名域里的『工具名』：由 secretariat.sign_record 从 tool_used.name 派生后写回（不是新的用户输入）。存在的意义是让离线方复算签名时知道这条记录签的是哪个工具调用；非工具动作为 null。"
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "它打算做什么（来源可证事实，非润色）。四要素之『做了什么』的原始素材。"
+    },
+    "rationale": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1000,
+      "description": "它为什么这么做（四要素之『为什么』）。缺失时必须显式为 null，翻译层输出降级文案『来源未提供原因』，禁止编造。"
+    },
+    "result_summary": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1000,
+      "description": "客观结果摘要（四要素之『结果』）。status=succeeded 时必须非空。"
+    },
+    "human_readable": {
+      "type": "object",
+      "description": "翻译层产物（P3 护栏落地点）：文案是结构化事实的函数，source_facts_hash 让『润色有没有新增事实』可被机器验证。",
+      "required": [
+        "l1",
+        "language",
+        "generated_by",
+        "source_facts_hash"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "l1": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "L1 结果级：一句话结论 + 现状 + 需要你做什么。硬约束 ≤40 字（英文 ≤80 字符）。"
+        },
+        "l2": {
+          "type": "array",
+          "maxItems": 7,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": "L2 步骤级：3–7 条，每条一句『为什么』（每条 ≤30 字）。"
+        },
+        "l3": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000,
+          "description": "L3 参数级：工具/入参/耗时/成本/依据；单条 ≤120 字，明细走 detail 展开。"
+        },
+        "language": {
+          "enum": [
+            "zh",
+            "en"
+          ],
+          "description": "本条文案的语种。双语要求：zh/en 各自原生模板，不允许占位翻译；切换语言 = 取对应语种的渲染结果。"
+        },
+        "generated_by": {
+          "enum": [
+            "template",
+            "llm",
+            "hybrid",
+            "human"
+          ],
+          "description": "由谁生成。默认 template（无 key、无网络也必须可用，A7/K-12）。"
+        },
+        "template_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120
+        },
+        "generated_at": {
+          "$ref": "#/typelets/nullableTimestamp"
+        },
+        "source_facts_hash": {
+          "$ref": "#/$defs/sha256",
+          "description": "对事实字段集合（intent/rationale/result_summary/status/action_type/error/impact_scope/cost/latency_ms/confidence）做规范化 JSON 后取 sha256。校验脚本重算比对：润色新增事实 → 校验失败。"
+        },
+        "may_contain_inference": {
+          "type": "boolean",
+          "description": "true = 文案可能含推断，界面必须显示『AI 生成』标记。generated_by 为 llm/hybrid 时强制为 true。"
+        }
+      }
+    },
+    "confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "翻译置信度 0–1。缺失（无来源可判）= null。低于 0.6 必须带 uncertainty，界面显示『不确定』，禁止把不确定讲成肯定。"
+    },
+    "uncertainty": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "低置信时必须出现，向用户说明『哪里不确定、要看什么』。",
+      "required": [
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "what_to_check": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 300
+        },
+        "affected_fields": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          }
+        }
+      }
+    },
+    "cost": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "成本。L2 起才在界面显示（默认视图不噪音）。",
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tokens_in": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "tokens_out": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "estimated": {
+          "type": "boolean",
+          "description": "true = 估算值，界面必须写『约』。"
+        }
+      },
+      "required": [
+        "currency",
+        "amount",
+        "estimated"
+      ]
+    },
+    "latency_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "该动作耗时（毫秒）。"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "pending_confirmation",
+        "approved",
+        "modified",
+        "rejected",
+        "running",
+        "succeeded",
+        "failed",
+        "skipped",
+        "expired"
+      ],
+      "description": "P4 护栏：状态机三段。① 记录段 observed/running/succeeded/failed/skipped（由来源系统上报，TraceLens 只读不改写事实）；② 决定段 pending_confirmation → approved/modified/rejected = 决定已记录，不代表已执行；③ expired = 超时挂起提醒，绝不自动同意（W-02）。执行结果只能由 execution_receipt 表达。"
+    },
+    "requires_action": {
+      "type": "boolean",
+      "description": "是否需要用户拍板（『需要我』区的数据来源）。true 时必须给出 ≥3 个带后果的选项与 requires_action_reason。"
+    },
+    "requires_action_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 300,
+      "description": "为什么要你拍板（T5 安全感锚点：先讲原因，再给按钮）。"
+    },
+    "action_due_at": {
+      "$ref": "#/typelets/nullableTimestamp",
+      "description": "提醒期限。到期只产生提醒（status → expired），永不自动放行。"
+    },
+    "intervention_options": {
+      "type": "array",
+      "maxItems": 6,
+      "description": "可执行选项数组（不是布尔，才能呈现『三个选项 + 各自后果』）。requires_action=true 时至少 3 项，且必须包含 approve / modify / reject 三种 kind。",
+      "items": {
+        "$ref": "#/$defs/interventionOption"
+      }
+    },
+    "user_intervention": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "用户的决定（决定已记录）。未干预 = null。语义边界：本对象只证明『谁在什么时候决定了什么』，不证明 AI 已停/已执行（A12）。",
+      "required": [
+        "decision",
+        "decided_by",
+        "decided_at",
+        "recorded"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "approve",
+            "modify",
+            "reject"
+          ]
+        },
+        "option_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        },
+        "decided_by": {
+          "$ref": "#/$defs/identifier",
+          "description": "决定人 actor_id，与审计 actor_id 一致。"
+        },
+        "decided_by_role": {
+          "enum": [
+            "local",
+            "admin",
+            "editor",
+            "viewer"
+          ]
+        },
+        "decided_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "original_params": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "干预前参数（脱敏副本）。"
+        },
+        "modified_params": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "干预后参数（脱敏副本）；decision=modify 时必填且非空。"
+        },
+        "modified_fields": {
+          "type": "array",
+          "maxItems": 20,
+          "description": "逐字段核对视图的数据源（C 类用户诉求）。",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "before": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "after": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500,
+          "description": "决定理由；decision=reject 时必填（拒绝必填原因）。"
+        },
+        "request_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64,
+          "description": "对应 /intervene 请求 ID，串起审计链与日志（日志中不得含参数明文）。"
+        },
+        "audit_entry_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "指向审计 JSONL 中该条目的 hash，形成记录 ↔ 审计双向可追。"
+        },
+        "recorded": {
+          "const": true,
+          "description": "固定 true：本对象的语义是『决定已记录』。是否生效看 execution_receipt。"
+        }
+      }
+    },
+    "execution_receipt": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "执行端回执（P4 的第二段）。默认语义 = unreported：执行端没接入 SDK 预检查时，决定不会生效，界面必须显示『决定已记录；是否生效取决于执行端是否接入』，禁止显示『AI 已被停止』。",
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "unreported",
+            "executed",
+            "failed",
+            "refused_by_runtime",
+            "timeout"
+          ],
+          "description": "unreported（默认）= 执行端未回执；executed / failed = 执行端回执的执行结果；refused_by_runtime = 执行端读到 reject 后自行中止；timeout = 执行端在窗口内未读取决定。"
+        },
+        "reported_by": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128,
+          "description": "回执来源（agent 运行时标识 / SDK 会话）。"
+        },
+        "reported_at": {
+          "$ref": "#/typelets/nullableTimestamp"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        },
+        "sdk_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 40
+        },
+        "effect_notice": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200,
+          "description": "界面文案键（i18n key 名），默认 intervention.effect.recorded_only。"
+        }
+      }
+    },
+    "risk_level": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "description": "风险分级（批量确认低危 / 高危单独停的数据依据）。high 与 critical 必须给出 impact_scope 且 policy.requires_human_confirmation=true。"
+    },
+    "impact_scope": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "影响面（S4 预览的证据基础：将影响哪些文件/表/金额/外部接口）。",
+      "required": [
+        "reversible"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "targets": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "ref"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "file",
+                  "directory",
+                  "table",
+                  "record",
+                  "endpoint",
+                  "service",
+                  "mailbox",
+                  "payment",
+                  "resource",
+                  "pii_dataset"
+                ]
+              },
+              "ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "description": "对象标识（演示数据禁止使用真实路径/真实客户数据，A2）。"
+              },
+              "change": {
+                "enum": [
+                  "create",
+                  "update",
+                  "delete",
+                  "read",
+                  "send",
+                  "export"
+                ]
+              },
+              "count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "money": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "currency",
+            "amount"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "amount": {
+              "type": "number",
+              "minimum": 0
+            },
+            "direction": {
+              "enum": [
+                "out",
+                "in"
+              ]
+            }
+          }
+        },
+        "external_endpoint": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "url"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "method": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 10
+            },
+            "audience": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 200
+            }
+          }
+        },
+        "data_categories": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "enum": [
+              "none",
+              "internal",
+              "personal_data",
+              "financial",
+              "credentials",
+              "health",
+              "contract",
+              "customer_data"
+            ]
+          },
+          "description": "涉及的数据类别（导出脱敏与 C 类隐私诉求 P13 的判断依据）。"
+        },
+        "reversible": {
+          "type": "boolean",
+          "description": "是否可撤回。v1 不做自动回滚（W-03），界面据此写『此操作不可撤销』。"
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 300,
+          "description": "影响面一句话摘要（界面首屏用）。"
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "description": "产品护栏写进数据：超时不得自动同意（W-02）。",
+      "required": [
+        "requires_human_confirmation",
+        "auto_approve_forbidden",
+        "timeout_behavior"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "requires_human_confirmation": {
+          "type": "boolean"
+        },
+        "auto_approve_forbidden": {
+          "const": true,
+          "description": "常量断言：任何记录都不得自动同意。写 false 视为非法记录。"
+        },
+        "timeout_behavior": {
+          "const": "keep_pending",
+          "description": "常量断言：超时行为只能是继续挂起提醒。"
+        },
+        "queue_serial": {
+          "type": "boolean",
+          "description": "true = 同一时刻最多展示 1 个待确认（t1 9.3 前端约定）。"
+        },
+        "min_role_to_decide": {
+          "enum": [
+            "local",
+            "editor",
+            "admin"
+          ],
+          "description": "决定所需最低角色（viewer 无入口，6.4 矩阵）。"
+        }
+      }
+    },
+    "error": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "失败三要素之一（S1：哪一步失败 + 人话原因）。status=failed 时必填。",
+      "required": [
+        "code",
+        "human_reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "来源错误码（不得只把错误码丢给用户）。"
+        },
+        "human_reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "description": "术语已翻译的人话原因。"
+        },
+        "technical_detail_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 300
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "failed_step": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        }
+      }
+    },
+    "suggested_next": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "建议动作（失败三要素之三；也是 T6『有路可走』的来源）。",
+      "items": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "kind": {
+            "enum": [
+              "retry",
+              "edit_params",
+              "provide_input",
+              "contact_owner",
+              "ignore",
+              "other"
+            ]
+          },
+          "target_action_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          }
+        }
+      }
+    },
+    "context": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "解释个性化上下文（默认粒度、受众画像）。",
+      "additionalProperties": false,
+      "properties": {
+        "task_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "audience_profile": {
+          "enum": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        "default_granularity": {
+          "enum": [
+            "L1",
+            "L2",
+            "L3"
+          ]
+        },
+        "user_language": {
+          "enum": [
+            "zh",
+            "en"
+          ]
+        }
+      }
+    },
+    "trace_link": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "回到原始记录的指针（只读接入：不迁移、不改写源数据）。",
+      "additionalProperties": false,
+      "properties": {
+        "trace_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        },
+        "span_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        },
+        "observation_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        },
+        "source_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500,
+          "description": "源平台深链（本机可复制到浏览器）。"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "description": "来源元数据（K-03 接入成功率归因、raw_ref 收纳未知字段）。",
+      "required": [
+        "kind",
+        "adapter"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "demo",
+            "paste_json",
+            "upload",
+            "webhook",
+            "sdk",
+            "file_watch",
+            "manual"
+          ]
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "适配器名，例如 native / langfuse_export / otel_json / mcp_events。"
+        },
+        "format_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 40,
+          "description": "所依据的外部规范版本（夹具文件头需注明）。"
+        },
+        "source_uri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500,
+          "description": "来源标识（文件路径/事件 ID）；不得含密钥。"
+        },
+        "ingested_at": {
+          "$ref": "#/typelets/nullableTimestamp"
+        },
+        "raw_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 300,
+          "description": "未识别字段的原始载荷指针（W-10：未知字段不丢但不参与翻译）。指针而非明文，日志与导出默认不含。"
+        }
+      }
+    },
+    "demo_data": {
+      "type": "boolean",
+      "description": "true = 内置演示数据集加载的记录（A2 护栏），界面常驻徽标 + 导出页脚标注，不可关闭；true 时 source.kind 必须为 demo，且 synthetic 必须为 true。"
+    },
+    "synthetic": {
+      "type": "boolean",
+      "description": "true = 合成数据（非真实采集），覆盖演示数据与自造夹具（粘贴/上传样本）。A1 的机器可校验表达：本项目没有真实 trace 样本，所有夹具必须 synthetic=true。"
+    },
+    "labels": {
+      "type": "array",
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40
+      },
+      "description": "筛选标签（筛选 <200ms 走 labels 索引）。"
+    },
+    "agent_pubkey": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 44,
+      "pattern": "^[A-Za-z0-9+/]{43}=?$",
+      "description": "5.0 身份确权：该 Agent 实例的 Ed25519 公钥（标准 Base64，32 字节 → 44 字符）。公钥可公开；私钥只在本地密钥库 keyring.json（0600），永不进记录、API 响应、审计与日志（docs/07 §2.1）。为 null = 该记录未经 secretariat 签名（旧数据或 --no-secretariat 模式），不是非法记录。"
+    },
+    "human_owner": {
+      "$ref": "#/$defs/did",
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "5.0 责任归属：对此 Agent 行为负责的用户 DID（责任链的链根）。与 actor_id 的区别：actor_id 是数据归属者，human_owner 是『人 → 主 Agent → 子 Agent』链上那个真实的人（docs/07 §2.3）。"
+    },
+    "delegation_chain": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/did"
+      },
+      "description": "5.0 责任链：人 → … → 本 Agent 的 DID 数组，链根（人）在最前。长度与委托最大深度 5 对应：深度 5 的链最多 6 个 DID，留 2 格余量。空/缺省 = 未建立委托关系，不等于『无责任人』。"
+    },
+    "input_hash": {
+      "$ref": "#/$defs/hexDigest",
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "5.0 输入指纹：对 record.context.input 做规范 JSON 后的 sha256（crypto_sig.hash_object）。进签名范围（SIGNATURE_FIELDS），使『同输入不同输出』可被机器发现。"
+    },
+    "output_hash": {
+      "$ref": "#/$defs/hexDigest",
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "5.0 输出指纹：对 record.tool_result 做规范 JSON 后的 sha256。进签名范围；与 input_hash 一起构成『这条记录到底做了什么』的不可抵赖摘要。"
+    },
+    "prev_hash": {
+      "$ref": "#/$defs/hexDigest",
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "5.0 哈希链：该 Agent 上一条已签名记录的 entry_hash（每 Agent 一条独立链，链根用 64 个 0 = feature_store.GENESIS_HASH）。断链只报告不重建（docs/07 §1 R3）。"
+    },
+    "entry_hash": {
+      "$ref": "#/$defs/hexDigest",
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "5.0 记录自哈希：对除 signature / tsa_timestamp 外的整条记录做规范 JSON 后的 sha256。覆盖整条记录 → 证据哈希（multimedia_evidence[].sha256）与因果解释自然进入签名范围（docs/07 §3.2）。"
+    },
+    "signature": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+      "description": "5.0 行为签名：sign(agent 私钥, signed_payload(record, SIGNATURE_FIELDS)) 的标准 Base64（Ed25519 64 字节 → 88 字符）。只覆盖 SIGNATURE_FIELDS 白名单，不覆盖整条记录——记录允许后续追加证据/干预历史而旧签名仍有效。"
+    },
+    "tsa_timestamp": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9:.+-]{4,64}$",
+      "description": "5.0 时间戳证明。**本轮是显式降级项**（docs/07 §10）：离线环境没有 RFC 3161 服务器，本实现写 local-tsa:<ISO8601Z>，验签结果里标 tsa_state=\"local_only\"。禁止在界面宣称『可信时间戳已获取』（产品纪律：决定 ≠ 生效）。"
+    },
+    "approval": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "required",
+        "approvers",
+        "sealed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2,
+          "description": "按风险分级需要的审批签数量：low/medium=0、high=1、critical=2（docs/07 §2.2 RISK_POLICY）。"
+        },
+        "approvers": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": [
+              "did",
+              "signature"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "did": {
+                "$ref": "#/$defs/did"
+              },
+              "role": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 40
+              },
+              "signed_at": {
+                "$ref": "#/typelets/nullableTimestamp"
+              },
+              "signature": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          },
+          "description": "审批人签名列表（Ed25519）。语义边界：它只证明『这次审批在本地被记录并签名』，不证明真实世界的签字意愿——这句必须出现在界面文案里。"
+        },
+        "sealed": {
+          "type": "boolean",
+          "description": "是否已盖总裁办公章（critical 风险才要求）。"
+        },
+        "seal": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "盖章对象 seamark：内部形状由 secretariat.seal() 决定（subject/digest/reason/at/signature…），schema 只约束『是 JSON 对象』，避免把密码学实现的内部字段复制进数据契约。"
+        }
+      },
+      "description": "5.0 审批背书：风险分级签名策略的落地对象（docs/07 §2.2）。critical 需双人签 + 盖章；auto_approve_forbidden 的产品纪律不变——审批只能是人的动作。"
+    },
+    "multimedia_evidence": {
+      "type": [
+        "string",
+        "array",
+        "null"
+      ],
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "evidence_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "record_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "kind": {
+            "enum": [
+              "screenshot",
+              "diagram",
+              "diff"
+            ]
+          },
+          "media_type": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "uri": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "sha256": {
+            "$ref": "#/$defs/hexDigest"
+          },
+          "bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 300
+          },
+          "generated_at": {
+            "$ref": "#/typelets/nullableTimestamp"
+          },
+          "created_at": {
+            "$ref": "#/typelets/nullableTimestamp"
+          },
+          "provided_by": {
+            "enum": [
+              "runtime",
+              "user",
+              "server"
+            ]
+          },
+          "feedback": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "该证据的点赞/点踩计数（与 evidence_feedback 同构；证据索引里的 feedback 字段）。"
+          }
+        }
+      },
+      "description": "5.0 多模态解释与证据（docs/07 §3.2）：字符串形态 = 单个 evidence_id；数组形态 = 证据条目（字段名是 §3.2 规范形状与 evidence/index.jsonl 索引形状的并集，只强制 kind，避免把存储实现钉死在数据契约里）。**截图不是抓屏**：本轮由执行端/用户提供 data_uri（docs/07 §10 降级项），provided_by 如实标注来源。"
+    },
+    "causal_explanation": {
+      "type": [
+        "string",
+        "object",
+        "null"
+      ],
+      "required": [
+        "counterfactual"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "counterfactual": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1000,
+          "description": "反事实解释：『如果当时选择「B」，结果将是……，因为……』。人话，不是术语堆。"
+        },
+        "alternatives": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "required": [
+              "option"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "option": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "expected": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500
+              },
+              "why": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500
+              }
+            }
+          },
+          "description": "未选择的其它选项及各自预期结果（因果推理链的『分叉』）。"
+        },
+        "model": {
+          "enum": [
+            "template",
+            "llm"
+          ],
+          "description": "生成方式：template（无网络也必须可用）/ llm。与 human_readable.generated_by 同一诚实口径。"
+        },
+        "generated_at": {
+          "$ref": "#/typelets/nullableTimestamp"
+        },
+        "language": {
+          "enum": [
+            "zh",
+            "en"
+          ]
+        }
+      },
+      "description": "5.0 因果解释链（功能三）：字符串形态 = 一句话反事实；对象形态 = 完整解释（反事实 + 备选 + 生成方式 + 语言）。它是解释，不是事实：证据仍以 multimedia_evidence 的 sha256 为准。"
+    },
+    "confidence_source": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "enum": [
+            "logprobs",
+            "tool_success_rate",
+            "hybrid",
+            "template",
+            "default"
+          ],
+          "description": "置信度来源（功能二验收：来源必须可追溯）。default = 无任何来源可判，此时界面不得把数字讲成肯定。"
+        },
+        "logprob": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "模型 token 对数概率折算出的置信度（缺失 = 来源没给 logprobs，禁止编造）。"
+        },
+        "tool_success_rate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "该工具历史成功率（本地统计，样本量与 samples 一起看）。"
+        },
+        "samples": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "参与统计的样本数；小样本（<5）时界面必须提示『样本不足』。"
+        },
+        "computed_at": {
+          "$ref": "#/typelets/nullableTimestamp"
+        },
+        "weights": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 4,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "description": "hybrid 合成用的权重（confidence.combine(weights=…) 的落盘副本，便于事后复算）。"
+        }
+      },
+      "description": "5.0 置信度可视化（功能二）：置信度不是拍脑袋的数字，必须带来源。阈值与颜色带（green/light_green/yellow/red）在 confidence.py 的 THRESHOLDS，不在 schema 里——schema 只保证『来源形状对』，『低于 0.5 触发干预』由代码 + 测试保证（见 docs/02 §5 的说明）。"
+    },
+    "intervention_history": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 50,
+      "items": {
+        "type": "object"
+      },
+      "description": "5.0 干预历史（append-only 语义）：每次干预的摘要按时间追加，不覆盖、不删除。条目内部形状由干预流程决定（schema 只要求是对象），避免与 intervention_options 的动态表单形状耦合。"
+    },
+    "group_id": {
+      "$ref": "#/$defs/identifier",
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "5.0 多 Agent 任务聚合（功能四）：所属 TaskGroup 的 id。为 null = 不属于任何任务组（单 Agent 动作的常态，不是错误）。"
+    },
+    "shared_users": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": [
+          "did"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "did": {
+            "$ref": "#/$defs/did"
+          },
+          "permission": {
+            "enum": [
+              "view",
+              "approve",
+              "manage"
+            ],
+            "description": "权限级联：manage ⊃ approve ⊃ view（高权限包含低权限）。"
+          },
+          "shared_at": {
+            "$ref": "#/typelets/nullableTimestamp"
+          },
+          "invite_id": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "description": "单个被共享人的授权记录。"
+      },
+      "description": "5.0 共享与协作（功能五）：共享给谁、什么权限、通过哪次邀请。权限以服务端判定为准（sharing.can()），这里的数组只是记录副本，不是授权凭据。"
+    },
+    "rollback_ref": {
+      "$ref": "#/$defs/identifier",
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "5.0 干预回滚（功能一）：本记录是回滚动作时，指向被回滚的原记录 id。回滚记录本身也是一条 action_type=rollback 的记录，因此回滚可再被审计、被签名、被回滚（有边界）。"
+    },
+    "rollback_state": {
+      "enum": [
+        "none",
+        "rolled_back",
+        "rollback_blocked"
+      ],
+      "description": "5.0 回滚状态：none=未回滚 / rolled_back=已回滚 / rollback_blocked=回滚被阻断（有未完成的依赖动作，或该工具没有可审计的逆向动作）。**真实边界**：本轮的回执是本地模拟逆向动作（receipt_state=simulated_local），不是外部系统真的被撤销（docs/07 §10）。"
+    },
+    "improvement_suggestion": {
+      "type": [
+        "object",
+        "string",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "tool": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "param": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "direction": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 40
+        },
+        "from_value": {},
+        "to_value": {},
+        "occurrences": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 40
+        }
+      },
+      "description": "5.0 自动化改进建议（功能七）：命中建议时挂在记录上的摘要。字符串形态 = 建议 id。注意：**建议不是自动改参数**——用户采纳（accept）后才写 UserPreference，弃用（dismiss）有 7 天冷却。"
+    },
+    "evidence_feedback": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "like": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "dislike": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "updated_at": {
+          "$ref": "#/typelets/nullableTimestamp"
+        }
+      },
+      "description": "5.0 证据反馈（功能三『为什么』气泡旁的点赞/点踩）：计数型，不是评分。用于给证据质量排序，不改变事实字段。"
+    }
+  },
+  "allOf": [
+    {
+      "$comment": "C1 需要拍板 → 至少 3 个选项且含 approve/modify/reject 三种 kind；状态只能是 pending_confirmation 或 expired（超时挂起仍需人）；此时不得已有决定",
+      "if": {
+        "properties": {
+          "requires_action": {
+            "const": true
+          }
+        },
+        "required": [
+          "requires_action"
+        ]
+      },
+      "then": {
+        "required": [
+          "requires_action_reason"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "pending_confirmation",
+              "expired"
+            ]
+          },
+          "intervention_options": {
+            "minItems": 3,
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "kind": {
+                      "const": "approve"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "minContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "kind": {
+                      "const": "modify"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "minContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "kind": {
+                      "const": "reject"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "minContains": 1
+              }
+            ]
+          },
+          "policy": {
+            "properties": {
+              "requires_human_confirmation": {
+                "const": true
+              }
+            }
+          },
+          "user_intervention": {
+            "type": "null"
+          },
+          "requires_action_reason": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 300
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C2 决定段状态 → 必须携带 user_intervention，且 status 与 decision 一一对应（approved↔approve / modified↔modify / rejected↔reject，K-08 防脏状态）",
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "approved",
+              "modified",
+              "rejected"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "user_intervention"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "approved"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "user_intervention": {
+                  "type": "object",
+                  "required": [
+                    "decision"
+                  ],
+                  "properties": {
+                    "decision": {
+                      "const": "approve"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "modified"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "user_intervention": {
+                  "type": "object",
+                  "required": [
+                    "decision"
+                  ],
+                  "properties": {
+                    "decision": {
+                      "const": "modify"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "rejected"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "user_intervention": {
+                  "type": "object",
+                  "required": [
+                    "decision"
+                  ],
+                  "properties": {
+                    "decision": {
+                      "const": "reject"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "$comment": "C3 修改放行 → 必须有非空 modified_params 与 original_params（US-04 逐字段核对）",
+      "if": {
+        "properties": {
+          "user_intervention": {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "const": "modify"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          }
+        },
+        "required": [
+          "user_intervention"
+        ]
+      },
+      "then": {
+        "properties": {
+          "user_intervention": {
+            "required": [
+              "modified_params",
+              "original_params"
+            ],
+            "properties": {
+              "modified_params": {
+                "type": "object",
+                "minProperties": 1
+              },
+              "original_params": {
+                "type": "object",
+                "minProperties": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C4 拒绝必填原因（C 类责任边界，t1 5-T5 护栏）",
+      "if": {
+        "properties": {
+          "user_intervention": {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "const": "reject"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          }
+        },
+        "required": [
+          "user_intervention"
+        ]
+      },
+      "then": {
+        "properties": {
+          "user_intervention": {
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 2
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C5 失败 → error(code + human_reason) 必填且给出建议动作（S1 三要素）",
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "error",
+          "suggested_next"
+        ],
+        "properties": {
+          "error": {
+            "type": "object"
+          },
+          "suggested_next": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C6 成功 → result_summary 必须非空（结果导向，不做排版美化）",
+      "if": {
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result_summary": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C7 低置信 → 必须说明哪里不确定（禁止把不确定讲成肯定）",
+      "if": {
+        "properties": {
+          "confidence": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 0.6
+          }
+        },
+        "required": [
+          "confidence"
+        ]
+      },
+      "then": {
+        "required": [
+          "uncertainty"
+        ],
+        "properties": {
+          "uncertainty": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C8 LLM 润色 → 必须打 inference 标记（界面显示『AI 生成』）",
+      "if": {
+        "properties": {
+          "human_readable": {
+            "type": "object",
+            "properties": {
+              "generated_by": {
+                "enum": [
+                  "llm",
+                  "hybrid"
+                ]
+              }
+            },
+            "required": [
+              "generated_by"
+            ]
+          }
+        },
+        "required": [
+          "human_readable"
+        ]
+      },
+      "then": {
+        "properties": {
+          "human_readable": {
+            "required": [
+              "may_contain_inference"
+            ],
+            "properties": {
+              "may_contain_inference": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C9 高危 → 必须给影响面且必须人确认（S4 + W-02）",
+      "if": {
+        "properties": {
+          "risk_level": {
+            "enum": [
+              "high",
+              "critical"
+            ]
+          }
+        },
+        "required": [
+          "risk_level"
+        ]
+      },
+      "then": {
+        "required": [
+          "impact_scope"
+        ],
+        "properties": {
+          "impact_scope": {
+            "type": "object",
+            "required": [
+              "targets"
+            ],
+            "properties": {
+              "targets": {
+                "minItems": 1
+              }
+            }
+          },
+          "policy": {
+            "properties": {
+              "requires_human_confirmation": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C10 不可逆副作用动作类型（删除/发送/付款/改配置/导出）→ 必须给影响面",
+      "if": {
+        "properties": {
+          "action_type": {
+            "enum": [
+              "delete",
+              "send",
+              "payment",
+              "config_change",
+              "export"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "impact_scope"
+        ],
+        "properties": {
+          "impact_scope": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C11 执行回执为终态 → 必须有回执时间（无时间的『已执行』= 假闭环，禁止）",
+      "if": {
+        "properties": {
+          "execution_receipt": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": [
+                  "executed",
+                  "failed",
+                  "refused_by_runtime",
+                  "timeout"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          }
+        },
+        "required": [
+          "execution_receipt"
+        ]
+      },
+      "then": {
+        "properties": {
+          "execution_receipt": {
+            "type": "object",
+            "required": [
+              "reported_at",
+              "reported_by"
+            ],
+            "properties": {
+              "reported_at": {
+                "type": "string"
+              },
+              "reported_by": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C12 内置演示数据 → source.kind=demo 且 synthetic=true（A2 徽标可机器校验）",
+      "if": {
+        "properties": {
+          "demo_data": {
+            "const": true
+          }
+        },
+        "required": [
+          "demo_data"
+        ]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "properties": {
+              "kind": {
+                "const": "demo"
+              }
+            }
+          },
+          "synthetic": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C13 超时挂起 → 必须仍在等待（expired 不得带 executed 回执）",
+      "if": {
+        "properties": {
+          "status": {
+            "const": "expired"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "requires_action": {
+            "const": true
+          },
+          "execution_receipt": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "state": {
+                "enum": [
+                  "unreported",
+                  "timeout"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C14 待确认 → 执行回执必须为 unreported/timeout（尚未拍板就不可能有执行结果）",
+      "if": {
+        "properties": {
+          "status": {
+            "const": "pending_confirmation"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "user_intervention": {
+            "type": "null"
+          },
+          "execution_receipt": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "state": {
+                "enum": [
+                  "unreported",
+                  "timeout"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C15 演示来源必须被标记为演示：synthetic=true 且 source.kind=demo → demo_data=true（防止合成数据伪装成真实采集）",
+      "if": {
+        "properties": {
+          "synthetic": {
+            "const": true
+          },
+          "source": {
+            "properties": {
+              "kind": {
+                "const": "demo"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        },
+        "required": [
+          "synthetic",
+          "source"
+        ]
+      },
+      "then": {
+        "properties": {
+          "demo_data": {
+            "const": true
+          }
+        }
+      }
+    }
+  ],
+  "typelets": {
+    "nullableTimestamp": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?([Zz]|[+-][0-9]{2}:[0-9]{2})$"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "description": "统一 ID 形态（UUIDv4 / ULID / 业务 ID 均可），禁止空格与路径字符。"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?([Zz]|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "RFC3339 / ISO8601，必须带时区偏移（pattern 保证在不开启 format 校验的引擎上同样生效）。"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "hexDigest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "不带前缀的小写 sha256 十六进制（5.0 签名/哈希字段的统一口径：crypto_sig.sha256_hex 与 feature_store.sha256_hex 都返回这个形状）。**与 source_facts_hash 的 sha256:<64hex> 带前缀口径不同，两者不可混用**——混用会让『重算一致』恒假。"
+    },
+    "did": {
+      "type": "string",
+      "minLength": 12,
+      "maxLength": 200,
+      "pattern": "^did:[a-z0-9]{2,32}:[a-z0-9-]{1,32}:[a-z0-9]{8,64}$",
+      "description": "TraceLens DID：did:tracelens:<kind>:<base32(sha256(公钥或名字)[:20])>（crypto_sig.did_from_pubkey / did_from_name）。用公钥派生而非名字派生：名字可改可重名，公钥不能。"
+    },
+    "interventionOption": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "consequence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "enum": [
+            "approve",
+            "modify",
+            "reject"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "按钮文案（走 i18n key；长度上限防按钮溢出）。"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "consequence": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 200,
+          "description": "点这个会发生什么 + 不点会怎样（T5 锚点：每个按钮旁写清后果）。"
+        },
+        "effect_notice": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200,
+          "description": "生效边界文案（i18n key 名），默认 intervention.effect.recorded_only = 『决定已记录；是否生效取决于执行端是否接入』。"
+        },
+        "editable_fields": {
+          "type": "array",
+          "maxItems": 20,
+          "description": "kind=modify 的表单定义（界面按此动态生成可编辑字段，US-04）。",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "label",
+              "type"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "type": {
+                "enum": [
+                  "string",
+                  "number",
+                  "integer",
+                  "boolean",
+                  "enum",
+                  "text",
+                  "date"
+                ]
+              },
+              "required": {
+                "type": "boolean",
+                "default": true
+              },
+              "default": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "options": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                }
+              },
+              "min": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "max": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "pattern": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 200
+              },
+              "unit": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 20
+              },
+              "help_text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 200
+              }
+            }
+          }
+        },
+        "requires_reason": {
+          "type": "boolean",
+          "description": "true = 提交时必须填理由（reject 必须为 true）。"
+        },
+        "risk_note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "dangerous": {
+          "type": "boolean",
+          "description": "true = 界面用破坏性样式（reject/delete 类）。"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "modify"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "editable_fields"
+            ],
+            "properties": {
+              "editable_fields": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "reject"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "requires_reason": {
+                "const": true
+              },
+              "dangerous": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

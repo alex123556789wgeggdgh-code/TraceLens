@@ -1,0 +1,327 @@
+/*
+ * TraceLens 5.0 - trust layer base styles (web/ext/core.css)
+ * ------------------------------------------------------------------
+ * Scope: the shell only (launcher, tabbed panel, toast, modal, shared state
+ * blocks). Every feature file ships its own stylesheet, so nine surfaces never
+ * queue behind one file. Colours come from the same semantic variables
+ * styles.css already defines; nothing here invents a second palette.
+ */
+
+.trust-launcher {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-full);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.16);
+  cursor: pointer;
+}
+
+.trust-launcher:hover,
+.trust-launcher:focus-visible {
+  border-color: var(--c-focus);
+  outline: none;
+}
+
+.trust-launcher__icon {
+  font-size: 15px;
+  color: var(--c-focus);
+}
+
+html[data-view="mobile"] .trust-launcher {
+  bottom: 84px;
+}
+
+.trust {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trust[hidden] {
+  display: none;
+}
+
+.trust__backdrop,
+.trust-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.trust__dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 48px));
+  background: var(--c-surface);
+  color: var(--c-text);
+  border-radius: var(--radius-2);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.32);
+  overflow: hidden;
+}
+
+html[data-view="mobile"] .trust__dialog {
+  width: 100vw;
+  height: calc(100vh - 24px);
+  border-radius: 16px 16px 0 0;
+}
+
+.trust__head {
+  position: relative;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.trust__title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.trust__sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--c-text-dim);
+}
+
+.trust__close,
+.trust-modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.trust__close::before,
+.trust-modal__close::before {
+  content: "\00D7";
+  font-size: 18px;
+  line-height: 1;
+}
+
+.trust__close:hover,
+.trust-modal__close:hover {
+  border-color: var(--c-border);
+}
+
+.trust__tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 8px 14px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface-2);
+}
+
+.trust-tab {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--c-text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trust-tab.is-active {
+  background: var(--c-surface);
+  border-color: var(--c-border);
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.trust__body {
+  flex: 1 1 auto;
+  padding: 16px 20px 24px;
+  overflow-y: auto;
+}
+
+.trust__foot {
+  padding: 8px 20px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-surface-2);
+}
+
+.trust__status {
+  font-size: 11.5px;
+  color: var(--c-text-dim);
+}
+
+.trust__status[data-tone="warn"] {
+  color: var(--c-progress);
+}
+
+.trust-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius-1);
+  color: var(--c-text-dim);
+  font-size: 13px;
+}
+
+.trust-state[data-state="error"] {
+  border-style: solid;
+  border-color: var(--c-danger);
+  color: var(--c-danger);
+}
+
+.trust-state__code,
+.trust-state__rid {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.trust-state__detail {
+  margin: 0;
+}
+
+.trust-state__spinner {
+  letter-spacing: 2px;
+}
+
+.trust-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  z-index: 90;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: var(--radius-1);
+  background: var(--c-text);
+  color: var(--c-bg);
+  font-size: 13px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.28);
+}
+
+.trust-toast[hidden] {
+  display: none;
+}
+
+.trust-toast[data-kind="warn"] {
+  background: var(--c-progress);
+}
+
+.trust-toast[data-kind="error"] {
+  background: var(--c-danger);
+}
+
+.trust-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trust-modal[hidden] {
+  display: none;
+}
+
+.trust-modal__dialog {
+  position: relative;
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  padding: 18px 20px 20px;
+  border-radius: var(--radius-2);
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.32);
+}
+
+.trust-modal__head {
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.trust-modal__head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.trust-confirm__row {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.trust-btn {
+  padding: 7px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-1);
+  background: var(--c-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.trust-btn:hover,
+.trust-btn:focus-visible {
+  border-color: var(--c-focus);
+  outline: none;
+}
+
+.trust-btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.trust-btn--primary {
+  border-color: var(--c-focus);
+  background: var(--c-focus);
+  color: var(--c-surface);
+}
+
+.trust-btn--danger {
+  border-color: var(--c-danger);
+  color: var(--c-danger);
+}
+
+.trust-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--c-text-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trust-launcher,
+  .trust__dialog,
+  .trust-toast {
+    transition: none;
+  }
+}

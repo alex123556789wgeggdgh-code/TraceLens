@@ -1,0 +1,111 @@
+{
+  "id": "letter_20261111152534_92fd97dd",
+  "kind": "responsibility_letter",
+  "version": "1.0",
+  "subject": "责任认定书：相册整理演示",
+  "created_at": "2026-11-11T15:25:34Z",
+  "mode": "local",
+  "period": {},
+  "note": "浏览器端生成的演示认定书，可离线复核",
+  "responsibility": {
+    "role": "technical",
+    "label": "技术责任",
+    "basis": "recorded_actions_and_signatures"
+  },
+  "agents": [
+    {
+      "agent_id": "demo-photo-bot",
+      "actions": 3,
+      "fingerprint": "aa64a6fa9fde20d3",
+      "human_owner": "did:tracelens:user:uxt4aaseg5b4la3hldd5dtmn336z7tza",
+      "signature_ok": true
+    }
+  ],
+  "delegation_chain": [
+    {
+      "did": "did:tracelens:user:uxt4aaseg5b4la3hldd5dtmn336z7tza",
+      "source": "delegation_chain"
+    },
+    {
+      "did": "did:tracelens:agent:tkt6emixclmjhkitgq3vlwt5qyk2qgua",
+      "source": "delegation_chain"
+    }
+  ],
+  "actions": [
+    {
+      "id": "act-demo-0001",
+      "timestamp": "2026-11-09T09:00:05.420+08:00",
+      "agent_id": "demo-photo-bot",
+      "action_type": "plan",
+      "status": "succeeded",
+      "risk_level": "low",
+      "result_summary": "计划 4 步：扫描相册 → 内容哈希比对 → 删除重复项（需确认）→ 汇总报告",
+      "tool": null,
+      "input_hash": null,
+      "output_hash": "b646a4eb6f75c5690f6a05c2c8b5abcd6c73bea512fc263182eb78b552a933ae",
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "confidence": 0.9,
+      "signature": "CXXa4vSYeLpAjNtFDaPMDxWOfrz5cQOc7KcCxorJuyztkOAD1AZ9ypsU+IlmvQCwMz2h2tjMiXi8XrhcM9BoBA==",
+      "agent_pubkey": "hrwbfHBh6w2cdgPOOTqW08DM9YqMlkSi1LAT+z1LtiQ=",
+      "entry_hash": "d9a39e4724002a0a428ce77f27404c2b10d979fde7f0320150d3df382d896dc7",
+      "signature_ok": true
+    },
+    {
+      "id": "act-demo-0002",
+      "timestamp": "2026-11-09T09:00:10.000+08:00",
+      "agent_id": "demo-photo-bot",
+      "action_type": "read",
+      "status": "succeeded",
+      "risk_level": "low",
+      "result_summary": "找到 200 个演示文件，共约 812 MB",
+      "tool": "filesystem.scan_album",
+      "input_hash": null,
+      "output_hash": "632042c971759b19b2c45a021222327f3e482481a530993aaeb7d1cd9e535ed3",
+      "prev_hash": "d9a39e4724002a0a428ce77f27404c2b10d979fde7f0320150d3df382d896dc7",
+      "confidence": 0.98,
+      "signature": "8aYEnLV4Sn/DxuzGX0/BMeJn6Fq5shYXDhc6rF0iXDo1U36UdrOQx/UXXCcky/EhmKg+aG6hzAKg2nPN0EURDg==",
+      "agent_pubkey": "hrwbfHBh6w2cdgPOOTqW08DM9YqMlkSi1LAT+z1LtiQ=",
+      "entry_hash": "098fece74d6d7d5d0216103386ac42388322c99a954f10181183a5c92484f264",
+      "signature_ok": true
+    },
+    {
+      "id": "act-demo-0003",
+      "timestamp": "2026-11-09T09:00:16.100+08:00",
+      "agent_id": "demo-photo-bot",
+      "action_type": "tool_call",
+      "status": "succeeded",
+      "risk_level": "low",
+      "result_summary": "判定 12 个文件与已保留文件内容一致（sha256 相同）",
+      "tool": "image.hash_compare",
+      "input_hash": null,
+      "output_hash": "f36b88dc082c6e01a94e980bca611867db1f5e30ae119742ba9da8ffb049cbbf",
+      "prev_hash": "098fece74d6d7d5d0216103386ac42388322c99a954f10181183a5c92484f264",
+      "confidence": 0.55,
+      "signature": "iuqu2j+Bl70gSPuXsnwSsD0CUBangQcdPqDe4g6uV21sb4MISwSYJ6/gPFpdv86ffrzNSetay+STygBOBEtkAw==",
+      "agent_pubkey": "hrwbfHBh6w2cdgPOOTqW08DM9YqMlkSi1LAT+z1LtiQ=",
+      "entry_hash": "db53768a881a88521107e0802d03ca77ee79ff719409abf6e8f2c55e452548cd",
+      "signature_ok": true
+    }
+  ],
+  "verification": {
+    "signatures_ok": true,
+    "chain_ok": true,
+    "problems": [],
+    "tsa_state": "local_only"
+  },
+  "records_root": "ed2f58af109fe7d80b9f9c556447b0d9207d03c37eb445d5208912bc13e71927",
+  "audit_head": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "determination": {
+    "role": "technical",
+    "label": "技术责任",
+    "conclusion": "attributable_to_agent",
+    "agents": [
+      "demo-photo-bot"
+    ],
+    "unsigned_or_tampered": [],
+    "note": "认定书由总裁办公钥签名，可离线验证；签名只证明记录未被改动，不改变真实世界里的法律责任。"
+  },
+  "public_key": "AkbChPhj4SgCUXSjt8iBXOAvYL5TpUj1TnBeDRrQAMg=",
+  "fingerprint": "a4acb562369919e4",
+  "signature": "QdGvf1uIyoZns7UTRgmo92v0sdN0nUWFgYMlY3EjWTOowh/qtg3xVxn3siygXGMYAKmEaUgfOQ7xkAdpP9oqDA=="
+}

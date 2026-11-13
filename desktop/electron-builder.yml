@@ -1,0 +1,59 @@
+# electron-builder 配置（子任务 5.3 / t12）
+#
+# 产出两个 Windows 目标：NSIS 安装包 + portable 压缩包。
+# 签名**不在构建内做**（构建期不配任何签名选项）：自签名证书由 tools/sign_and_hash.ps1
+# 在构建之后给产物签名并导出 .cer，验收时用 Get-AuthenticodeSignature 核对。
+# forceCodeSigning: false 的意义：缺签名时构建照常成功，绝不为"看起来已签名"造假。
+appId: cn.tracelens.desktop
+productName: TraceLens
+copyright: TraceLens 团队（合成演示数据，不含真实用户数据）
+
+directories:
+  output: build/dist
+  buildResources: build/resources
+
+# 本产品运行时零第三方依赖（只有 devDependencies：electron 与 electron-builder）。
+# 因此不跑 node-gyp（npmRebuild: false），也不让 electron-builder 用
+# `npm query` 子进程去算 node_modules 集合（受限环境下 spawn 会被拒：spawn EPERM），
+# 改为显式收集：node_modules 一个都不打进包。
+npmRebuild: false
+
+files:
+  - main.js
+  - preload.js
+  - sidecar.js
+  - package.json
+  - "!node_modules/**"
+
+extraResources:
+  # PyInstaller 单文件 sidecar（tools/build_sidecar.py 产出）。
+  # 界面（agent_explainer/web）、演示夹具（samples/）、提示词（prompts/）已用
+  # --add-data 打进 exe，所以这里只需要一个 exe + 一份说明。
+  - from: build/resources/sidecar
+    to: sidecar
+    filter:
+      - "**/*"
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  forceCodeSigning: false
+  artifactName: TraceLens-${version}-win-${arch}-Setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: TraceLens
+  artifactName: TraceLens-${version}-win-${arch}-Setup.${ext}
+  uninstallDisplayName: TraceLens 桌面端
+
+portable:
+  artifactName: TraceLens-${version}-win-${arch}-portable.${ext}
+
+# 离线项目：不发布到任何 npm / GitHub 源，构建过程不需要发包
+publish: null

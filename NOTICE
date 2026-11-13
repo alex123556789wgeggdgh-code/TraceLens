@@ -1,0 +1,51 @@
+TraceLens (行动透镜 / Action Lens)
+Copyright 2026 TraceLens Authors
+
+本产品包含由 TraceLens 项目作者开发的软件。
+This product includes software developed by the TraceLens project authors.
+
+====================================================================
+制作说明 / Attribution
+====================================================================
+本项目采用 qwen3.8-flash-next-iq3-s 辅助制作。
+This project was built with the assistance of qwen3.8-flash-next-iq3-s.
+
+====================================================================
+签名说明 / Code signing
+====================================================================
+本项目的代码签名材料属私有，不随本仓库提供，仓库内不含任何私钥、证书库或签名状态文件。
+GitHub Releases 中的 Windows 二进制为自签名（根证书不受信任），仅用于证明文件完整性，
+不构成受信任发布者的身份背书；请自行校验哈希并评估风险。
+Signing keys are private and are NOT distributed. Release binaries are self-signed;
+they prove integrity only, not publisher identity.
+
+====================================================================
+商用提示 / Commercial use (NOT a license condition)
+====================================================================
+本项目依 Apache License 2.0 发布，允许商业使用、修改与再分发。
+作者恳请（此请求不构成许可限制，也不减损 Apache-2.0 授予的任何权利）
+在商业使用前与项目发起人联系，以便获知版本与安全更新。
+Commercial use IS permitted under Apache-2.0. The authors kindly request,
+as a non-binding courtesy rather than a license condition, that you contact
+them before commercial use.
+
+====================================================================
+免责 / Disclaimer
+====================================================================
+软件按「现状」（AS IS）提供，不附带任何明示或默示担保；作者不对因使用或
+无法使用本软件造成的任何损失承担责任。此与 Apache License 2.0 第 7、8 条一致。
+Provided AS IS, without warranties or conditions of any kind; see Apache-2.0 §7 and §8.
+
+====================================================================
+第三方组件 / Third-party components
+====================================================================
+见 docs/NOTICE-third-party.md 与 THIRD_PARTY_LICENSES/。
+See docs/NOTICE-third-party.md and THIRD_PARTY_LICENSES/.
+
+====================================================================
+本公开仓库的修改说明 / Modifications in this public repository
+====================================================================
+本仓库由权利人整理后公开发布。相较内部工程，已移除依赖目录、构建产物、
+运行期数据、登录态、签名材料与证书；文档中的本机路径、主机标识与证书指纹已脱敏；
+LICENSE、NOTICE、README、desktop/package.json 与 docs/NOTICE-third-party.md
+中的许可表述由专有许可统一改为 Apache-2.0。

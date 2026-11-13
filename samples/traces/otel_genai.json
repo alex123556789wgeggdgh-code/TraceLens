@@ -1,0 +1,691 @@
+{
+  "_meta": {
+    "title": "OTel GenAI / OTLP JSON 夹具（合成示例，非真实采集）",
+    "synthetic": true,
+    "real_data": false,
+    "author_note": "【合成示例，非真实采集】本文件由 TraceLens 团队按 OpenTelemetry OTLP JSON 与 GenAI 语义约定的公开规范手写，用于开发与验收。不存在任何真实采集：没有真实人名、真实路径、真实金额、真实客户数据（依据 docs/01-product-and-users.md 假设 A1/A2 与队长裁决②）。",
+    "spec_basis": "OpenTelemetry OTLP JSON v1.3（resourceSpans → scopeSpans → spans；attributes 用 AnyValue 形状；status.code 用 STATUS_CODE_* 枚举；时间为 *UnixNano）+ GenAI 语义约定 1.30.0（gen_ai.operation.name / gen_ai.provider.name / gen_ai.request.model / gen_ai.tool.name / gen_ai.tool.call.id / gen_ai.tool.call.arguments / gen_ai.tool.call.result / gen_ai.conversation.id / gen_ai.agent.id / gen_ai.agent.name / gen_ai.usage.input_tokens / gen_ai.usage.output_tokens / gen_ai.response.finish_reasons）。",
+    "spec_version": "OTLP JSON v1.3 + GenAI semantic conventions 1.30.0",
+    "extension_namespace": "tracelens",
+    "extension_note": "ActionRecord 的风险等级、影响面、需要人工确认等语义在 OTLP/GenAI 规范里没有对应属性，本夹具通过 `tracelens.*` 属性提供（例如 tracelens.risk.level、tracelens.impact.targets、tracelens.requires_confirmation）。适配器只读该命名空间，绝不用 span 名猜风险。",
+    "clock_note": "OTLP 用 Unix 纳秒时间戳；适配器换算成带时区的 ISO8601（UTC，统一输出 Z 后缀），整数运算不丢精度。",
+    "scenario": "同一演示任务在 OTel 视角下的 7 个 span（模型调用 / 读 / 写 / 待确认删除 / 导出失败 / 向量化 / 规划中）",
+    "item_count": 7,
+    "generated_by": "backend-engineer (t3)",
+    "generated_at": "2026-11-10T10:00:00+08:00",
+    "offline": true,
+    "no_secrets": true
+  },
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "demo-genai-agent"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "opentelemetry-python"
+            }
+          },
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "1.34.0"
+            }
+          },
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "demo-synthetic"
+            }
+          },
+          {
+            "key": "host.id",
+            "value": {
+              "stringValue": "demo-host-0001"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "opentelemetry.instrumentation.genai",
+            "version": "0.5.0",
+            "attributes": [
+              {
+                "key": "auto.instrumented",
+                "value": {
+                  "boolValue": true
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "a1b2c3d4e5f60001",
+              "name": "chat deepseek-chat",
+              "kind": "CLIENT",
+              "startTimeUnixNano": "1794215512420000000",
+              "endTimeUnixNano": "1794215514180000000",
+              "flags": 1,
+              "trace_state": "demo=empty",
+              "links": [
+                {
+                  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                  "spanId": "a1b2c3d4e5f60007",
+                  "attributes": []
+                }
+              ],
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "deepseek"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "deepseek-chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.model",
+                  "value": {
+                    "stringValue": "deepseek-chat-v3"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "sess-otel-demo-01"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "demo-photo-agent"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "相册助手（演示）"
+                  }
+                },
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "demo-user-01"
+                  }
+                },
+                {
+                  "key": "workspace.id",
+                  "value": {
+                    "stringValue": "otel-demo-space"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "820"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": "210"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "stop"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "tracelens.task_name",
+                  "value": {
+                    "stringValue": "整理演示相册并去重"
+                  }
+                },
+                {
+                  "key": "tracelens.rationale",
+                  "value": {
+                    "stringValue": "先规划再动手，让人能中途插手"
+                  }
+                },
+                {
+                  "key": "demo.experiment_id",
+                  "value": {
+                    "stringValue": "demo-exp-otel-3"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/v1/chat/completions"
+                  }
+                }
+              ],
+              "status": {
+                "code": "STATUS_CODE_OK"
+              }
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "a1b2c3d4e5f60002",
+              "parentSpanId": "a1b2c3d4e5f60001",
+              "name": "execute_tool filesystem.glob",
+              "kind": "INTERNAL",
+              "startTimeUnixNano": "1794215515000000000",
+              "endTimeUnixNano": "1794215515740000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "filesystem.glob"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "call-otel-2201"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.arguments",
+                  "value": {
+                    "stringValue": "{\"pattern\":\"DemoAlbum/**/*.jpg\",\"recursive\":true}"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.result",
+                  "value": {
+                    "stringValue": "{\"files\":200,\"size_mb\":812}"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "sess-otel-demo-01"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "demo-photo-agent"
+                  }
+                },
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "demo-user-01"
+                  }
+                },
+                {
+                  "key": "tracelens.rationale",
+                  "value": {
+                    "stringValue": "先列清单，才谈得上核对"
+                  }
+                }
+              ],
+              "status": {
+                "code": "STATUS_CODE_OK"
+              }
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "a1b2c3d4e5f60003",
+              "parentSpanId": "a1b2c3d4e5f60001",
+              "name": "execute_tool notes.write",
+              "kind": "INTERNAL",
+              "startTimeUnixNano": "1794215516100000000",
+              "endTimeUnixNano": "1794215518600000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "notes.write"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "call-otel-2202"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.arguments",
+                  "value": {
+                    "stringValue": "{\"path\":\"DemoAlbum/notes/demo_notes.md\",\"bytes\":512}"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.result",
+                  "value": {
+                    "stringValue": "{\"written_bytes\":512}"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "sess-otel-demo-01"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "demo-photo-agent"
+                  }
+                },
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "demo-user-01"
+                  }
+                },
+                {
+                  "key": "tracelens.rationale",
+                  "value": {
+                    "stringValue": "把计划写下来，方便你逐条核对"
+                  }
+                },
+                {
+                  "key": "tracelens.confidence",
+                  "value": {
+                    "doubleValue": 0.91
+                  }
+                }
+              ],
+              "status": {
+                "code": "STATUS_CODE_OK"
+              }
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "a1b2c3d4e5f60004",
+              "parentSpanId": "a1b2c3d4e5f60001",
+              "name": "execute_tool filesystem.remove",
+              "kind": "INTERNAL",
+              "startTimeUnixNano": "1794215523000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "filesystem.remove"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "call-otel-2203"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.arguments",
+                  "value": {
+                    "stringValue": "{\"target\":\"DemoAlbum/duplicates/*\",\"count\":12,\"move_to_trash\":false}"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "sess-otel-demo-01"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "demo-photo-agent"
+                  }
+                },
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "demo-user-01"
+                  }
+                },
+                {
+                  "key": "tracelens.requires_confirmation",
+                  "value": {
+                    "boolValue": true
+                  }
+                },
+                {
+                  "key": "tracelens.requires_action_reason",
+                  "value": {
+                    "stringValue": "12 个演示文件删除后无法恢复，需要你确认才动手"
+                  }
+                },
+                {
+                  "key": "tracelens.risk.level",
+                  "value": {
+                    "stringValue": "critical"
+                  }
+                },
+                {
+                  "key": "tracelens.impact.targets",
+                  "value": {
+                    "stringValue": "[{\"kind\":\"file\",\"ref\":\"DemoAlbum/duplicates/*\",\"change\":\"delete\",\"count\":12}]"
+                  }
+                },
+                {
+                  "key": "tracelens.impact.reversible",
+                  "value": {
+                    "boolValue": false
+                  }
+                },
+                {
+                  "key": "tracelens.impact.data_categories",
+                  "value": {
+                    "stringValue": "[\"none\"]"
+                  }
+                },
+                {
+                  "key": "tracelens.impact.summary",
+                  "value": {
+                    "stringValue": "12 个演示照片将被永久删除"
+                  }
+                },
+                {
+                  "key": "tracelens.due_at",
+                  "value": {
+                    "stringValue": "2026-11-09T09:42:03Z"
+                  }
+                }
+              ],
+              "status": {
+                "code": "STATUS_CODE_UNSET"
+              }
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "a1b2c3d4e5f60005",
+              "parentSpanId": "a1b2c3d4e5f60001",
+              "name": "execute_tool export.write_csv",
+              "kind": "INTERNAL",
+              "startTimeUnixNano": "1794215525000000000",
+              "endTimeUnixNano": "1794215525900000000",
+              "events": [
+                {
+                  "timeUnixNano": "1794215525900000000",
+                  "name": "exception",
+                  "attributes": [
+                    {
+                      "key": "exception.type",
+                      "value": {
+                        "stringValue": "OSError"
+                      }
+                    },
+                    {
+                      "key": "exception.message",
+                      "value": {
+                        "stringValue": "目标目录只读，无法写入清单文件（演示原因，非真实机器状态）"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "export.write_csv"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.id",
+                  "value": {
+                    "stringValue": "call-otel-2204"
+                  }
+                },
+                {
+                  "key": "gen_ai.tool.call.arguments",
+                  "value": {
+                    "stringValue": "{\"path\":\"DemoAlbum/report/demo_report.csv\",\"rows\":38}"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "sess-otel-demo-01"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "demo-photo-agent"
+                  }
+                },
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "demo-user-01"
+                  }
+                },
+                {
+                  "key": "tracelens.impact.targets",
+                  "value": {
+                    "stringValue": "[{\"kind\":\"file\",\"ref\":\"DemoAlbum/report/demo_report.csv\",\"change\":\"export\",\"count\":1}]"
+                  }
+                },
+                {
+                  "key": "tracelens.impact.reversible",
+                  "value": {
+                    "boolValue": true
+                  }
+                },
+                {
+                  "key": "tracelens.impact.summary",
+                  "value": {
+                    "stringValue": "新增 1 个演示清单文件"
+                  }
+                },
+                {
+                  "key": "tracelens.risk.level",
+                  "value": {
+                    "stringValue": "medium"
+                  }
+                }
+              ],
+              "status": {
+                "code": "STATUS_CODE_ERROR",
+                "reason": "导出清单失败：目标目录只读（演示）"
+              }
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "a1b2c3d4e5f60006",
+              "parentSpanId": "a1b2c3d4e5f60001",
+              "name": "embeddings text-embedding-demo",
+              "kind": "CLIENT",
+              "startTimeUnixNano": "1794215530000000000",
+              "endTimeUnixNano": "1794215530400000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "embeddings"
+                  }
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "demo-embedding"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "text-embedding-demo"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "sess-otel-demo-01"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "demo-photo-agent"
+                  }
+                },
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "demo-user-01"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "1500"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "stop"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "status": {
+                "code": "STATUS_CODE_OK"
+              }
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "a1b2c3d4e5f60007",
+              "name": "invoke_agent planning_demo",
+              "kind": "INTERNAL",
+              "startTimeUnixNano": "1794215533000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "invoke_agent"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "demo-photo-agent"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "相册助手（演示）"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "sess-otel-demo-01"
+                  }
+                },
+                {
+                  "key": "user.id",
+                  "value": {
+                    "stringValue": "demo-user-01"
+                  }
+                },
+                {
+                  "key": "workspace.id",
+                  "value": {
+                    "stringValue": "otel-demo-space"
+                  }
+                },
+                {
+                  "key": "tracelens.action_type",
+                  "value": {
+                    "stringValue": "plan"
+                  }
+                },
+                {
+                  "key": "tracelens.task_name",
+                  "value": {
+                    "stringValue": "整理演示相册并去重"
+                  }
+                },
+                {
+                  "key": "tracelens.confidence",
+                  "value": {
+                    "doubleValue": 0.55
+                  }
+                },
+                {
+                  "key": "tracelens.rationale",
+                  "value": {
+                    "stringValue": "规划分支仍在跑，结果尚未定稿"
+                  }
+                },
+                {
+                  "key": "tracelens.experimental.thinking_chain",
+                  "value": {
+                    "stringValue": "demo-only-不进入界面"
+                  }
+                }
+              ],
+              "status": {
+                "code": "STATUS_CODE_UNSET"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

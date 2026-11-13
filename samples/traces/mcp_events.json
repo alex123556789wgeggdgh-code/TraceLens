@@ -1,0 +1,319 @@
+{
+  "_meta": {
+    "title": "MCP 事件流夹具（合成示例，非真实采集）",
+    "synthetic": true,
+    "real_data": false,
+    "author_note": "【合成示例，非真实采集】本文件由 TraceLens 团队按 Model Context Protocol 与 JSON-RPC 2.0 的公开规范手写，用于开发与验收。不存在任何真实采集：没有真实人名、真实路径、真实金额、真实客户数据（依据 docs/01-product-and-users.md 假设 A1/A2 与队长裁决②）。",
+    "spec_basis": "Model Context Protocol 2025-06-18（JSON-RPC 2.0 消息：initialize 结果里的 protocolVersion/serverInfo/capabilities；tools/list、tools/call（params.name/arguments/_meta）、notifications/message（level/logger/data）、notifications/progress（progressToken/progress/total）、notifications/cancelled（requestId/reason）；结果内容块 content[{type:text}] 与 isError；JSON-RPC 错误对象 error{code,message}）+ JSON-RPC 2.0（jsonrpc/id/method/params/result/error）。",
+    "spec_version": "Model Context Protocol 2025-06-18 (JSON-RPC 2.0)",
+    "extension_namespace": "tracelens",
+    "extension_note": "MCP 规范里没有风险等级/影响面/需要人工确认字段，本夹具通过 tools/call 的 params._meta.tracelens 扩展提供；适配器只读该命名空间。",
+    "envelope_note": "每条事件带 ts（带时区的 ISO8601）与 direction/session_id 信封；请求与响应按 JSON-RPC id 配对，配对差 = 该步骤耗时（latency_ms）。握手事件（initialize / notifications/initialized）不作为动作记录，只用来带出服务端身份。",
+    "scenario": "演示相册服务端：能力查询 → 列文件 → 写笔记 → 请求删除（待确认）→ 导出失败 → 扫描 RPC 报错 → 服务端错误日志 → 进度 → 用户取消",
+    "item_count": 16,
+    "record_count": 9,
+    "generated_by": "backend-engineer (t3)",
+    "generated_at": "2026-11-10T10:00:00+08:00",
+    "offline": true,
+    "no_secrets": true
+  },
+  "protocol": "mcp",
+  "session_id": "sess-mcp-demo-01",
+  "events": [
+    {
+      "ts": "2026-11-09T09:12:19.000Z",
+      "direction": "server_to_client",
+      "jsonrpc": "2.0",
+      "id": "req-0",
+      "result": {
+        "protocolVersion": "2025-06-18",
+        "serverInfo": {
+          "name": "demo-album-server",
+          "version": "1.7.0",
+          "title": "演示相册服务端"
+        },
+        "capabilities": {
+          "tools": {
+            "listChanged": true
+          },
+          "logging": {},
+          "prompts": {}
+        },
+        "instructions": "演示服务端：所有路径都是合成路径，不含真实文件",
+        "resumptionToken": "demo-resume-token-0"
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:19.200Z",
+      "direction": "client_to_server",
+      "jsonrpc": "2.0",
+      "method": "notifications/initialized"
+    },
+    {
+      "ts": "2026-11-09T09:12:20.000Z",
+      "direction": "client_to_server",
+      "jsonrpc": "2.0",
+      "id": "req-1",
+      "method": "tools/list",
+      "params": {
+        "cursor": null
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:20.350Z",
+      "direction": "server_to_client",
+      "jsonrpc": "2.0",
+      "id": "req-1",
+      "result": {
+        "tools": [
+          {
+            "name": "album.list",
+            "description": "列出演示相册里的文件"
+          },
+          {
+            "name": "notes.write",
+            "description": "写入演示笔记"
+          },
+          {
+            "name": "album.remove_duplicates",
+            "description": "删除判定为重复的演示文件"
+          },
+          {
+            "name": "report.export_csv",
+            "description": "导出演示清单"
+          }
+        ],
+        "nextCursor": null,
+        "x_trace_lens_preview": {
+          "cached": true
+        }
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:21.000Z",
+      "direction": "client_to_server",
+      "jsonrpc": "2.0",
+      "id": "req-2",
+      "method": "tools/call",
+      "params": {
+        "name": "album.list",
+        "arguments": {
+          "album": "DemoAlbum",
+          "limit": 50,
+          "recursive": true
+        },
+        "_meta": {
+          "progressToken": "pt-0"
+        }
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:21.200Z",
+      "direction": "server_to_client",
+      "jsonrpc": "2.0",
+      "id": "req-2",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "找到 200 个演示文件（合成数据）"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "files": 200
+        }
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:22.000Z",
+      "direction": "client_to_server",
+      "jsonrpc": "2.0",
+      "id": "req-3",
+      "method": "tools/call",
+      "params": {
+        "name": "notes.write",
+        "arguments": {
+          "path": "DemoAlbum/notes/demo_notes.md",
+          "bytes": 512,
+          "append": false
+        }
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:22.480Z",
+      "direction": "server_to_client",
+      "jsonrpc": "2.0",
+      "id": "req-3",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "已写入 512 字节到演示笔记"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:23.000Z",
+      "direction": "client_to_server",
+      "jsonrpc": "2.0",
+      "id": "req-4",
+      "method": "tools/call",
+      "resumptionToken": "demo-resume-token-4",
+      "params": {
+        "name": "album.remove_duplicates",
+        "arguments": {
+          "album": "DemoAlbum",
+          "count": 12,
+          "move_to_trash": false
+        },
+        "_meta": {
+          "progressToken": "pt-1",
+          "x_trace_lens_debug": {
+            "queue": "demo",
+            "shard": 3
+          },
+          "tracelens": {
+            "requires_confirmation": true,
+            "requires_action_reason": "删除 12 个演示文件后无法恢复，需要你点头",
+            "risk_level": "critical",
+            "due_at": "2026-11-09T09:42:03Z",
+            "impact": {
+              "targets": [
+                {
+                  "kind": "file",
+                  "ref": "DemoAlbum/duplicates/*",
+                  "change": "delete",
+                  "count": 12
+                }
+              ],
+              "reversible": false,
+              "data_categories": [
+                "none"
+              ],
+              "summary": "12 个演示照片将被永久删除"
+            }
+          }
+        }
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:24.000Z",
+      "direction": "client_to_server",
+      "jsonrpc": "2.0",
+      "id": "req-5",
+      "method": "tools/call",
+      "params": {
+        "name": "report.export_csv",
+        "arguments": {
+          "album": "DemoAlbum",
+          "rows": 38,
+          "path": "DemoAlbum/report/demo_report.csv"
+        },
+        "_meta": {
+          "tracelens": {
+            "risk_level": "medium",
+            "impact": {
+              "targets": [
+                {
+                  "kind": "file",
+                  "ref": "DemoAlbum/report/demo_report.csv",
+                  "change": "export",
+                  "count": 1
+                }
+              ],
+              "reversible": true,
+              "data_categories": [
+                "internal"
+              ],
+              "summary": "新增 1 个演示清单文件，不改动原始照片"
+            }
+          }
+        }
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:24.700Z",
+      "direction": "server_to_client",
+      "jsonrpc": "2.0",
+      "id": "req-5",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "导出失败：目标目录只读（演示场景，非真实机器状态）"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:25.000Z",
+      "direction": "client_to_server",
+      "jsonrpc": "2.0",
+      "id": "req-6",
+      "method": "tools/call",
+      "params": {
+        "name": "album.scan",
+        "arguments": {
+          "album": "DemoAlbum",
+          "mode": "sha256"
+        }
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:25.100Z",
+      "direction": "server_to_client",
+      "jsonrpc": "2.0",
+      "id": "req-6",
+      "error": {
+        "code": -32603,
+        "message": "Internal error: 哈希计算服务未启动（演示场景）",
+        "data": {
+          "retryable": false
+        }
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:26.000Z",
+      "direction": "server_to_client",
+      "jsonrpc": "2.0",
+      "method": "notifications/message",
+      "params": {
+        "level": "error",
+        "logger": "album.export",
+        "data": {
+          "code": "ENOSPC",
+          "message": "磁盘空间不足，导出中断（演示场景）"
+        }
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:27.000Z",
+      "direction": "server_to_client",
+      "jsonrpc": "2.0",
+      "method": "notifications/progress",
+      "params": {
+        "progressToken": "pt-1",
+        "progress": 60,
+        "total": 100,
+        "message": "已比对 120/200 个演示文件",
+        "annotations": {
+          "demo": true
+        }
+      }
+    },
+    {
+      "ts": "2026-11-09T09:12:28.000Z",
+      "direction": "client_to_server",
+      "jsonrpc": "2.0",
+      "method": "notifications/cancelled",
+      "params": {
+        "requestId": "req-4",
+        "reason": "用户在界面上选了拒绝，要求中止删除（演示场景）"
+      }
+    }
+  ]
+}

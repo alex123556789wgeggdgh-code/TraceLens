@@ -1,0 +1,302 @@
+{
+  "_meta": {
+    "title": "Langfuse trace/observation 夹具（合成示例，非真实采集）",
+    "synthetic": true,
+    "real_data": false,
+    "author_note": "【合成示例，非真实采集】本文件由 TraceLens 团队按 Langfuse 公开 API 文档手写，用于开发与验收。不存在任何真实采集：没有真实人名、真实路径、真实金额、真实客户数据（依据 docs/01-product-and-users.md 假设 A1/A2 与队长裁决②『不索要真实 trace』）。",
+    "spec_basis": "Langfuse public API v1（OpenAPI 1.0.0）与 Ingestion API schema 2.0 的 trace / observation（SPAN / GENERATION / EVENT）字段形态；时间戳用带时区的 ISO8601，usage 用 Langfuse 的 {input,output,total,unit,inputCost,outputCost,totalCost} 形状。",
+    "spec_version": "Langfuse public API v1 (OpenAPI 1.0.0, Ingestion API schema 2.0)",
+    "extension_namespace": "tracelens",
+    "extension_note": "requires_confirmation / risk_level / impact 等 ActionRecord 才有的语义，Langfuse 规范里没有对应字段，本夹具通过 metadata.tracelens 扩展命名空间提供（适配器只读该命名空间，不做猜测）。",
+    "scenario": "演示任务：整理演示相册并去重（含 1 条待确认删除、1 条失败、1 条低置信、1 条导出、1 条等待）",
+    "item_count": 8,
+    "generated_by": "backend-engineer (t3)",
+    "generated_at": "2026-11-10T10:00:00+08:00",
+    "offline": true,
+    "no_secrets": true
+  },
+  "id": "trc-demo-lf-01",
+  "timestamp": "2026-11-09T09:11:50.000Z",
+  "name": "整理演示相册并去重",
+  "sessionId": "sess-lf-demo-01",
+  "userId": "demo-user-01",
+  "projectId": "proj-demo-lf",
+  "release": "demo-agent@0.3.1",
+  "version": "v1",
+  "environment": "demo",
+  "tags": [
+    "demo",
+    "synthetic",
+    "photo-dedupe"
+  ],
+  "htmlPath": "local://samples/traces/langfuse.json",
+  "public": false,
+  "metadata": {
+    "tracelens": {
+      "agent_id": "demo-photo-bot",
+      "agent_name": "相册助手（演示）",
+      "synthetic": true
+    },
+    "ticket": "DEMO-42"
+  },
+  "observations": [
+    {
+      "id": "obs-lf-0001",
+      "traceId": "trc-demo-lf-01",
+      "type": "GENERATION",
+      "name": "planning: 拆分去重步骤",
+      "startTime": "2026-11-09T09:11:52.420Z",
+      "endTime": "2026-11-09T09:11:54.180Z",
+      "completionStartTime": "2026-11-09T09:11:52.900Z",
+      "model": "deepseek-chat",
+      "modelParameters": {
+        "temperature": 0.2,
+        "max_tokens": 800
+      },
+      "input": {
+        "task": "整理演示相册并去重",
+        "constraints": "不删原始照片"
+      },
+      "output": {
+        "plan": [
+          "扫描相册",
+          "内容哈希比对",
+          "删除重复项",
+          "汇总报告"
+        ]
+      },
+      "usage": {
+        "input": 820,
+        "output": 210,
+        "total": 1030,
+        "unit": "USD",
+        "inputCost": 0.0017,
+        "outputCost": 0.0004,
+        "totalCost": 0.0021,
+        "costEstimated": true
+      },
+      "metadata": {
+        "tracelens": {
+          "rationale": "先把任务拆成可核对的步骤，便于中途人工干预",
+          "confidence": 0.88
+        }
+      },
+      "level": "DEFAULT",
+      "version": "v1",
+      "environment": "demo"
+    },
+    {
+      "id": "obs-lf-0002",
+      "traceId": "trc-demo-lf-01",
+      "parentObservationId": "obs-lf-0001",
+      "type": "SPAN",
+      "name": "filesystem.scan_album",
+      "startTime": "2026-11-09T09:11:55.000Z",
+      "endTime": "2026-11-09T09:11:55.740Z",
+      "input": {
+        "album": "DemoAlbum",
+        "recursive": true
+      },
+      "output": {
+        "files": 200,
+        "size_mb": 812
+      },
+      "metadata": {
+        "tracelens": {
+          "rationale": "要知道有多少重复，得先列出全部文件清单"
+        }
+      },
+      "level": "DEFAULT",
+      "version": "v1",
+      "environment": "demo",
+      "experimentName": "demo-exp-1",
+      "properties": {
+        "sdk": "python-demo",
+        "instrumentation": "manual"
+      }
+    },
+    {
+      "id": "obs-lf-0003",
+      "traceId": "trc-demo-lf-01",
+      "parentObservationId": "obs-lf-0001",
+      "type": "GENERATION",
+      "name": "compare: 内容哈希比对",
+      "startTime": "2026-11-09T09:11:56.100Z",
+      "endTime": "2026-11-09T09:11:58.600Z",
+      "model": "deepseek-chat",
+      "input": {
+        "candidates": 200,
+        "method": "sha256"
+      },
+      "output": {
+        "duplicates": 12,
+        "method": "sha256"
+      },
+      "usage": {
+        "input": 640,
+        "output": 120,
+        "total": 760,
+        "unit": "USD"
+      },
+      "metadata": {
+        "tracelens": {
+          "rationale": "内容完全一致的文件才可以判定为重复，避免按文件名误判",
+          "confidence": 0.55
+        }
+      },
+      "level": "DEFAULT",
+      "usagePricingTierId": "tier-demo-1",
+      "promptId": "prompt-demo-7"
+    },
+    {
+      "id": "obs-lf-0004",
+      "traceId": "trc-demo-lf-01",
+      "parentObservationId": "obs-lf-0001",
+      "type": "SPAN",
+      "name": "filesystem.remove_duplicates",
+      "startTime": "2026-11-09T09:12:03.000Z",
+      "input": {
+        "album": "DemoAlbum",
+        "count": 12,
+        "move_to_trash": false
+      },
+      "output": null,
+      "metadata": {
+        "tracelens": {
+          "requires_confirmation": true,
+          "requires_action_reason": "删除 12 个演示文件后无法恢复，需要你点头才继续",
+          "risk_level": "high",
+          "due_at": "2026-11-09T09:42:03Z",
+          "impact": {
+            "targets": [
+              {
+                "kind": "file",
+                "ref": "DemoAlbum/duplicates/*",
+                "change": "delete",
+                "count": 12
+              }
+            ],
+            "reversible": false,
+            "data_categories": [
+              "none"
+            ],
+            "summary": "12 个演示照片将被永久删除"
+          }
+        }
+      },
+      "level": "DEFAULT",
+      "statusMessage": "等待人工确认（演示）"
+    },
+    {
+      "id": "obs-lf-0005",
+      "traceId": "trc-demo-lf-01",
+      "parentObservationId": "obs-lf-0001",
+      "type": "SPAN",
+      "name": "thumbnail.generate_preview",
+      "startTime": "2026-11-09T09:12:05.000Z",
+      "endTime": "2026-11-09T09:12:05.900Z",
+      "input": {
+        "album": "DemoAlbum",
+        "size": "thumbnail"
+      },
+      "output": null,
+      "metadata": {
+        "tracelens": {
+          "rationale": "预览用于人工核对保留项"
+        }
+      },
+      "level": "ERROR",
+      "statusMessage": "缩略图缓存写入失败：磁盘剩余空间不足（演示原因，非真实机器状态）",
+      "langfuse_experimental": {
+        "reasoning_digest": "demo-only",
+        "sdk_integration": "na"
+      }
+    },
+    {
+      "id": "obs-lf-0006",
+      "traceId": "trc-demo-lf-01",
+      "parentObservationId": "obs-lf-0001",
+      "type": "SPAN",
+      "name": "export.write_report_csv",
+      "startTime": "2026-11-09T09:12:10.000Z",
+      "endTime": "2026-11-09T09:12:11.250Z",
+      "input": {
+        "album": "DemoAlbum",
+        "rows": 38
+      },
+      "output": {
+        "rows": 38,
+        "path": "DemoAlbum/report/demo_report.csv"
+      },
+      "metadata": {
+        "tracelens": {
+          "rationale": "导出清单给人核对，导出不改动原始照片",
+          "risk_level": "medium",
+          "impact": {
+            "targets": [
+              {
+                "kind": "file",
+                "ref": "DemoAlbum/report/demo_report.csv",
+                "change": "export",
+                "count": 1
+              }
+            ],
+            "reversible": true,
+            "data_categories": [
+              "internal"
+            ],
+            "summary": "新增 1 个演示清单文件，不改动原始照片"
+          }
+        }
+      },
+      "level": "DEFAULT",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "total": 0,
+        "unit": "USD",
+        "totalCost": 0.0
+      }
+    },
+    {
+      "id": "obs-lf-0007",
+      "traceId": "trc-demo-lf-01",
+      "type": "EVENT",
+      "name": "finish.summary_to_user",
+      "startTime": "2026-11-09T09:12:12.000Z",
+      "endTime": "2026-11-09T09:12:12.000Z",
+      "input": null,
+      "output": {
+        "kept": 188,
+        "duplicates_flagged": 12,
+        "skipped_delete": true
+      },
+      "metadata": {
+        "tracelens": {
+          "rationale": "任务收尾要把结果讲清楚"
+        }
+      },
+      "level": "DEFAULT"
+    },
+    {
+      "id": "obs-lf-0008",
+      "traceId": "trc-demo-lf-01",
+      "parentObservationId": "obs-lf-0004",
+      "type": "SPAN",
+      "name": "assistant.wait_for_user_reply",
+      "startTime": "2026-11-09T09:12:13.000Z",
+      "endTime": null,
+      "input": {
+        "waiting_for": "删除决定"
+      },
+      "output": null,
+      "metadata": {
+        "tracelens": {
+          "confidence": 0.4
+        }
+      },
+      "level": "DEFAULT",
+      "statusMessage": "助手在等人回答（演示）"
+    }
+  ]
+}

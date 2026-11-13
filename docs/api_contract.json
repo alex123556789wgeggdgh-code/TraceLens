@@ -1,0 +1,1529 @@
+{
+  "abilities": {
+    "audit.export": {
+      "roles": [
+        "admin",
+        "editor",
+        "local",
+        "viewer"
+      ],
+      "routes": [
+        "GET /api/audit/export"
+      ]
+    },
+    "audit.read": {
+      "roles": [
+        "admin",
+        "editor",
+        "local",
+        "viewer"
+      ],
+      "routes": [
+        "GET /api/audit",
+        "GET /api/secretariat",
+        "GET /api/secretariat/delegations",
+        "GET /api/secretariat/identities",
+        "GET /api/secretariat/letters",
+        "GET /api/secretariat/letters/{id}",
+        "GET /api/secretariat/status",
+        "POST /api/secretariat/letters/{id}/verify",
+        "POST /api/secretariat/verify"
+      ]
+    },
+    "data.write": {
+      "roles": [
+        "admin",
+        "editor",
+        "local"
+      ],
+      "routes": [
+        "POST /api/import"
+      ]
+    },
+    "ingest.token.manage": {
+      "roles": [
+        "admin",
+        "local"
+      ],
+      "routes": [
+        "GET /api/ingest/status",
+        "POST /api/ingest/tokens",
+        "POST /api/ingest/tokens/{id}/revoke"
+      ]
+    },
+    "intervene.decide": {
+      "roles": [
+        "admin",
+        "editor",
+        "local"
+      ],
+      "routes": [
+        "POST /intervene"
+      ]
+    },
+    "records.read": {
+      "roles": [
+        "admin",
+        "editor",
+        "local",
+        "viewer"
+      ],
+      "routes": [
+        "GET /api/records",
+        "GET /api/records/{id}",
+        "GET /api/settings",
+        "GET /api/stream"
+      ]
+    },
+    "settings.write": {
+      "roles": [
+        "admin",
+        "local"
+      ],
+      "routes": [
+        "POST /api/reset",
+        "POST /api/secretariat/delegations",
+        "POST /api/secretariat/identities",
+        "POST /api/secretariat/identities/{id}/revoke",
+        "POST /api/secretariat/letters",
+        "POST /api/secretariat/records/{id}/sign",
+        "POST /api/secretariat/seal",
+        "POST /api/settings/test-llm",
+        "PUT /api/settings"
+      ]
+    },
+    "users.manage": {
+      "roles": [
+        "admin"
+      ],
+      "routes": [
+        "GET /api/users",
+        "POST /api/users",
+        "POST /api/users/{id}/{verb}"
+      ]
+    }
+  },
+  "doc_crosscheck": {
+    "contract_only_paths": [],
+    "contract_paths": [
+      "/api/audit",
+      "/api/audit/export",
+      "/api/auth/check",
+      "/api/auth/login",
+      "/api/auth/logout",
+      "/api/auth/me",
+      "/api/auth/password",
+      "/api/auth/permissions",
+      "/api/auth/status",
+      "/api/import",
+      "/api/ingest/events",
+      "/api/ingest/status",
+      "/api/ingest/tokens",
+      "/api/ingest/tokens/{id}/revoke",
+      "/api/records",
+      "/api/records/{id}",
+      "/api/reset",
+      "/api/secretariat",
+      "/api/secretariat/delegations",
+      "/api/secretariat/identities",
+      "/api/secretariat/identities/{id}/revoke",
+      "/api/secretariat/letters",
+      "/api/secretariat/letters/{id}",
+      "/api/secretariat/letters/{id}/verify",
+      "/api/secretariat/records/{id}/sign",
+      "/api/secretariat/seal",
+      "/api/secretariat/status",
+      "/api/secretariat/verify",
+      "/api/settings",
+      "/api/settings/test-llm",
+      "/api/stream",
+      "/api/users",
+      "/api/users/{id}/{verb}",
+      "/health",
+      "/healthz",
+      "/intervene"
+    ],
+    "doc_only_paths": [],
+    "doc_paths": [
+      "/api/audit",
+      "/api/audit/export",
+      "/api/auth/check",
+      "/api/auth/login",
+      "/api/auth/logout",
+      "/api/auth/me",
+      "/api/auth/password",
+      "/api/auth/permissions",
+      "/api/auth/status",
+      "/api/import",
+      "/api/ingest/events",
+      "/api/ingest/status",
+      "/api/ingest/tokens",
+      "/api/ingest/tokens/{id}/revoke",
+      "/api/records",
+      "/api/records/{id}",
+      "/api/reset",
+      "/api/secretariat",
+      "/api/secretariat/delegations",
+      "/api/secretariat/identities",
+      "/api/secretariat/identities/{id}/revoke",
+      "/api/secretariat/letters",
+      "/api/secretariat/letters/{id}",
+      "/api/secretariat/letters/{id}/verify",
+      "/api/secretariat/records/{id}/sign",
+      "/api/secretariat/seal",
+      "/api/secretariat/status",
+      "/api/secretariat/verify",
+      "/api/settings",
+      "/api/settings/test-llm",
+      "/api/stream",
+      "/api/users",
+      "/api/users/{id}/role",
+      "/health",
+      "/healthz",
+      "/intervene"
+    ],
+    "doc_rows": 34,
+    "in_sync": true,
+    "rows_not_aligned": [],
+    "section": "docs/03-architecture.md §6.5 路由实况核对表",
+    "verb_drift": []
+  },
+  "error_codes": {
+    "by_module": {
+      "audit.py": [
+        "AUDIT_CHAIN_FIELD_LOCKED",
+        "AUDIT_EVENT_TYPE",
+        "AUDIT_EXPORT_WRITE_FAILED",
+        "AUDIT_FIELD_CONFLICT",
+        "AUDIT_FIELD_ENUM",
+        "AUDIT_FIELD_RANGE",
+        "AUDIT_FIELD_REQUIRED",
+        "AUDIT_FIELD_TYPE",
+        "AUDIT_LINE_TOO_LARGE",
+        "AUDIT_PDF_EMPTY",
+        "AUDIT_REPORTLAB_UNAVAILABLE",
+        "AUDIT_TIME_INVALID",
+        "AUDIT_TIME_RANGE_INVERTED",
+        "AUDIT_VALUE_UNSERIALIZABLE",
+        "alias_mismatch",
+        "blank_line",
+        "chain_break",
+        "changed_fields",
+        "count_mismatch",
+        "entry_not_object",
+        "hash_mismatch",
+        "head_mismatch",
+        "seal_count_mismatch",
+        "seal_mismatch",
+        "seq_gap",
+        "unparsable_line"
+      ],
+      "auth.py": [
+        "AUTH_BAD_CREDENTIALS",
+        "AUTH_MODE_INVALID",
+        "AUTH_PASSWORD_REQUIRED",
+        "AUTH_PASSWORD_SAME",
+        "AUTH_PASSWORD_TOO_LONG",
+        "AUTH_SECRET_TOO_SHORT",
+        "AUTH_STATE_CORRUPT",
+        "AUTH_TOKEN_EXPIRED",
+        "AUTH_TOKEN_INVALID",
+        "AUTH_TOKEN_REVOKED",
+        "AUTH_USER_DISABLED",
+        "AUTH_USER_NOT_FOUND",
+        "AUTH_WEAK_PASSWORD",
+        "CSRF_FAILED",
+        "PERMISSION_UNKNOWN",
+        "RATE_LIMITED",
+        "ROLE_INVALID",
+        "USERNAME_INVALID",
+        "USERNAME_REQUIRED",
+        "USER_DELETE_DISABLED",
+        "USER_EXISTS",
+        "USER_LAST_ADMIN",
+        "USER_NOT_FOUND",
+        "USER_SELF_DISABLE",
+        "USER_STATUS_INVALID"
+      ],
+      "explanations.py": [
+        "EXPLAIN_GENERATED_BY_INVALID",
+        "EXPLAIN_LANG_UNSUPPORTED",
+        "EXPLAIN_LLM_CLIENT_INVALID",
+        "EXPLAIN_MODE_UNSUPPORTED",
+        "EXPLAIN_RECORD_TYPE"
+      ],
+      "ingest.py": [
+        "INGEST_ADAPTER_REJECTED",
+        "INGEST_DISABLED",
+        "INGEST_EMPTY",
+        "INGEST_FIELD_TYPE",
+        "INGEST_FORMAT_UNSUPPORTED",
+        "INGEST_IDEMPOTENCY_CONFLICT",
+        "INGEST_RATE_LIMITED",
+        "INGEST_SCHEMA_INVALID",
+        "INGEST_SCOPE_FORBIDDEN",
+        "INGEST_STORE_FAILURE",
+        "INGEST_TOKEN_DISABLED",
+        "INGEST_TOKEN_EXPIRED",
+        "INGEST_TOKEN_INVALID",
+        "INGEST_TOKEN_MISSING",
+        "INGEST_TOO_LARGE",
+        "INGEST_TOO_MANY_EVENTS",
+        "STREAM_ACCEPT_REQUIRED",
+        "STREAM_LIMIT_REACHED",
+        "STREAM_QUERY_INVALID"
+      ],
+      "server.py": [
+        "AUDIT_CHAIN_BROKEN",
+        "AUDIT_QUERY_INVALID",
+        "EXPORT_FORMAT_INVALID",
+        "IMPORT_FORMAT_UNSUPPORTED",
+        "IMPORT_INPUT_EMPTY",
+        "IMPORT_INPUT_NOT_JSON",
+        "IMPORT_MODE_INVALID",
+        "IMPORT_TOO_LARGE",
+        "IMPORT_TOO_MANY",
+        "INGEST_FIELD_TYPE",
+        "INTERVENE_ACTION_NOT_FOUND",
+        "INTERVENE_ALREADY_DECIDED",
+        "INTERVENE_BODY_INVALID",
+        "INTERVENE_BODY_NOT_OBJECT",
+        "INTERVENE_BODY_TOO_LARGE",
+        "INTERVENE_CONTENT_TYPE",
+        "INTERVENE_DECISION_INVALID",
+        "INTERVENE_FIELD_MISSING",
+        "INTERVENE_FIELD_TYPE",
+        "INTERVENE_FIELD_UNKNOWN",
+        "INTERVENE_IDEMPOTENCY_MISMATCH",
+        "INTERVENE_OPTION_MISMATCH",
+        "INTERVENE_PARAM_EMPTY",
+        "INTERVENE_PARAM_MISSING",
+        "INTERVENE_PARAM_NOT_ALLOWED",
+        "INTERVENE_PARAM_NO_CHANGE",
+        "INTERVENE_PARAM_RANGE",
+        "INTERVENE_PARAM_TYPE",
+        "INTERVENE_PARAM_UNKNOWN",
+        "INTERVENE_REASON_REQUIRED",
+        "INTERVENE_REASON_TOO_SHORT",
+        "INTERVENE_RECORD_INVALID",
+        "INTERVENE_STATE_INVALID",
+        "METHOD_NOT_ALLOWED",
+        "RECORD_STORE_WRITE_FAILED",
+        "RESET_DISABLED",
+        "ROLE_FORBIDDEN",
+        "ROUTE_NOT_FOUND",
+        "SECRETARIAT_FIELD_INVALID",
+        "SECRETARIAT_LETTER_EMPTY",
+        "SECRETARIAT_LETTER_NOT_FOUND",
+        "SECRETARIAT_RECORD_MISSING",
+        "SETTINGS_FIELD_RANGE",
+        "SETTINGS_FIELD_TOO_LONG",
+        "SETTINGS_FIELD_TYPE",
+        "SETTINGS_FIELD_UNKNOWN",
+        "STREAM_ACCEPT_REQUIRED",
+        "STREAM_QUERY_INVALID"
+      ],
+      "settings.py": [
+        "LLM_HTTP_ERROR",
+        "LLM_KEY_REJECTED",
+        "LLM_OUTBOUND_BLOCKED",
+        "LLM_PATH_NOT_FOUND",
+        "LLM_RATE_LIMITED",
+        "LLM_TRANSPORT_MISCONFIGURED",
+        "SETTINGS_BODY_EMPTY",
+        "SETTINGS_BODY_NOT_OBJECT",
+        "SETTINGS_FIELD_MISSING",
+        "SETTINGS_FIELD_RANGE",
+        "SETTINGS_FIELD_TOO_LONG",
+        "SETTINGS_FIELD_TYPE",
+        "SETTINGS_FIELD_UNKNOWN",
+        "SETTINGS_FILE_INVALID",
+        "SETTINGS_GRANULARITY_INVALID",
+        "SETTINGS_LANGUAGE_INVALID",
+        "SETTINGS_MODE_INVALID",
+        "SETTINGS_NO_CHANGES",
+        "SETTINGS_PROVIDER_INVALID",
+        "SETTINGS_READ_FAILED",
+        "SETTINGS_SECTION_UNKNOWN",
+        "SETTINGS_URL_FRAGMENT",
+        "SETTINGS_URL_INSECURE",
+        "SETTINGS_URL_MALFORMED",
+        "SETTINGS_URL_PORT",
+        "SETTINGS_URL_QUERY",
+        "SETTINGS_URL_SCHEME",
+        "SETTINGS_URL_USERINFO",
+        "SETTINGS_WRITE_FAILED"
+      ],
+      "trace_adapter.py": [
+        "ADAPTER_OUTPUT_INVALID",
+        "OTEL_STATUS_CODE_ERROR",
+        "SCHEMA_VERSION_UNSUPPORTED",
+        "SOURCE_REPORTED_FAILURE",
+        "STATUS_CODE_ERROR",
+        "TRACE_DUPLICATE_ID",
+        "TRACE_ENUM_INVALID",
+        "TRACE_FIELD_INVALID",
+        "TRACE_FIELD_MISSING",
+        "TRACE_FORMAT_UNKNOWN",
+        "TRACE_FORMAT_UNSUPPORTED",
+        "TRACE_INPUT_EMPTY",
+        "TRACE_INPUT_NOT_JSON",
+        "TRACE_INPUT_NOT_UTF8",
+        "TRACE_INPUT_TYPE",
+        "TRACE_LANGFUSE_EMPTY",
+        "TRACE_MCP_EMPTY",
+        "TRACE_MCP_NO_RECORDS",
+        "TRACE_NATIVE_EMPTY",
+        "TRACE_OTEL_EMPTY",
+        "TRACE_RECORD_TYPE",
+        "TRACE_SOURCE_KIND_INVALID",
+        "TRACE_TIMESTAMP_INVALID"
+      ]
+    },
+    "client_maps": {
+      "AUDIT_ERROR_KEYS": 5,
+      "AUTH_ERROR_KEYS": 32,
+      "EXPORT_ERROR_KEYS": 7,
+      "IMPORT_ERROR_KEYS": 27,
+      "INTERVENE_ERROR_KEYS": 31,
+      "SETTINGS_ERROR_KEYS": 38
+    },
+    "domains": [
+      "audit",
+      "auth",
+      "desk",
+      "export",
+      "ingest",
+      "intervene",
+      "llm",
+      "settings",
+      "stream"
+    ],
+    "excluded_non_codes": {
+      "ACCEPT_ENCODING": "HTTP 头名",
+      "APPLICATION_JSON": "媒体类型",
+      "CACHE_CONTROL": "HTTP 头名",
+      "CONTENT_LENGTH": "HTTP 头名",
+      "CONTENT_TYPE": "HTTP 头名",
+      "ISO_8859_1": "编码名",
+      "NO_STORE": "缓存指令值",
+      "PSEUDO_HEADER": "内部标记",
+      "RETRY_AFTER": "HTTP 头名",
+      "SEC_WEBSOCKET_ACCEPT": "HTTP 头名",
+      "SEC_WEBSOCKET_KEY": "HTTP 头名",
+      "SEC_WEBSOCKET_VERSION": "HTTP 头名",
+      "SHA_256": "算法名",
+      "TEXT_EVENT_STREAM": "媒体类型",
+      "TEXT_HTML": "媒体类型",
+      "TRACELENS_ADMIN_HOST": "环境变量名",
+      "TRACELENS_ADMIN_PASSWORD": "环境变量名",
+      "TRACELENS_ADMIN_PORT": "环境变量名",
+      "TRACELENS_LLM_API_KEY": "环境变量名",
+      "TRACELNS_ADMIN_INITIAL_PASSWORD": "环境变量名（历史拼写，兼容保留）",
+      "UTF_8": "编码名",
+      "WWW_AUTHENTICATE": "HTTP 头名"
+    },
+    "fallback_rule": "没有 code 键的码必须用响应里的 `message` 回退显示（服务端这些码的 message 是人话），界面不得白屏（docs/03 §6.5 QA 结论）。",
+    "method": "tools/i18n_lint.py:collect_error_codes()（AST，只取携带 code 的位置） + `<域>.error.<code 小写>` 查键",
+    "missing": [
+      "ADAPTER_OUTPUT_INVALID",
+      "AUDIT_CHAIN_BROKEN",
+      "AUDIT_CHAIN_FIELD_LOCKED",
+      "AUDIT_EVENT_TYPE",
+      "AUDIT_EXPORT_WRITE_FAILED",
+      "AUDIT_FIELD_CONFLICT",
+      "AUDIT_FIELD_ENUM",
+      "AUDIT_FIELD_RANGE",
+      "AUDIT_FIELD_REQUIRED",
+      "AUDIT_FIELD_TYPE",
+      "AUDIT_LINE_TOO_LARGE",
+      "AUDIT_PDF_EMPTY",
+      "AUDIT_QUERY_INVALID",
+      "AUDIT_REPORTLAB_UNAVAILABLE",
+      "AUDIT_TIME_INVALID",
+      "AUDIT_TIME_RANGE_INVERTED",
+      "AUDIT_VALUE_UNSERIALIZABLE",
+      "AUTH_MODE_INVALID",
+      "AUTH_SECRET_TOO_SHORT",
+      "AUTH_STATE_CORRUPT",
+      "EXPLAIN_GENERATED_BY_INVALID",
+      "EXPLAIN_LANG_UNSUPPORTED",
+      "EXPLAIN_LLM_CLIENT_INVALID",
+      "EXPLAIN_MODE_UNSUPPORTED",
+      "EXPLAIN_RECORD_TYPE",
+      "EXPORT_FORMAT_INVALID",
+      "IMPORT_FORMAT_UNSUPPORTED",
+      "IMPORT_INPUT_EMPTY",
+      "IMPORT_INPUT_NOT_JSON",
+      "IMPORT_MODE_INVALID",
+      "IMPORT_TOO_LARGE",
+      "IMPORT_TOO_MANY",
+      "INGEST_ADAPTER_REJECTED",
+      "INGEST_DISABLED",
+      "INGEST_EMPTY",
+      "INGEST_FIELD_TYPE",
+      "INGEST_FORMAT_UNSUPPORTED",
+      "INGEST_IDEMPOTENCY_CONFLICT",
+      "INGEST_RATE_LIMITED",
+      "INGEST_SCHEMA_INVALID",
+      "INGEST_SCOPE_FORBIDDEN",
+      "INGEST_STORE_FAILURE",
+      "INGEST_TOKEN_DISABLED",
+      "INGEST_TOKEN_EXPIRED",
+      "INGEST_TOKEN_INVALID",
+      "INGEST_TOKEN_MISSING",
+      "INGEST_TOO_LARGE",
+      "INGEST_TOO_MANY_EVENTS",
+      "INTERVENE_RECORD_INVALID",
+      "OTEL_STATUS_CODE_ERROR",
+      "PERMISSION_UNKNOWN",
+      "RECORD_STORE_WRITE_FAILED",
+      "SCHEMA_VERSION_UNSUPPORTED",
+      "SECRETARIAT_FIELD_INVALID",
+      "SECRETARIAT_LETTER_EMPTY",
+      "SECRETARIAT_LETTER_NOT_FOUND",
+      "SECRETARIAT_RECORD_MISSING",
+      "SOURCE_REPORTED_FAILURE",
+      "STATUS_CODE_ERROR",
+      "STREAM_ACCEPT_REQUIRED",
+      "STREAM_LIMIT_REACHED",
+      "STREAM_QUERY_INVALID",
+      "TRACE_DUPLICATE_ID",
+      "TRACE_ENUM_INVALID",
+      "TRACE_FIELD_INVALID",
+      "TRACE_FIELD_MISSING",
+      "TRACE_FORMAT_UNKNOWN",
+      "TRACE_FORMAT_UNSUPPORTED",
+      "TRACE_INPUT_EMPTY",
+      "TRACE_INPUT_NOT_JSON",
+      "TRACE_INPUT_NOT_UTF8",
+      "TRACE_INPUT_TYPE",
+      "TRACE_LANGFUSE_EMPTY",
+      "TRACE_MCP_EMPTY",
+      "TRACE_MCP_NO_RECORDS",
+      "TRACE_NATIVE_EMPTY",
+      "TRACE_OTEL_EMPTY",
+      "TRACE_RECORD_TYPE",
+      "TRACE_SOURCE_KIND_INVALID",
+      "TRACE_TIMESTAMP_INVALID",
+      "USER_NOT_FOUND",
+      "alias_mismatch",
+      "blank_line",
+      "chain_break",
+      "changed_fields",
+      "count_mismatch",
+      "entry_not_object",
+      "hash_mismatch",
+      "head_mismatch",
+      "seal_count_mismatch",
+      "seal_mismatch",
+      "seq_gap",
+      "unparsable_line"
+    ],
+    "missing_count": 93,
+    "total": 168,
+    "with_key": 75
+  },
+  "frontend_endpoints": {
+    "count": 30,
+    "endpoints": {
+      "analytics": "/api/analytics",
+      "audit": "/api/audit",
+      "auditExport": "/api/audit/export",
+      "authCheck": "/api/auth/check",
+      "authLogin": "/api/auth/login",
+      "authLogout": "/api/auth/logout",
+      "authMe": "/api/auth/me",
+      "authPassword": "/api/auth/password",
+      "authPermissions": "/api/auth/permissions",
+      "authStatus": "/api/auth/status",
+      "compliance": "/api/compliance",
+      "evidence": "/api/evidence",
+      "groups": "/api/groups",
+      "health": "/health",
+      "import": "/api/import",
+      "ingestEvents": "/api/ingest/events",
+      "ingestStatus": "/api/ingest/status",
+      "ingestTokens": "/api/ingest/tokens",
+      "intervene": "/intervene",
+      "preferences": "/api/preferences",
+      "records": "/api/records",
+      "reset": "/api/reset",
+      "rollback": "/api/rollback",
+      "secretariat": "/api/secretariat",
+      "settings": "/api/settings",
+      "settingsTestLlm": "/api/settings/test-llm",
+      "shares": "/api/shares",
+      "stream": "/api/stream",
+      "suggestions": "/api/suggestions",
+      "users": "/api/users"
+    },
+    "source": "agent_explainer/web/app.js: var API_ENDPOINTS",
+    "unknown_paths": [
+      "/api/analytics",
+      "/api/compliance",
+      "/api/evidence",
+      "/api/groups",
+      "/api/preferences",
+      "/api/rollback",
+      "/api/shares",
+      "/api/suggestions"
+    ]
+  },
+  "generated_by": "tools/gen_api_contract.py",
+  "limits": {
+    "AUDIT_QUERY_LIMIT_DEFAULT": 50,
+    "MAX_BODY_BYTES": null
+  },
+  "local_capabilities": [
+    "read_records",
+    "decide",
+    "audit_read"
+  ],
+  "matrix_abilities": [
+    "audit.export",
+    "audit.read",
+    "data.write",
+    "ingest.token.manage",
+    "intervene.decide",
+    "records.read",
+    "settings.write",
+    "users.manage"
+  ],
+  "matrix_abilities_without_routes": [],
+  "method_fallbacks": {
+    "DELETE": "405 METHOD_NOT_ALLOWED（`_method_blocked()`，整 verb 关闭）",
+    "HEAD": "委托 do_GET（同一份静态/JSON 响应，无 body）",
+    "OPTIONS": "405 METHOD_NOT_ALLOWED（`_method_blocked()`，整 verb 关闭）",
+    "PATCH": "405 METHOD_NOT_ALLOWED（`_method_blocked()`，整 verb 关闭）"
+  },
+  "method_not_allowed": {
+    "GET": [
+      "/api/import",
+      "/api/ingest/events",
+      "/api/ingest/tokens",
+      "/api/secretariat/seal",
+      "/api/secretariat/verify",
+      "/api/settings/test-llm"
+    ],
+    "POST": [
+      "/api/audit",
+      "/api/audit/export",
+      "/api/auth/me",
+      "/api/auth/permissions",
+      "/api/auth/status",
+      "/api/ingest/status",
+      "/api/ingest/tokens/{id}/revoke",
+      "/api/records",
+      "/api/secretariat",
+      "/api/secretariat/status",
+      "/api/settings",
+      "/api/stream",
+      "/health"
+    ],
+    "PUT": [
+      "/api/settings/test-llm"
+    ]
+  },
+  "path_constants": {
+    "API_PATHS_PUBLIC": [
+      "/health",
+      "/healthz",
+      "/api/auth/status",
+      "/api/auth/permissions",
+      "/api/auth/login"
+    ],
+    "API_PATH_ANALYTICS_DASHBOARD": "/api/analytics/dashboard",
+    "API_PATH_ANALYTICS_EXPORT": "/api/analytics/export",
+    "API_PATH_AUDIT": "/api/audit",
+    "API_PATH_AUDIT_EXPORT": "/api/audit/export",
+    "API_PATH_AUTH_CHECK": "/api/auth/check",
+    "API_PATH_AUTH_LOGIN": "/api/auth/login",
+    "API_PATH_AUTH_LOGOUT": "/api/auth/logout",
+    "API_PATH_AUTH_ME": "/api/auth/me",
+    "API_PATH_AUTH_PASSWORD": "/api/auth/password",
+    "API_PATH_AUTH_PERMISSIONS": "/api/auth/permissions",
+    "API_PATH_AUTH_STATUS": "/api/auth/status",
+    "API_PATH_COMPLIANCE_EXPORT": "/api/compliance/export",
+    "API_PATH_COMPLIANCE_EXPORTS": "/api/compliance/exports",
+    "API_PATH_EVIDENCE": "/api/evidence",
+    "API_PATH_GROUPS": "/api/groups",
+    "API_PATH_HEALTH": "/health",
+    "API_PATH_IMPORT": "/api/import",
+    "API_PATH_INGEST_EVENTS": "/api/ingest/events",
+    "API_PATH_INGEST_STATUS": "/api/ingest/status",
+    "API_PATH_INGEST_TOKENS": "/api/ingest/tokens",
+    "API_PATH_INTERVENE": "/intervene",
+    "API_PATH_PREFERENCES": "/api/preferences",
+    "API_PATH_RECORDS": "/api/records",
+    "API_PATH_RESET": "/api/reset",
+    "API_PATH_ROLLBACK": "/api/rollback",
+    "API_PATH_ROLLBACK_PLAN": "/api/rollback/plan",
+    "API_PATH_SECRETARIAT": "/api/secretariat",
+    "API_PATH_SECRETARIAT_DELEGATIONS": "/api/secretariat/delegations",
+    "API_PATH_SECRETARIAT_IDENTITIES": "/api/secretariat/identities",
+    "API_PATH_SECRETARIAT_LETTERS": "/api/secretariat/letters",
+    "API_PATH_SECRETARIAT_RECORDS": "/api/secretariat/records",
+    "API_PATH_SECRETARIAT_SEAL": "/api/secretariat/seal",
+    "API_PATH_SECRETARIAT_STATUS": "/api/secretariat/status",
+    "API_PATH_SECRETARIAT_VERIFY": "/api/secretariat/verify",
+    "API_PATH_SETTINGS": "/api/settings",
+    "API_PATH_SETTINGS_TEST_LLM": "/api/settings/test-llm",
+    "API_PATH_SHARES": "/api/shares",
+    "API_PATH_SHARES_ACCEPT": "/api/shares/accept",
+    "API_PATH_SHARES_PERMISSIONS": "/api/shares/permissions",
+    "API_PATH_STREAM": "/api/stream",
+    "API_PATH_SUGGESTIONS": "/api/suggestions",
+    "API_PATH_USERS": "/api/users"
+  },
+  "public_paths": [
+    "/api/auth/login",
+    "/api/auth/permissions",
+    "/api/auth/status",
+    "/health",
+    "/healthz"
+  ],
+  "readme": "机器可读接口契约：唯一来源是代码（server.py 分发分支 + auth.py 权限矩阵 + i18n_lint 的错误码口径），docs/03 §6.5 是它的人类可读核对表。改代码后运行 `python tools/gen_api_contract.py --write`，CI/发布前运行 `--check`（内容漂移或与文档不一致都会非零退出）。",
+  "role_permissions": {
+    "admin": [
+      "audit.export",
+      "audit.read",
+      "data.write",
+      "ingest.token.manage",
+      "intervene.decide",
+      "records.read",
+      "settings.write",
+      "users.manage"
+    ],
+    "editor": [
+      "audit.export",
+      "audit.read",
+      "data.write",
+      "intervene.decide",
+      "records.read"
+    ],
+    "local": [
+      "audit.export",
+      "audit.read",
+      "data.write",
+      "ingest.token.manage",
+      "intervene.decide",
+      "records.read",
+      "settings.write"
+    ],
+    "viewer": [
+      "audit.export",
+      "audit.read",
+      "records.read"
+    ]
+  },
+  "routes": [
+    {
+      "abilities": [
+        "audit.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.audit_payload",
+      "line": 4082,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/audit",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "audit.export"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.audit_export",
+      "line": 4097,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/audit/export",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [],
+      "auth": "login",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.check_permission",
+      "line": 4306,
+      "login_required": true,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/auth/check",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [],
+      "auth": "machine_token",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.login",
+      "line": 4279,
+      "login_required": false,
+      "machine_credential": true,
+      "match": "exact",
+      "path": "/api/auth/login",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [],
+      "auth": "login",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.logout",
+      "line": 4291,
+      "login_required": true,
+      "machine_credential": true,
+      "match": "exact",
+      "path": "/api/auth/logout",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [],
+      "auth": "login",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.me",
+      "line": 4055,
+      "login_required": true,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/auth/me",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [],
+      "auth": "login",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.change_password",
+      "line": 4300,
+      "login_required": true,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/auth/password",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [],
+      "auth": "public",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.permissions_payload",
+      "line": 4052,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/auth/permissions",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [],
+      "auth": "public",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.auth_status",
+      "line": 4049,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/auth/status",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "data.write"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.import_traces",
+      "line": 4351,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/import",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [],
+      "auth": "machine_token",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.ingest_events",
+      "line": 4374,
+      "login_required": false,
+      "machine_credential": true,
+      "match": "exact",
+      "path": "/api/ingest/events",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "ingest.token.manage"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.ingest_status_payload",
+      "line": 4124,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/ingest/status",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "ingest.token.manage"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.issue_ingest_token",
+      "line": 4392,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/ingest/tokens",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "ingest.token.manage"
+      ],
+      "auth": "permission",
+      "codes": [
+        "METHOD_NOT_ALLOWED"
+      ],
+      "csrf": true,
+      "handler": "service.revoke_ingest_token",
+      "line": 4401,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "family",
+      "path": "/api/ingest/tokens/{id}/revoke",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "records.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.records_payload",
+      "line": 4066,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/records",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "records.read"
+      ],
+      "auth": "permission",
+      "codes": [
+        "INTERVENE_ACTION_NOT_FOUND"
+      ],
+      "csrf": false,
+      "handler": "service.store",
+      "line": 4071,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "family",
+      "path": "/api/records/{id}",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "settings.write"
+      ],
+      "auth": "permission",
+      "codes": [
+        "RESET_DISABLED"
+      ],
+      "csrf": true,
+      "handler": "service.reset",
+      "line": 4342,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/reset",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "audit.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.secretariat_status_payload",
+      "line": 4151,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/secretariat",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "audit.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.secretariat_delegations_payload",
+      "line": 4161,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/secretariat/delegations",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "settings.write"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.secretariat_create_delegation",
+      "line": 4442,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/secretariat/delegations",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "audit.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.secretariat_identities_payload",
+      "line": 4156,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/secretariat/identities",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "settings.write"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.secretariat_register",
+      "line": 4426,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/secretariat/identities",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "settings.write"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.secretariat_revoke",
+      "line": 4434,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "family",
+      "path": "/api/secretariat/identities/{id}/revoke",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "audit.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.secretariat_letters_payload",
+      "line": 4166,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/secretariat/letters",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "settings.write"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.secretariat_create_letter",
+      "line": 4465,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/secretariat/letters",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "audit.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.secretariat_letter",
+      "line": 4177,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "family",
+      "path": "/api/secretariat/letters/{id}",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "audit.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.secretariat_verify_letter",
+      "line": 4474,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "family",
+      "path": "/api/secretariat/letters/{id}/verify",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "settings.write"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.secretariat_sign",
+      "line": 4451,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "family",
+      "path": "/api/secretariat/records/{id}/sign",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "settings.write"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.secretariat_seal",
+      "line": 4480,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/secretariat/seal",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "audit.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.secretariat_status_payload",
+      "line": 4151,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/secretariat/status",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "audit.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.secretariat_verify",
+      "line": 4459,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/secretariat/verify",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "records.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.settings_view",
+      "line": 4136,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/settings",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "settings.write"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.save_settings",
+      "line": 4533,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/settings",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "PUT"
+    },
+    {
+      "abilities": [
+        "settings.write"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.test_llm_connection",
+      "line": 4414,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/settings/test-llm",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "records.read"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "stream (SSE)",
+      "line": 4129,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/stream",
+      "rate_limited": false,
+      "sse": true,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "users.manage"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.users_payload",
+      "line": 4060,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/users",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "users.manage"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.create_user",
+      "line": 4311,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/api/users",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [
+        "users.manage"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.user_action",
+      "line": 4319,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "family",
+      "path": "/api/users/{id}/{verb}",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    },
+    {
+      "abilities": [],
+      "auth": "public",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.health",
+      "line": 4045,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/health",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [],
+      "auth": "public",
+      "codes": [],
+      "csrf": false,
+      "handler": "service.health",
+      "line": 4045,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/healthz",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "GET"
+    },
+    {
+      "abilities": [
+        "intervene.decide"
+      ],
+      "auth": "permission",
+      "codes": [],
+      "csrf": true,
+      "handler": "service.intervene",
+      "line": 4327,
+      "login_required": false,
+      "machine_credential": false,
+      "match": "exact",
+      "path": "/intervene",
+      "rate_limited": false,
+      "sse": false,
+      "verb": "POST"
+    }
+  ],
+  "schema_version": "1.0",
+  "sources": {
+    "agent_explainer/auth.py": "sha256:cd9dc125f54495739d38f320d75793ee1d2ea8f984fb1aabcdcec42cb8ebcab3",
+    "agent_explainer/server.py": "sha256:73bfb14b2b08a457b0c5abbbf3d34b6f7cf85f454c391c8f0afbf7edf623603e",
+    "agent_explainer/web/app.js": "sha256:e323a19f3b138d9000a63b749e5447e2d9b78efeda181da249f8b6faf5f7bb53",
+    "docs/03-architecture.md": "sha256:ac603bc09a1857eb1f7cdec0bdf30af935d08f833b03a719477b6844339c0575",
+    "tools/gen_api_contract.py": "sha256:52cd0b947d14ff699e27f7b16246e354418881788ec34196a629fc67c9e6967d",
+    "tools/i18n_lint.py": "sha256:09f4ea8a1949a3f27a16a4e9961c5f42a39fcb779126a3a0b93c281d18209931"
+  },
+  "verbs_by_path": {
+    "/api/audit": [
+      "GET"
+    ],
+    "/api/audit/export": [
+      "GET"
+    ],
+    "/api/auth/check": [
+      "POST"
+    ],
+    "/api/auth/login": [
+      "POST"
+    ],
+    "/api/auth/logout": [
+      "POST"
+    ],
+    "/api/auth/me": [
+      "GET"
+    ],
+    "/api/auth/password": [
+      "POST"
+    ],
+    "/api/auth/permissions": [
+      "GET"
+    ],
+    "/api/auth/status": [
+      "GET"
+    ],
+    "/api/import": [
+      "POST"
+    ],
+    "/api/ingest/events": [
+      "POST"
+    ],
+    "/api/ingest/status": [
+      "GET"
+    ],
+    "/api/ingest/tokens": [
+      "POST"
+    ],
+    "/api/ingest/tokens/{id}/revoke": [
+      "POST"
+    ],
+    "/api/records": [
+      "GET"
+    ],
+    "/api/records/{id}": [
+      "GET"
+    ],
+    "/api/reset": [
+      "POST"
+    ],
+    "/api/secretariat": [
+      "GET"
+    ],
+    "/api/secretariat/delegations": [
+      "GET",
+      "POST"
+    ],
+    "/api/secretariat/identities": [
+      "GET",
+      "POST"
+    ],
+    "/api/secretariat/identities/{id}/revoke": [
+      "POST"
+    ],
+    "/api/secretariat/letters": [
+      "GET",
+      "POST"
+    ],
+    "/api/secretariat/letters/{id}": [
+      "GET"
+    ],
+    "/api/secretariat/letters/{id}/verify": [
+      "POST"
+    ],
+    "/api/secretariat/records/{id}/sign": [
+      "POST"
+    ],
+    "/api/secretariat/seal": [
+      "POST"
+    ],
+    "/api/secretariat/status": [
+      "GET"
+    ],
+    "/api/secretariat/verify": [
+      "POST"
+    ],
+    "/api/settings": [
+      "GET",
+      "PUT"
+    ],
+    "/api/settings/test-llm": [
+      "POST"
+    ],
+    "/api/stream": [
+      "GET"
+    ],
+    "/api/users": [
+      "GET",
+      "POST"
+    ],
+    "/api/users/{id}/{verb}": [
+      "POST"
+    ],
+    "/health": [
+      "GET"
+    ],
+    "/healthz": [
+      "GET"
+    ],
+    "/intervene": [
+      "POST"
+    ]
+  }
+}

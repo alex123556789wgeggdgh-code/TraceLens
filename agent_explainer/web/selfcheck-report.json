@@ -1,0 +1,656 @@
+{
+  "task": "t6 web skeleton (3.1/3.2) + t8 intervention loop (4.1)",
+  "app": "TraceLens",
+  "generated_at": "2026-11-11T20:25:30.365Z",
+  "node": "v24.21.0",
+  "total": 92,
+  "passed": 92,
+  "failed": 0,
+  "status": "pass",
+  "checks": [
+    {
+      "index": 1,
+      "name": "files: all required artifacts exist and are non-empty",
+      "status": "passed",
+      "detail": "index=8610B app=369248B styles=96780B demo=58070B demoEn=58398B compare=55258B zh=66476B en=67858B embed=134853B keys=112723B self=355256B golden=57726B readme=33279B extSecretariat=24396B extSecretariatCss=3607B",
+      "ms": 1
+    },
+    {
+      "index": 2,
+      "name": "demo-data.js is an exact copy of samples/action_records.json records",
+      "status": "passed",
+      "detail": "records=12, deep-equal to samples (loaded as a real classic script)",
+      "ms": 2
+    },
+    {
+      "index": 3,
+      "name": "demo set: >=12 records, >=10 action_type, three zones, all demo-flagged",
+      "status": "passed",
+      "detail": "records=12 types=12 zones={\"needs_me\":4,\"running\":1,\"done\":7}",
+      "ms": 0
+    },
+    {
+      "index": 4,
+      "name": "i18n: zh/en key sets identical (100% bidirectional), no empty values",
+      "status": "passed",
+      "detail": "keys=1115 (both directions)",
+      "ms": 277
+    },
+    {
+      "index": 5,
+      "name": "i18n: en dictionary has zero CJK characters, zh is Chinese",
+      "status": "passed",
+      "detail": "en CJK=0, zh Chinese keys=1097/1115",
+      "ms": 0
+    },
+    {
+      "index": 6,
+      "name": "i18n: embed.js equals the canonical JSON dictionaries (no drift)",
+      "status": "passed",
+      "detail": "embed zh=1115 keys, en=1115 keys",
+      "ms": 2
+    },
+    {
+      "index": 7,
+      "name": "no hardcoded copy: app.js / index.html / styles.css contain zero CJK",
+      "status": "passed",
+      "detail": "CJK in code=0; copy lives in i18n/*.json",
+      "ms": 0
+    },
+    {
+      "index": 8,
+      "name": "every i18n key referenced by app.js exists in zh and en",
+      "status": "passed",
+      "detail": "referenced=715 (literals 659, enum-expanded 67, concat prefixes 18)",
+      "ms": 1
+    },
+    {
+      "index": 9,
+      "name": "no orphan dictionary copy: every dictionary key is referenced",
+      "status": "passed",
+      "detail": "unreferenced keys=0 (1115 keys covered by literals + enum/prefix expansion)",
+      "ms": 1
+    },
+    {
+      "index": 10,
+      "name": "secretariat panel: one tab, five zones, scoped CSS, zero CJK",
+      "status": "passed",
+      "detail": "panel 24381B / css 3607B, zones=5, CJK=0",
+      "ms": 1
+    },
+    {
+      "index": 11,
+      "name": "runtime: no dictionary key resolves to the missing-text marker",
+      "status": "passed",
+      "detail": "runtime lookup resolves all 1115 keys in both languages (grouped-key lookup pinned)",
+      "ms": 155
+    },
+    {
+      "index": 12,
+      "name": "design system: colour/spacing/font/radius/motion tokens present, motion <=200ms",
+      "status": "passed",
+      "detail": "tokens=16, dur-fast=120ms, dur-base=200ms, no rule above 200ms",
+      "ms": 0
+    },
+    {
+      "index": 13,
+      "name": "render: three zones in order needs_me / running / done with data-zone hooks",
+      "status": "passed",
+      "detail": "zones=needs_me > running > done counts=4/1/7",
+      "ms": 1
+    },
+    {
+      "index": 14,
+      "name": "render: 12 cards rendered, needs-me is a serial queue (1 shown, 3 queued)",
+      "status": "passed",
+      "detail": "cards=12, shown=1 (act-demo-0004), queued=3",
+      "ms": 1
+    },
+    {
+      "index": 15,
+      "name": "colour mapping: green done / yellow running / red failed / blue awaiting you",
+      "status": "passed",
+      "detail": "records mapped + styles.css maps all five roles",
+      "ms": 2
+    },
+    {
+      "index": 16,
+      "name": "expand / collapse: click and keyboard both toggle aria-expanded and the detail",
+      "status": "passed",
+      "detail": "click + Enter + Space verified, unrelated key ignored, aria-controls stable (detail-act-demo-0005), card carries is-expanded",
+      "ms": 29
+    },
+    {
+      "index": 17,
+      "name": "detail fields: intent / rationale / human_readable / time / tool all appear",
+      "status": "passed",
+      "detail": "rows=22, facts rendered verbatim from the record",
+      "ms": 10
+    },
+    {
+      "index": 18,
+      "name": "language switch: zh -> en changes every data-i18n node and persists",
+      "status": "passed",
+      "detail": "en nodes=581 with 0 CJK chrome, zh/en repaint on every switch, localStorage round-trip ok",
+      "ms": 36
+    },
+    {
+      "index": 19,
+      "name": "every public mutation repaints and state matches the DOM",
+      "status": "passed",
+      "detail": "one render per action for 9 mutations; ball / sheet / app agree with state",
+      "ms": 114
+    },
+    {
+      "index": 20,
+      "name": "language is restored from localStorage on a fresh boot",
+      "status": "passed",
+      "detail": "stored value wins over navigator.language; unknown browser language falls back to zh",
+      "ms": 38
+    },
+    {
+      "index": 21,
+      "name": "demo badge: machine-checked triple shows a persistent banner + per-card badges",
+      "status": "passed",
+      "detail": "checks=demo_data,synthetic,source_kind; banner + ball + 12 card badges",
+      "ms": 0
+    },
+    {
+      "index": 22,
+      "name": "demo badge: absent when the records carry none of the three flags",
+      "status": "passed",
+      "detail": "non-demo: banner hidden, 0 badges; demo set restores them",
+      "ms": 18
+    },
+    {
+      "index": 23,
+      "name": "floating ball: task name + progress ring, click opens the bottom panel, Esc closes",
+      "status": "passed",
+      "detail": "task label + ring(58%) + click/Esc/close-button verified",
+      "ms": 34
+    },
+    {
+      "index": 24,
+      "name": "3.2 hooks: layout container, data-view, sidebar / zones / timeline / compare",
+      "status": "passed",
+      "detail": "hooks present: app[data-view], sidebar, zones, timeline, compare, intervene; 4 decidable boxes with 3 enabled buttons each, 0 buttons disabled for records that are not waiting",
+      "ms": 24
+    },
+    {
+      "index": 25,
+      "name": "accessibility: tabindex, aria-label, aria-expanded/controls, unique ids",
+      "status": "passed",
+      "detail": "buttons labelled, 12 focusable cards, aria-controls resolved, 53 unique ids, aria-label nodes=113",
+      "ms": 2
+    },
+    {
+      "index": 26,
+      "name": "L1 default: cards show one line, cost/duration only inside the detail",
+      "status": "passed",
+      "detail": "L1 verbatim; cost 0.03 only inside the detail; L2 steps rendered",
+      "ms": 3
+    },
+    {
+      "index": 27,
+      "name": "honesty: decision vs effect kept apart, no forced-stop wording",
+      "status": "passed",
+      "detail": "no forced-stop copy; effect notice shown; receipt states surfaced verbatim",
+      "ms": 10
+    },
+    {
+      "index": 28,
+      "name": "offline purity: no network, no backend calls, no secrets in the web layer",
+      "status": "passed",
+      "detail": "no XHR/WebSocket/EventSource/module import/remote URL/absolute API path/secret; 30 relative endpoints, 2 guarded fetch (health+records+records+records+intervene+users+records+reset+auditExport), credentials omitted, stream via injected constructor + allowlist URL, labelled polling fallback",
+      "ms": 4
+    },
+    {
+      "index": 29,
+      "name": "probe(): structural self-description for headless verification",
+      "status": "passed",
+      "detail": "{\"zones\":{\"needs_me\":4,\"running\":1,\"done\":7},\"progress\":58,\"demoBadge\":true,\"i18nNodes\":667,\"missingKeys\":0}",
+      "ms": 51
+    },
+    {
+      "index": 30,
+      "name": "query parameters: ?lang=en&open=1&?view=desktop honoured",
+      "status": "passed",
+      "detail": "?lang / ?open / ?view work (used by t10-t11 walkthroughs)",
+      "ms": 79
+    },
+    {
+      "index": 31,
+      "name": "static page boot: index.html boots the app on its own (file:// demo path)",
+      "status": "passed",
+      "detail": "self-boot verified: DOMContentLoaded -> renders=2, cards=12, no double init",
+      "ms": 72
+    },
+    {
+      "index": 32,
+      "name": "verification rig: ?probe=1 report and ?frame=375x812 phone viewport",
+      "status": "passed",
+      "detail": "rig off by default; frame pins 375x812 + phone view; report text=16 lines; probe().layout.rig pinned",
+      "ms": 194
+    },
+    {
+      "index": 33,
+      "name": "3.2 desktop sidebar: newest-first list, click focus, status filter collapses zones",
+      "status": "passed",
+      "detail": "list=12 newest-first, click->focus (1 render), filter hides 7 / restores 12, all-off notice, storage + ?filter restore",
+      "ms": 90
+    },
+    {
+      "index": 34,
+      "name": "3.2 timeline: draggable scrubber previews each step and drives list + card highlight",
+      "status": "passed",
+      "detail": "scrub 0..11, drag -> preview + ticks + card in sync, clamped, 1 render/step, ?step and ?focus jump to the step",
+      "ms": 76
+    },
+    {
+      "index": 35,
+      "name": "3.2 compare: two runs side by side, at least three highlighted difference classes",
+      "status": "passed",
+      "detail": "runs 12+12, 13 aligned steps x 8 fields, changed/only_a/only_b/same classes, 27 highlighted cells, legend counts match, self-compare states \"identical\"",
+      "ms": 75
+    },
+    {
+      "index": 36,
+      "name": "3.2 responsive: frame rig switches layout buckets, phone numbers unchanged, en parity",
+      "status": "passed",
+      "detail": "1440x900 desktop + 820x1180 tablet + 375x812 phone rig, report lines complete, mobile numbers unchanged, en desktop copy has no CJK",
+      "ms": 300
+    },
+    {
+      "index": 37,
+      "name": "compare-data.js: generated run B, synthetic provenance, no drift, wired into the page",
+      "status": "passed",
+      "detail": "run B = 12 synthetic variants (step 11 dropped, step 13 added), no drift, script order i18n/embed.js -> demo-data.js -> demo-data-en.js -> compare-data.js -> app.js",
+      "ms": 19
+    },
+    {
+      "index": 38,
+      "name": "keys.md: full key inventory matches the dictionaries",
+      "status": "passed",
+      "detail": "keys.md documents 1115 keys in 27 domains (zh/en identical)",
+      "ms": 3
+    },
+    {
+      "index": 39,
+      "name": "styles.css: every var(--token) used is defined in :root",
+      "status": "passed",
+      "detail": "defined=64, distinct used=62, undefined=0",
+      "ms": 1
+    },
+    {
+      "index": 40,
+      "name": "styles.css: responsive hooks (<=480 ball+sheet, >=1024 grid)",
+      "status": "passed",
+      "detail": "480 / 481 / 1024 breakpoints + reduced-motion + overflow guards",
+      "ms": 1
+    },
+    {
+      "index": 41,
+      "name": "data source: demo set carries the synthetic provenance, not real data",
+      "status": "passed",
+      "detail": "zh + en copies declare their source; synthetic/real_data/demo_data flags present",
+      "ms": 2
+    },
+    {
+      "index": 42,
+      "name": "4.7 bilingual demo sets: same ids and machine fields, en data zero CJK, zh data really Chinese",
+      "status": "passed",
+      "detail": "12 records x 2 languages; en CJK=0, zh CJK=2992, machine fields identical, ids in the same order",
+      "ms": 73
+    },
+    {
+      "index": 43,
+      "name": "4.7 language switch swaps the dataset: en UI shows zero CJK data, zh UI shows Chinese",
+      "status": "passed",
+      "detail": "en UI: 12 English records, 0 CJK in data, cards and run labels; zh UI: Chinese data; round-trip restores the zh set",
+      "ms": 54
+    },
+    {
+      "index": 44,
+      "name": "4.7 demo run labels are dictionary copy, so no CJK literal lives in app.js",
+      "status": "passed",
+      "detail": "5 demo names mapped to zh + en copy, app.js CJK=0",
+      "ms": 111
+    },
+    {
+      "index": 45,
+      "name": "4.7 compare labels: every field label and the fieldLabel fallback resolve in zh and en",
+      "status": "passed",
+      "detail": "9 compare field labels in zh + en, neutral fallback, en table labels CJK-free",
+      "ms": 50
+    },
+    {
+      "index": 46,
+      "name": "4.1 approve: click sends the decision, the answer replaces the card, queue shrinks",
+      "status": "passed",
+      "detail": "1 POST to \"intervene\", status approved, needs_me 4->3, live feedback + badge rendered",
+      "ms": 806
+    },
+    {
+      "index": 47,
+      "name": "4.1 modify: the form comes from editable_fields and submits modified_params",
+      "status": "passed",
+      "detail": "form built from 2 editable_fields, values coerced, POST {\"max_delete_count\":3,\"move_to_trash\":true} -> modified, 2-row change table, receipt untouched",
+      "ms": 531
+    },
+    {
+      "index": 48,
+      "name": "4.1 reject: the reason is required before anything is sent",
+      "status": "passed",
+      "detail": "empty reason -> 0 requests + inline 拒绝必须写一句理由（至少 2 个字）; with reason -> rejected, reason shown, receipt untouched",
+      "ms": 653
+    },
+    {
+      "index": 49,
+      "name": "4.1 no server: the page degrades to a labelled local simulation",
+      "status": "passed",
+      "detail": "offline chip + 12 enabled buttons, local transition, 本地模拟 badge + offline notice, 0 requests, receipt untouched",
+      "ms": 234
+    },
+    {
+      "index": 50,
+      "name": "4.1 refusal: a decided or non-deciding record is never sent",
+      "status": "passed",
+      "detail": "succeeded + already-decided records blocked before the network (0 requests), expired offer stays decidable, decided cards render no buttons",
+      "ms": 329
+    },
+    {
+      "index": 51,
+      "name": "4.1 parity: the browser transition equals agent_explainer/server.apply_decision",
+      "status": "passed",
+      "detail": "4 golden cases match on 13 fields (status, requires_action, user_intervention, receipt state + effect_notice); server-only fields differ as documented",
+      "ms": 60
+    },
+    {
+      "index": 52,
+      "name": "4.1 probe rig: the report and data attributes describe the intervention layer",
+      "status": "passed",
+      "detail": "report text + 12 buttons / 4 decidable records / api.mode=forced_offline published for headless runs",
+      "ms": 244
+    },
+    {
+      "index": 53,
+      "name": "4.1 live sync: the page takes the records the server already stored",
+      "status": "passed",
+      "detail": "live: 1 GET \"api/records\" -> 2 server records, decided card locked (0 enabled buttons), pending card keeps 3; offline keeps the demo data with 0 reads",
+      "ms": 356
+    },
+    {
+      "index": 54,
+      "name": "4.3 auth plumbing: one cookie name, one CSRF header, password inputs, no persisted secrets",
+      "status": "passed",
+      "detail": "cookie tl_session + X-CSRF-Token + password fields (new-password on create), 0 localStorage secrets, shell hooks + 11 auth methods",
+      "ms": 58
+    },
+    {
+      "index": 55,
+      "name": "4.3 offline (file://): no login page, no auth requests, the demo keeps every entry",
+      "status": "passed",
+      "detail": "offline: auth state=offline, 0 login/logout nodes, 12 enabled buttons (unchanged), 0 users panels",
+      "ms": 280
+    },
+    {
+      "index": 56,
+      "name": "4.3 team mode signed out: the sign-in page is the page, and 401 is shown as copy",
+      "status": "passed",
+      "detail": "signed out: state=signed_out, main aria-hidden, 1 login form (1 password field, current-password), 0 intervene buttons, records=0",
+      "ms": 247
+    },
+    {
+      "index": 57,
+      "name": "4.3 sign-in: the role and CSRF come from the server, and no password or token is kept on the page",
+      "status": "passed",
+      "detail": "sign-in: role/permissions/CSRF from the server, relative login path, 0 password/token residue in the DOM, chip rendered",
+      "ms": 493
+    },
+    {
+      "index": 58,
+      "name": "4.3 viewer: no intervention entry at all, the users entry is hidden, a 403 is shown not swallowed",
+      "status": "passed",
+      "detail": "viewer: 0 enabled buttons, option list readable, role notice shown, users entry hidden, 403 -> auth.error.role_forbidden",
+      "ms": 484
+    },
+    {
+      "index": 59,
+      "name": "4.3 admin: the user page creates, changes role, disables and resets over the POST sub-resources",
+      "status": "passed",
+      "detail": "admin: 3 rows after create, POST api/users + /status + /role, one-time password shown once, no delete path, no password residue",
+      "ms": 769
+    },
+    {
+      "index": 60,
+      "name": "4.3 the role matrix is read from the server: the page renders it and never invents permissions",
+      "status": "passed",
+      "detail": "matrix read from api/auth/permissions, 8 rows rendered, 3 viewer grants, 0 dotted permission literals in app.js",
+      "ms": 507
+    },
+    {
+      "index": 61,
+      "name": "4.3 auth copy: every server auth code has zh and en text, and the auth domain is in sync",
+      "status": "passed",
+      "detail": "32 auth codes mapped to copy, 80 auth keys in zh and en, zh Chinese / en zero CJK",
+      "ms": 2
+    },
+    {
+      "index": 62,
+      "name": "4.4 realtime push: a pushed frame becomes a visible card, and a change updates the same card",
+      "status": "passed",
+      "detail": "1 push -> 1 visible card + 1 merged update, chip live at cursor 6, a stats frame counted without touching the list",
+      "ms": 275
+    },
+    {
+      "index": 63,
+      "name": "4.4 degradation: a dead stream reconnects with backoff, then polls and says so (never silently)",
+      "status": "passed",
+      "detail": "backoff 800/1600/3200 ms, resume from ?since=9, then labelled polling (1 reads, cursor 9), 5 sources closed",
+      "ms": 367
+    },
+    {
+      "index": 64,
+      "name": "4.4 realtime copy: the chip text is real i18n, zh Chinese, en CJK-free, and every key is referenced",
+      "status": "passed",
+      "detail": "8 realtime keys in zh and en, 8 references, placeholder filled in both languages",
+      "ms": 143
+    },
+    {
+      "index": 65,
+      "name": "4.4 probe rig and the Python contract: probe().realtime describes the layer, and the frame names match ingest.py",
+      "status": "passed",
+      "detail": "8 frame types match ingest.py, 4 endpoints match server.py, 25 realtime fields in probe()",
+      "ms": 174
+    },
+    {
+      "index": 66,
+      "name": "4.5 the settings routes are on the allowlist, PUT is the one extra verb, and the shell hosts the panel",
+      "status": "passed",
+      "detail": "3 routes pinned against server.py, verbs GET/POST/PUT in one guard, 1 PUT sender, probe hook counted",
+      "ms": 1
+    },
+    {
+      "index": 67,
+      "name": "4.5 the panel paints the settings view: mode, provider, address, masked key, engine state",
+      "status": "passed",
+      "detail": "panel from 1 GET: 2 mode radios (llm checked), 4 providers, 7 fields, mask ••••••1234, secret field empty, 0 credential-looking strings",
+      "ms": 601
+    },
+    {
+      "index": 68,
+      "name": "4.5 saving is exactly one PUT with the key sentinel, and the typed secret is never read back",
+      "status": "passed",
+      "detail": "1 save = 1 PUT to api/settings; apiKey sentinel keep/\"\"/typed; typed secret never echoed; mask kept",
+      "ms": 1032
+    },
+    {
+      "index": 69,
+      "name": "4.5 a role without settings.write gets a read-only page, and the server 403 becomes a readable line",
+      "status": "passed",
+      "detail": "viewer: read-only fields + mask, 0 PUTs, save/test disabled, 403 -> auth.error.role_forbidden, denials=1",
+      "ms": 547
+    },
+    {
+      "index": 70,
+      "name": "4.5 language switch: the interface follows the radio, ui.language is saved, and every settings key exists in zh and en",
+      "status": "passed",
+      "detail": "radio -> ui.language=en in one PUT; chrome data-lang follows; 143 settings keys in zh + en, 0 empty, en CJK-free, 38 codes + 8 notes translate in both languages",
+      "ms": 1038
+    },
+    {
+      "index": 71,
+      "name": "4.5 connection test: the result is readable in the user language, says probe-only, and survives a timeout",
+      "status": "passed",
+      "detail": "success line carries ms + chars, 1 POST per click, probe-only notice, endpoint shown; timeout -> dictionary sentence in zh + en (raw text hidden); insecure URL -> settings.error.settings_url_insecure",
+      "ms": 1092
+    },
+    {
+      "index": 72,
+      "name": "4.5 data management and offline: export downloads what the server sent, reset needs a confirmation, no server means read-only",
+      "status": "passed",
+      "detail": "export reads GET /api/records and reports the count; reset needs a confirmation (0 calls) then 1 POST; audit note shown; offline: 0 requests, the offline note + retry only, 0 writable controls, 0 form fields",
+      "ms": 891
+    },
+    {
+      "index": 73,
+      "name": "4.8 audit panel: rows, chips, decision filter and paging all come from GET /api/audit",
+      "status": "passed",
+      "detail": "8 rows from 1 GET (time/actor/task/decision/hash + chain chip 421), filter chip -> decision=reject, limit=2 then offset=2 appended to 4 rows, exhausted list -> audit.more_end",
+      "ms": 894
+    },
+    {
+      "index": 74,
+      "name": "4.8 export panel: CSV uses the server bytes, the PDF fallback is one readable line, print opens the allowlisted path",
+      "status": "passed",
+      "detail": "csv bytes + filename + sha from 1 GET, pdf -> html fallback in dictionary copy, print path api/audit/export?format=html&lang=zh with an honest no-popup note, pdf font warning -> export.note.pdf_font",
+      "ms": 1140
+    },
+    {
+      "index": 75,
+      "name": "4.8 export follows the audit.export ability: disabled buttons carry a reason, and nothing leaves the page",
+      "status": "passed",
+      "detail": "audit.export off: 3 disabled buttons + reason line, 0 requests, 1 denial; audit.read off: read-only notice + disabled controls",
+      "ms": 960
+    },
+    {
+      "index": 76,
+      "name": "4.8 audit panel states: empty, chain-broken and offline read from the dictionary, never raw server text",
+      "status": "passed",
+      "detail": "empty -> audit.empty / audit.empty_filtered, 500 -> audit.error.chain_broken (raw text hidden), offline -> 0 requests + offline copy, 62 keys zh+en with matching parameters",
+      "ms": 1239
+    },
+    {
+      "index": 77,
+      "name": "4.9 import entry: the phone sheet and the desktop rail both carry paste + file + format/mode, and the limits chip shows the server cap",
+      "status": "passed",
+      "detail": "2 mounts (sheet + rail), 5 format options, 3 modes, cap 65536/200 shown, probe().import canWrite",
+      "ms": 208
+    },
+    {
+      "index": 78,
+      "name": "4.9 paste import: exactly one POST to api/import, the answer paints the counts, and the imported rows reach the list",
+      "status": "passed",
+      "detail": "1 POST api/import (payload verbatim), 6 facts (8 imported), list 12->20, not demo, durable chip true, clear resets",
+      "ms": 853
+    },
+    {
+      "index": 79,
+      "name": "4.9 upload: the file lands as the same payload with its name, a too-large file never leaves the page, and the mode note follows the selector",
+      "status": "passed",
+      "detail": "upload keeps filename + payload verbatim, 70 KB blocked with 0 requests, size params shown, mode note follows the selector",
+      "ms": 906
+    },
+    {
+      "index": 80,
+      "name": "4.9 import copy: every import key is in zh and en, en is CJK-free, parameters match, and no error code is invented",
+      "status": "passed",
+      "detail": "73 import keys in zh+en with matching parameters, 28 codes all backed by server.py/store.py, caps 65536/200 + modes match, panel repaints zh/en",
+      "ms": 273
+    },
+    {
+      "index": 81,
+      "name": "4.9 import states: no permission, offline, empty, 400, 413 and a store failure all read from the dictionary and send nothing when they must not",
+      "status": "passed",
+      "detail": "viewer + offline + empty: 0 requests with dictionary reasons; 400/413/500 mapped, raw text hidden; duplicates shown as 0 imported / 8 duplicates",
+      "ms": 3369
+    },
+    {
+      "index": 82,
+      "name": "4.10 phone entry list: one entry button in the top bar lists settings, audit, users, import, export and language; the desktop layout refuses it",
+      "status": "passed",
+      "detail": "1 entry button (aria-controls/expanded, dictionary copy), 6 entries in contract order with title + hint + aria-label, probe.more 6, desktop refuses the list and hides the button",
+      "ms": 220
+    },
+    {
+      "index": 83,
+      "name": "4.10 entry gating: an entry the role may not use stays in the list, reads as not available, and says why in the user language",
+      "status": "passed",
+      "detail": "offline: 4 disabled with the right reason copy (and 2 available), blocked tap says why in one render; viewer: import + users gated, audit + export open; local profile: all 6 open, and users without a session asks for a sign-in",
+      "ms": 1218
+    },
+    {
+      "index": 84,
+      "name": "4.10 every entry opens the panel that already exists: audit + export as a drawer, import in the sheet, settings + users as screens, and no panel is rendered twice",
+      "status": "passed",
+      "detail": "export/audit open the single rail panel as a dialog drawer (head + back + close, rows painted), import opens the sheet block (still 2 editors), settings opens and closes the single centre; one render per phone action",
+      "ms": 1182
+    },
+    {
+      "index": 85,
+      "name": "4.10 phone reachability on a 375x812 screen: the box stays a 375px column, every layer is inside it, the drawer is box-sized, and the desktop sidebar stays the only entry",
+      "status": "passed",
+      "detail": "375x812 box: list, drawer and settings screen stay inside #app with unique ids, drawer rules are box-sized (min(88vw/88%,340px) + --frame-h) with motion <=200ms; Escape closes list, drawer and sheet with focus back; desktop keeps 6 sidebar entries and 0 phone layers",
+      "ms": 802
+    },
+    {
+      "index": 86,
+      "name": "4.10 language entry: the list switches the interface in place, every entry title and reason repaints, and the more domain is complete in zh and en",
+      "status": "passed",
+      "detail": "more domain: 31 keys in zh + en with matching parameters and no CJK in en; the entry switches zh->en in one render, all 6 titles + labels + reasons + demo data follow, desktop-free phone copy only",
+      "ms": 494
+    },
+    {
+      "index": 87,
+      "name": "4.12 B-01: switching language over a live server keeps 20 records, the recorded decision, the filter and the place",
+      "status": "passed",
+      "detail": "live: 20 records + 8 imported + an API-approved 0004 survive zh->en->zh; 5 api/records reads (the switch re-read), filter/open card/timeline #6 kept",
+      "ms": 1298
+    },
+    {
+      "index": 88,
+      "name": "4.12 B-01 offline: the localized demo set is swapped, the operator records and the recorded decision are carried, one repaint",
+      "status": "passed",
+      "detail": "offline: 20 records (12 localized demo + 8 operator rows) and the approved 0004 survive zh->en->zh, 11 records carried (8 operator rows + 3 recorded decisions), English sentences, 1 repaint, card + timeline #4 kept",
+      "ms": 145
+    },
+    {
+      "index": 89,
+      "name": "4.12 H-01: the audit panel reads the store on its own - no \"0 entries / in-memory chain\" over real data",
+      "status": "passed",
+      "detail": "first paint: 1 GET /api/audit (no click) -> 3 rows, chain ok + durable + \"3 entries\"; before the read: no count/store chip, dashed chain, one honest pending line; offline: 0 requests",
+      "ms": 486
+    },
+    {
+      "index": 90,
+      "name": "4.12 H-02: a decision and an export made in this page appear in the audit panel without a click",
+      "status": "passed",
+      "detail": "decision -> 1 auto re-read (rows 2->3, approve visible, audit.feedback.refreshed), export -> 1 more, manual refresh stays manual (auto 2)",
+      "ms": 892
+    },
+    {
+      "index": 91,
+      "name": "4.12 H-03: a decision made in another window repaints that card, an unchanged frame still does not repaint",
+      "status": "passed",
+      "detail": "decision frame with identical top-level fields -> updated=1, card flips data-decided false->true (colour progress->progress, zone running->running); unchanged merge -> 0 changes; a store re-read updates the same card by id",
+      "ms": 577
+    },
+    {
+      "index": 92,
+      "name": "4.12 H-04: the card hint is its own full-width row, the expand label keeps its column (1400px repro)",
+      "status": "passed",
+      "detail": "grid head: dot | title | expand columns, hint on its own row 2 (no per-character CJK wrap), chevron nowrap in column 3, zone columns >=320px at 1024-1440px; 12 hint rows / 12 card heads in the DOM",
+      "ms": 73
+    }
+  ]
+}

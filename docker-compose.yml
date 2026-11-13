@@ -1,0 +1,92 @@
+# TraceLens 团队模式（交付形态 D-3）+ Compose 编排（子任务 5.4 / t17）
+# ---------------------------------------------------------------------------
+# 一条命令起团队服务器：
+#     cp scripts/env.example .env   # 至少填 TRACELENS_ADMIN_PASSWORD
+#     docker compose up -d
+#     curl -s http://127.0.0.1:8765/health   # 200 且 status="ok"（没有 /api/health）
+#
+# 与镜像默认入口的关系：镜像的 ENTRYPOINT 逐字是任务规格那条 python 命令；
+# 这里用 entrypoint 换成容器入口包装（scripts/docker-entrypoint.sh），
+# 只为（a）启动时检查 ./data 可写、（b）把 stdout 同时落进 ./logs。
+# 应用是被怎么启动的，一个字没变（command 就是规格里那条命令 + 数据目录参数）。
+#
+# 数据流（全部落在 ./data，容器重建/升级不丢）：
+#     records.jsonl  记录日志（4.9 追加式 JSONL，坏行跳过并封口）
+#     audit.jsonl    审计链（append-only，断链 500，绝不静默修历史）
+#     settings.json  设置（team 模式密钥不落盘，只认环境变量）
+#     auth/          用户表与会话（只禁用不删除）
+#     ingest/        上报令牌（落盘只有 sha256 摘要）
+#     features/      5.0 总裁办：secretariat/identities.jsonl（哈希链身份账本）、
+#                    keyring.json（0600 私钥库）、delegations/letters、evidence/、rollback/
+#                    ——由 command 里显式的 --features /app/var/features 钉在卷内
+
+name: tracelens
+
+services:
+  tracelens:
+    image: "tracelens:${TRACELENS_VERSION:-0.5.0}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TRACELENS_VERSION: "${TRACELENS_VERSION:-0.5.0}"
+        # 1 = 装 reportlab（审计导出真出 PDF）；0 = 不装（自动回退可打印 HTML）
+        TRACELENS_WITH_PDF: "${TRACELENS_WITH_PDF:-1}"
+    container_name: tracelens
+    # 非 root：与镜像 USER 一致；显式写出来是为了让 `docker compose config` 一眼可见
+    user: "10001:10001"
+    # 重启策略：机器重启 / 进程崩溃都拉起来；人手动 stop 之后不再自己起
+    restart: unless-stopped
+    # 让 tini 当 PID 1：入口包装里的 tee 子进程也能被正确回收，SIGTERM 干净退出
+    init: true
+    stop_grace_period: 10s
+    ports:
+      - "${TRACELENS_PORT:-8765}:8765"
+    volumes:
+      # 宿主目录绑定挂载（不是匿名卷）：备份=拷走 ./data，升级=换镜像不换目录
+      - ./data:/app/var
+      - ./logs:/app/logs
+    environment:
+      # ---- 必填 ----
+      TRACELENS_ADMIN_PASSWORD: "${TRACELENS_ADMIN_PASSWORD:?未设置 TRACELENS_ADMIN_PASSWORD：先 cp scripts/env.example .env 并把口令填进去（≥10 位）。宁可起不来，也不要让管理员口令只出现在滚动日志里}"
+      # ---- 可选：种子 / 界面语言 ----
+      TRACELENS_DEMO: "${TRACELENS_DEMO:-zh}"
+      TRACELENS_UI_LANGUAGE: "${TRACELENS_UI_LANGUAGE:-zh}"
+      # ---- 可选：LLM（不填＝模板模式，完全离线，功能不缺）----
+      TRACELENS_LLM_MODE: "${TRACELENS_LLM_MODE:-template}"
+      TRACELENS_LLM_PROVIDER: "${TRACELENS_LLM_PROVIDER:-}"
+      TRACELENS_LLM_BASE_URL: "${TRACELENS_LLM_BASE_URL:-}"
+      TRACELENS_LLM_MODEL: "${TRACELENS_LLM_MODEL:-}"
+      TRACELENS_LLM_API_KEY: "${TRACELENS_LLM_API_KEY:-}"
+      TRACELENS_LLM_ALLOW_OUTBOUND: "${TRACELENS_LLM_ALLOW_OUTBOUND:-0}"
+      TRACELENS_LLM_TIMEOUT_S: "${TRACELENS_LLM_TIMEOUT_S:-30}"
+    entrypoint: ["/usr/local/bin/tracelens-entrypoint"]
+    # 与镜像 ENTRYPOINT 同一条命令，外加显式数据目录（=挂载点）与显式总裁办目录。
+    # --features 是 5.0 总裁办账本（身份账本 identities.jsonl / 委托 / 认定书 / 密钥库
+    # keyring.json）的根：它的默认值是 **<应用根>/var/features**（实测，见
+    # docs/audit/v050-docker.md §4），**不跟随 --data-dir**——桌面侧正因为这条默认值
+    # 把账本写进只读的包内目录（docs/audit/v050-sidecar.md）。容器里应用根 = /app、
+    # 挂载卷 = /app/var，所以默认落点本来就在卷内；这里显式钉死是为了让不变量与
+    # WORKDIR、--data-dir 的取值无关：以后谁改 WORKDIR 或把 --data-dir 指到别处，
+    # 账本也不会悄悄跑出挂载卷（升级换镜像 = 账本和密钥跟着卷走，不被镜像冲掉）。
+    command: ["python", "-m", "agent_explainer", "--mode", "team",
+              "--host", "0.0.0.0", "--port", "8765",
+              "--demo", "${TRACELENS_DEMO:-zh}", "--data-dir", "/app/var",
+              "--features", "/app/var/features"]
+    healthcheck:
+      # 真发 GET /health 并要求 status=="ok"（不是"端口通就算健康"）
+      test: ["CMD", "python", "/usr/local/bin/tracelens-healthcheck.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    # 容器内 /tmp 给 tmpfs：非 root 也能写，且不落宿主磁盘
+    tmpfs:
+      - /tmp
