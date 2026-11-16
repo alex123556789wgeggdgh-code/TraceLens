@@ -27,7 +27,7 @@
 > what the agent did, why, whether it needs your decision right now, and which button to press.
 > It runs standalone on your laptop, or as a team server via Docker.
 
-![桌面主界面：三区清单 + 侧栏 + 时间轴](docs/05-evidence/D01-desktop-card-1400.png)
+![当前版本主界面：账本式三栏 + 功能中心入口 + 时间轴（实机截图）](docs/05-evidence/D01-desktop-card-current-0.6.6.png)
 
 **当前版本**：`0.5.0`（`/health` 上报的版本；数据契约 schema `1.1`）· **界面语言**：中文 / English（1115 个文案键、27 个域，双语 100%）
 
