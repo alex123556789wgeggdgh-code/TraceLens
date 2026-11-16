@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>TraceLens 协作邀请 / TraceLens collaboration invite</title>
+<!--
+  TraceLens 5.0 - share landing page (web/share.html)
+  ---------------------------------------------------------------------------
+  R5-4 §2.2. This page is the *invitee's* page: it is opened from the one-time
+  link the group leader copied once (`/share.html#token=...`).
+
+  Rules this page is built to (task book R5-4 §1 铁律 4, docs/12 §6):
+    * the token arrives in the URL **fragment** (`#token=`), which a browser
+      never sends to a server in a request line; it is read exactly once, kept
+      in a closure variable, and removed from the address bar with
+      `history.replaceState`;
+    * the token is **never written to storage** (no localStorage, no
+      sessionStorage, no indexedDB, no cookie) and **never printed** into any
+      text node, title, log, or error copy;
+    * this page never asks the server "is this token valid / whose group is it".
+      There is no such endpoint, and inventing a read-only token probe would be
+      a validation oracle for a bearer secret. The page only offers one action:
+      `POST /api/shares/accept` with the token in the JSON body;
+    * the answer decides the copy: accepted / expired / revoked / invalid /
+      used / needs sign-in. Each is a real server answer, never a guess;
+    * a successful accept shows the granted permission and the group name only;
+    * zero framework, zero CDN, zero build, works from `file://` (the request
+      then honestly says the page is not connected to a server).
+
+  Copy lives inline in `window.__SHARE_I18N` (this page is not part of the
+  app's i18n surface, so it must stay self-contained); the zh and en key sets
+  are identical, and `selfcheck.mjs` measures that.
+-->
+<style>
+  :root {
+    --c-bg: #f4f6f8;
+    --c-surface: #ffffff;
+    --c-surface-2: #fbfcfd;
+    --c-border: #dfe3e8;
+    --c-text: #15181c;
+    --c-text-dim: #5c6672;
+    --c-focus: #1a6fc4;
+    --c-ok: #1f7a3d;
+    --c-ok-soft: #e7f4ea;
+    --c-progress: #a86a00;
+    --c-progress-soft: #fdf1dc;
+    --c-danger: #b3261e;
+    --c-danger-soft: #fdecea;
+    --c-pending: #1a6fc4;
+    --c-pending-soft: #e8f1fb;
+    --c-neutral-soft: #eef0f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --c-bg: #14171a;
+      --c-surface: #1c2024;
+      --c-surface-2: #22272c;
+      --c-border: #333a41;
+      --c-text: #e8ecef;
+      --c-text-dim: #a2acb6;
+      --c-focus: #6db1f0;
+      --c-ok: #79c996;
+      --c-ok-soft: #1e2c23;
+      --c-progress: #e3bd6c;
+      --c-progress-soft: #2c2519;
+      --c-danger: #f0a49c;
+      --c-danger-soft: #2e1f1d;
+      --c-pending: #8cc4f5;
+      --c-pending-soft: #1b2732;
+      --c-neutral-soft: #24292e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 40px;
+    background: var(--c-bg);
+    color: var(--c-text);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+  }
+  main {
+    max-width: 620px;
+    margin: 0 auto;
+    display: grid;
+    gap: 14px;
+  }
+  .card {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: grid;
+    gap: 10px;
+  }
+  header.top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  h1 { font-size: 1.15rem; margin: 0; }
+  .sub { margin: 0; color: var(--c-text-dim); font-size: 0.9rem; }
+  .state {
+    border-left: 3px solid var(--c-border);
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--c-surface-2);
+    font-size: 0.92rem;
+  }
+  .state[data-tone="ok"] { border-left-color: var(--c-ok); background: var(--c-ok-soft); }
+  .state[data-tone="pending"] { border-left-color: var(--c-pending); background: var(--c-pending-soft); }
+  .state[data-tone="warn"] { border-left-color: var(--c-progress); background: var(--c-progress-soft); }
+  .state[data-tone="bad"] { border-left-color: var(--c-danger); background: var(--c-danger-soft); }
+  .state[data-tone="neutral"] { border-left-color: var(--c-border); background: var(--c-neutral-soft); }
+  .facts { display: grid; grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); gap: 6px; margin: 0; }
+  .facts dt { color: var(--c-text-dim); font-size: 0.86rem; }
+  .facts dd { margin: 0; overflow-wrap: anywhere; }
+  .hint { color: var(--c-text-dim); font-size: 0.82rem; margin: 0; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button {
+    font: inherit;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface-2);
+    color: var(--c-text);
+    cursor: pointer;
+  }
+  button[data-tone="primary"] { border-color: var(--c-pending); background: var(--c-pending-soft); color: var(--c-pending); }
+  button:disabled { opacity: 0.55; cursor: not-allowed; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 2px; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 0.84rem; }
+  footer { color: var(--c-text-dim); font-size: 0.78rem; text-align: center; }
+  @media (max-width: 520px) {
+    .facts { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main id="app">
+  <section class="card" id="panel" aria-live="polite">
+    <header class="top">
+      <div>
+        <h1 id="title">协作邀请</h1>
+        <p class="sub" id="subtitle">这个页面用来接受一条任务组分享链接。</p>
+      </div>
+      <button id="lang" type="button" data-hook="lang-switch" data-tone="ghost">English</button>
+    </header>
+    <p class="state" id="state" data-tone="neutral" data-hook="state">正在读取链接…</p>
+    <dl class="facts" id="facts" hidden>
+      <dt id="f-perm-label">权限</dt><dd id="f-perm">—</dd>
+      <dt id="f-group-label">任务组</dt><dd id="f-group">—</dd>
+    </dl>
+    <div class="row" id="actions" hidden>
+      <button id="accept" type="button" data-hook="accept" data-tone="primary">接受邀请</button>
+      <button id="retry" type="button" data-hook="retry">重试</button>
+    </div>
+    <p class="hint" id="hint" data-hook="hint"></p>
+  </section>
+  <footer>
+    <p id="footer" class="hint">TraceLens · 令牌不会显示在本页，也不会写入浏览器存储。</p>
+  </footer>
+</main>
+
+<script id="share-i18n">
+/* The landing page's whole copy deck, in one object, so the two languages are
+ * machine-comparable (selfcheck check "share.html …"). Same key set, zh + en. */
+window.__SHARE_I18N = {
+  zh: {
+    'page.title': '协作邀请',
+    'page.subtitle': '这个页面用来接受一条任务组分享链接。',
+    'page.footer': 'TraceLens · 令牌不会显示在本页，也不会写入浏览器存储。',
+    'lang.switch': 'English',
+    'state.loading': '正在读取链接…',
+    'state.no_token': '这条链接里没有令牌：可能是链接被截断了。请让组长重新发一次完整的链接。',
+    'state.ask': '有人把这个任务组分享给了你。接受之后你才有对应权限；不接受什么都不会发生。',
+    'state.pending': '正在提交…',
+    'state.accepted': '已接受这条邀请，你现在是这个任务组的协作者。',
+    'state.expired': '这条邀请已经过期了：链接不再有效，需要组长重新发一条。',
+    'state.revoked': '这条邀请已被发起人撤销：链接不再有效。',
+    'state.invalid': '这条链接的令牌无效：可能已被用过，也可能不是这个站点发出的链接。',
+    'state.used': '这条邀请已经被接受过一次：同一个令牌只能用一次。',
+    'state.forbidden': '服务端拒绝了这个操作（权限不足）。你已登录的账号无权接受这条邀请。',
+    'state.auth': '这个部署需要登录：请先在 TraceLens 里登录，再打开这条链接。',
+    'state.unmounted': '服务端还没有挂载「接受邀请」接口（T24 未挂载）：这条链接现在无法在页面上接受。请把链接交给组长在服务端处理，或等该接口上线后重开。',
+    'state.offline': '没有连上服务端：这个页面是从文件直接打开的。请通过 TraceLens 服务端的链接打开。',
+    'state.network': '请求没有完成：服务端没有应答。请稍后重试，或让组长确认服务在运行。',
+    'state.technical': '服务端返回：{code}',
+    'field.permission': '权限',
+    'field.group': '任务组',
+    'level.view': '查看',
+    'level.approve': '审批',
+    'level.manage': '管理',
+    'level.unknown': '未说明',
+    'action.accept': '接受邀请',
+    'action.retry': '重试',
+    'hint.nostore': '令牌只在这一次请求里使用：不显示、不记录、不存进 localStorage / sessionStorage，也不会写进 Cookie。',
+    'hint.nostate': '本页不校验令牌的有效性：只有「接受」这一个是真实请求，其余文案都来自服务端的真实应答。',
+    'hint.signin': '接受之后请回到主界面查看这个任务组。'
+  },
+  en: {
+    'page.title': 'Collaboration invite',
+    'page.subtitle': 'This page accepts a task-group share link.',
+    'page.footer': 'TraceLens · the token is never shown here and never written to browser storage.',
+    'lang.switch': 'Chinese',
+    'state.loading': 'Reading the link…',
+    'state.no_token': 'This link carries no token - it may be truncated. Ask the group leader for the full link.',
+    'state.ask': 'Someone shared this task group with you. Accepting grants the permission; doing nothing changes nothing.',
+    'state.pending': 'Submitting…',
+    'state.accepted': 'Invite accepted: you are now a collaborator on this task group.',
+    'state.expired': 'This invite has expired: the link no longer works; the group leader has to issue a new one.',
+    'state.revoked': 'This invite was revoked by its inviter: the link no longer works.',
+    'state.invalid': 'The token in this link is not valid: it may already be used, or the link was not issued by this site.',
+    'state.used': 'This invite was accepted once already: one token may only be used once.',
+    'state.forbidden': 'The server refused this operation (insufficient permission): the signed-in account may not accept this invite.',
+    'state.auth': 'This deployment needs a sign-in: log in to TraceLens first, then open this link again.',
+    'state.unmounted': 'The server has not mounted the accept endpoint (T24 is not mounted): this link cannot be accepted from the page yet. Hand the link to the group leader, or reopen it once the endpoint ships.',
+    'state.offline': 'Not connected to a server: this page was opened straight from a file. Open it through the TraceLens server link.',
+    'state.network': 'The request did not complete: the server did not answer. Retry later, or check that the server is running.',
+    'state.technical': 'Server answer: {code}',
+    'field.permission': 'Permission',
+    'field.group': 'Task group',
+    'level.view': 'view',
+    'level.approve': 'approve',
+    'level.manage': 'manage',
+    'level.unknown': 'not stated',
+    'action.accept': 'Accept invite',
+    'action.retry': 'Retry',
+    'hint.nostore': 'The token is used exactly once, in this request: not displayed, not logged, not stored in localStorage / sessionStorage, not written to a cookie.',
+    'hint.nostate': 'This page never validates the token: accepting is the one real request, and every other line of copy comes from a real server answer.',
+    'hint.signin': 'After accepting, go back to the main view to see this task group.'
+  }
+};
+</script>
+
+<script>
+(function (global) {
+  'use strict';
+
+  var DICTS = global.__SHARE_I18N || { zh: {}, en: {} };
+  var LEVELS = { view: 'level.view', approve: 'level.approve', manage: 'level.manage' };
+  var DOC = global.document;
+  var TOKEN_FRAGMENT_KEY = 'token';
+  var ACCEPT_PATH = '/api/shares/accept';
+  var AUTH_ME_PATH = '/api/auth/me';
+  var CSRF_HEADER = 'X-CSRF-Token';
+
+  /* The token lives in this closure variable and nowhere else: no storage, no
+   * DOM text, no console. It leaves the address bar on the first paint. */
+  var token = '';
+  var lang = 'zh';
+  var busy = false;
+
+  function dict() { return DICTS[lang] || DICTS.zh || {}; }
+
+  function t(key, params) {
+    var d = dict();
+    var text = Object.prototype.hasOwnProperty.call(d, key) ? d[key]
+      : (DICTS.zh[key] || key);
+    if (!params) return String(text);
+    return String(text).replace(/\{(\w+)\}/g, function (all, name) {
+      return Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : all;
+    });
+  }
+
+  function node(id) { return DOC.getElementById(id); }
+
+  function paint() {
+    DOC.documentElement.lang = lang === 'en' ? 'en' : 'zh';
+    DOC.title = t('page.title');
+    node('title').textContent = t('page.title');
+    node('subtitle').textContent = t('page.subtitle');
+    node('footer').textContent = t('page.footer');
+    node('lang').textContent = t('lang.switch');
+    node('accept').textContent = t('action.accept');
+    node('retry').textContent = t('action.retry');
+    node('f-perm-label').textContent = t('field.permission');
+    node('f-group-label').textContent = t('field.group');
+  }
+
+  function say(key, tone, params) {
+    var box = node('state');
+    box.textContent = t(key, params);
+    box.setAttribute('data-tone', tone || 'neutral');
+    box.setAttribute('data-hook-state', key);
+  }
+
+  function showFacts(permission, group) {
+    var facts = node('facts');
+    facts.hidden = false;
+    node('f-perm').textContent = permission ? t(permission) : t('level.unknown');
+    node('f-group').textContent = group || '—';
+  }
+
+  function showActions(accept, retry) {
+    node('actions').hidden = !(accept || retry);
+    node('accept').hidden = !accept;
+    node('retry').hidden = !retry;
+  }
+
+  function hint(key) {
+    node('hint').textContent = key ? t(key) : '';
+  }
+
+  /* One read of the fragment. `location.hash` is not sent to the server, so the
+   * secret never reaches a request line; the page strips it right away. */
+  function readToken() {
+    var raw = String(global.location.hash || '');
+    if (raw.charAt(0) === '#') raw = raw.slice(1);
+    var parts = raw.split('&');
+    for (var i = 0; i < parts.length; i += 1) {
+      var pair = parts[i].split('=');
+      if (decodeURIComponent(pair[0] || '') === TOKEN_FRAGMENT_KEY) {
+        return decodeURIComponent(pair.slice(1).join('=') || '');
+      }
+    }
+    return '';
+  }
+
+  function dropTokenFromAddress() {
+    if (!global.history || typeof global.history.replaceState !== 'function') return false;
+    try {
+      global.history.replaceState(null, '', global.location.pathname + global.location.search);
+      return true;
+    } catch (e) {
+      /* file:// refuses replaceState: the address bar keeps the fragment, which
+       * is the browser's own UI - the page itself still stores nothing. */
+      return false;
+    }
+  }
+
+  function request(path, method, body, csrf) {
+    var headers = { 'Accept': 'application/json' };
+    if (body) headers['Content-Type'] = 'application/json';
+    if (csrf) headers[CSRF_HEADER] = csrf;
+    return global.fetch(path, {
+      method: method || 'GET',
+      headers: headers,
+      credentials: 'same-origin',
+      cache: 'no-store',
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        return { ok: res.ok, status: res.status, data: data || {} };
+      });
+    });
+  }
+
+  function technical(code) {
+    node('hint').textContent = t('state.technical', { code: code || 'unknown' });
+  }
+
+  function stateFor(result) {
+    var code = String((result.data && result.data.code) || '').toUpperCase();
+    if (result.ok) return { key: 'state.accepted', tone: 'ok' };
+    if (code === 'SHARE_EXPIRED') return { key: 'state.expired', tone: 'warn' };
+    /* The server's own vocabulary: a revoked row answers with the forbidden
+     * code plus the row's state, an unusable token with token_invalid, a
+     * replayed one with token_used. Each gets its own honest sentence. */
+    if (code === 'SHARE_TOKEN_USED') return { key: 'state.used', tone: 'bad' };
+    if (code === 'SHARE_TOKEN_INVALID') return { key: 'state.invalid', tone: 'bad' };
+    if (code === 'SHARE_NOT_FOUND' || code === 'SHARE_FORBIDDEN') {
+      return { key: 'state.revoked', tone: 'bad' };
+    }
+    if (code === 'AUTH_REQUIRED' || code === 'SESSION_EXPIRED') return { key: 'state.auth', tone: 'warn' };
+    if (code === 'ROLE_FORBIDDEN') return { key: 'state.forbidden', tone: 'bad' };
+    if (code === 'ROUTE_NOT_FOUND' || code === 'METHOD_NOT_ALLOWED') {
+      return { key: 'state.unmounted', tone: 'warn' };
+    }
+    if (code === 'SHARE_WRITE_FAILED') return { key: 'state.network', tone: 'bad' };
+    return { key: 'state.invalid', tone: 'bad', code: code };
+  }
+
+  function accept() {
+    if (busy) return;
+    if (!token) { say('state.no_token', 'warn'); return; }
+    if (typeof global.fetch !== 'function') {
+      say('state.offline', 'warn');
+      showActions(false, false);
+      hint('hint.nostate');
+      return;
+    }
+    busy = true;
+    node('accept').disabled = true;
+    say('state.pending', 'pending');
+    var csrf = '';
+    request(AUTH_ME_PATH, 'GET', null, null).then(function (me) {
+      if (me && me.ok && me.data && me.data.csrf_token) csrf = String(me.data.csrf_token);
+      return request(ACCEPT_PATH, 'POST', { token: token }, csrf);
+    }).then(function (res) {
+      busy = false;
+      node('accept').disabled = false;
+      var state = stateFor(res);
+      say(state.key, state.tone, state.code ? { code: state.code } : null);
+      if (res.ok) {
+        var data = res.data || {};
+        var share = data.share || data.invite || {};
+        var permission = LEVELS[String(share.permission || '')] || null;
+        var group = String(data.group_title || data.group_name || share.group_id || '');
+        showFacts(permission, group);
+        showActions(false, false);
+        hint('hint.signin');
+        token = '';
+      } else {
+        showActions(false, true);
+        technical(res.data && res.data.code ? String(res.data.code) : String(res.status));
+      }
+    }, function () {
+      busy = false;
+      node('accept').disabled = false;
+      say('state.network', 'bad');
+      showActions(false, true);
+      hint('hint.nostate');
+    });
+  }
+
+  function boot() {
+    paint();
+    if (!token) {
+      say('state.no_token', 'warn');
+      showActions(false, false);
+      hint('hint.nostore');
+      return;
+    }
+    say('state.ask', 'pending');
+    showActions(true, false);
+    hint('hint.nostore');
+  }
+
+  function start() {
+    say('state.loading', 'neutral');
+    token = readToken();
+    dropTokenFromAddress();
+    node('accept').addEventListener('click', function () { accept(); });
+    node('retry').addEventListener('click', function () {
+      showActions(true, false);
+      accept();
+    });
+    node('lang').addEventListener('click', function () {
+      lang = lang === 'zh' ? 'en' : 'zh';
+      boot();
+    });
+    boot();
+  }
+
+  if (DOC.readyState === 'loading') DOC.addEventListener('DOMContentLoaded', start);
+  else start();
+}(typeof window !== 'undefined' ? window : this));
+</script>
+</body>
+</html>

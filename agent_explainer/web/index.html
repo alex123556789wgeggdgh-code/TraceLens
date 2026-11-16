@@ -15,7 +15,14 @@
   <link rel="stylesheet" href="ext/secretariat.css">
   <link rel="stylesheet" href="ext/collab.css">
   <link rel="stylesheet" href="ext/insights.css">
+  <link rel="stylesheet" href="ext/groups.css">
   <link rel="stylesheet" href="ext/compliance.css">
+  <link rel="stylesheet" href="ext/update.css">
+  <link rel="stylesheet" href="ext/workspaces.css">
+  <!-- Main action page: same archive/ledger language as the feature centre.
+       Loaded last so it can override the legacy card chrome without touching
+       styles.css (which owns every breakpoint and every aria contract). -->
+  <link rel="stylesheet" href="ext/ledger.css">
 </head>
 <body>
   <a class="skip-link" id="skip-link" href="#zones"></a>
@@ -103,7 +110,18 @@
   <script src="ext/secretariat.js"></script>
   <script src="ext/collab.js"></script>
   <script src="ext/insights.js"></script>
+  <script src="ext/groups.js"></script>
   <script src="ext/compliance.js"></script>
+  <!-- 0.6.0 update channel: the settings card renders this section. It only
+       ever activates inside the desktop shell (`window.tracelensDesktop.update`);
+       in a plain browser it says so in one line instead of drawing dead buttons. -->
+  <script src="ext/update.js"></script>
+
+  <!-- Feature centre: one full-screen page per feature. Loaded last so every
+       plugin it can host is already registered. It reuses the existing panels
+       (plugin tabs, TraceLensCards, the audit export panel) instead of
+       growing a second implementation of any of them. -->
+  <script src="ext/workspaces.js"></script>
 
   <!-- Headless verification hook: append ?probe=1 to dump the rendered
        structure as JSON, and ?frame=WxH to pin a phone viewport. The boot

@@ -9,16 +9,19 @@ from __future__ import annotations
 import copy
 import json
 import pathlib
+import shutil
 import sys
-import tempfile
 import unittest
 import urllib.error
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-for extra in (ROOT, ROOT / "tools"):
+for extra in (ROOT, ROOT / "tests", ROOT / "tools"):
     if str(extra) not in sys.path:
         sys.path.insert(0, str(extra))
+
+from scratch import scratch_dir  # noqa: E402  临时目录一律走 scratch（见 tests/scratch.py）
+import http_fixture as fx  # noqa: E402  连接加固：端口就绪 + 瞬态一次性重试，断言级不重试
 
 from agent_explainer import crypto_sig as cs  # noqa: E402
 from agent_explainer import server as sv  # noqa: E402
@@ -44,20 +47,25 @@ def sample(record_id: str, **overrides) -> dict:
 
 def call(base: str, path: str, body: object | None = None, method: str = "GET") -> tuple[int, dict]:
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
-    request = urllib.request.Request(base + path, data=data, method=method,
-                                     headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            return response.status, json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        return exc.code, json.loads(exc.read().decode("utf-8"))
+
+    def once():
+        request = urllib.request.Request(base + path, data=data, method=method,
+                                         headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                return response.status, json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+
+    # M2-PRE 4（PM-VERDICT-R1-9 裁决② / R5-1 接线）：连接级瞬态（10053/10054/10061…）只补一次，
+    # 且 GET/HEAD 这类幂等动词才重放；POST 写请求绝不重放，状态码与断言绝不重传。返回形状一字不改。
+    return fx.urlopen_resilient(once, verb=method, path=path, timeout=15.0)
 
 
 class AutoSignTests(unittest.TestCase):
     def _serve(self, *, sign_on_write: bool):
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        root = pathlib.Path(temp.name)
+        root = scratch_dir("secretariat-autosign")
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         server, thread = sv.start_background_server(
             "127.0.0.1", 0, records=None, quiet=True,
             records_store_path=root / "records.jsonl",

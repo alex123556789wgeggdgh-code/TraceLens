@@ -147,10 +147,23 @@ REQUIRED_RECORD_KEYS: tuple[str, ...] = (
     "user_intervention", "execution_receipt", "risk_level", "policy", "source",
     "demo_data", "synthetic",
 )
+# 5.0 扩展字段（S0-2b）：9 个可合并字段进可选名单，导入面（HTTP）才送得到合并层
+# （`ingest.merge_facts_full` 按 `EXPANSION_MERGE_FIELDS` 取值）。**闸门哲学不变**：
+# 字段封闭仍在，受保护字段（`EXPANSION_PROTECTED_FIELDS`：signature / entry_hash /
+# intervention_history / human_owner …）不在下面这份名单里，`_assert_shape` 照旧拦。
+# 权威定义在 `ingest.py:EXPANSION_MERGE_FIELDS`；本模块**不能**反向 import 它——
+# `ingest.py` 在模块级 import 了本模块（依赖方向是 ingest → trace_adapter），
+# 反向 import 就是循环依赖（PM 口径：循环依赖不许硬绕）。因此这里是**逐字等价**的
+# 第二份声明，由 `tests/test_trace_adapter.py::ExpansionFieldGateTests` 用
+# `ingest.EXPANSION_MERGE_FIELDS` 逐字比对钉住：两处一旦漂移就红。
 OPTIONAL_RECORD_KEYS: tuple[str, ...] = (
     "received_at", "sequence_no", "agent_name", "depth", "run_id",
     "requires_action_reason", "action_due_at", "uncertainty", "impact_scope",
     "error", "suggested_next", "context", "trace_link", "labels",
+    # 以下为 5.0 扩展段（内容与顺序 = EXPANSION_MERGE_FIELDS 全集，逐字照抄）
+    "group_id", "shared_users", "multimedia_evidence", "causal_explanation",
+    "rollback_ref", "rollback_state", "improvement_suggestion",
+    "evidence_feedback", "confidence_source",
 )
 
 # 事实指纹（与 tools/facts_hash.py 完全一致；测试逐条交叉比对，证明"两处一套算法"）
@@ -1632,7 +1645,7 @@ def parse_native(doc: Any, *, fmt: str = FORMAT_NATIVE) -> list[NormalizedEvent]
             raise TraceFormatError("SCHEMA_VERSION_UNSUPPORTED",
                                    f"第 {idx + 1} 条的 schema_version={version!r}，本版本只支持 {SCHEMA_VERSION!r}",
                                    fmt=fmt, field=f"records[{idx}].schema_version", index=idx,
-                                   hint="请用 tools/ 下的迁移脚本升级记录，不要静默兼容")
+                                   hint="本版本不静默兼容旧 schema_version：请把记录手工升级到 SCHEMA_VERSION（1.1）后重新导入；仓库没有提供自动迁移脚本，不要指望 tools/ 里有现成的")
         rid = rec.get("id")
         if rid in (None, ""):
             raise TraceFormatError("TRACE_FIELD_MISSING", f"第 {idx + 1} 条缺少 id（幂等键）",

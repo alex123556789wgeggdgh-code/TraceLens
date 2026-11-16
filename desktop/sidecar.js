@@ -25,9 +25,20 @@ const BOOTSTRAP_KEY = 'tracelens_bootstrap';
 
 /** 开发模式用系统 Python，打包模式用 resources 里的单文件 exe。 */
 function resolveLaunch(options) {
-  const { packaged, resourcesPath, python, mode, dataDir, demo, port, recordsStore, featuresDir } = options;
+  const { packaged, resourcesPath, python, mode, dataDir, demo, port, recordsStore, featuresDir,
+    webDir, runtimeDir } = options;
   const args = ['--sidecar', '--port', String(port), '--mode', mode,
                 '--data-dir', dataDir, '--demo', demo];
+  // 更新通道（0.6.0）：界面资产可以来自「已激活的更新版本」，而不是安装目录里的内置副本。
+  // 这是热更真正生效的地方 —— 没有这条，更新包装上了也不会被用到。
+  if (webDir) {
+    args.push('--web', webDir);
+  }
+  // Python 业务包外置（`--external-runtime` 构建的 sidecar 才认）：
+  // 未外置的 sidecar 会忽略这个变量，行为与之前完全一致（不报错、不降级）。
+  if (runtimeDir) {
+    args.push('--runtime', runtimeDir);
+  }
   // 总裁办数据目录（身份账本 / 委托 / 认定书 / 密钥库）：`--features` 是 server.py 的选项，
   // 默认 `var/features` —— **与 --data-dir 无关**，冻结态（打包 exe）下解析到安装目录内部
   // `_internal/var/features/secretariat/`。装进 Program Files 后那里不可写 → 登记身份直接

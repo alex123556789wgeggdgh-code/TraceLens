@@ -1,0 +1,184 @@
+/*
+ * TraceLens 0.6.0 - update channel section (web/ext/update.css)
+ * -------------------------------------------------------------
+ * Two rules carried over from the export panel (R8-6), both for honesty:
+ *
+ *  - the progress bar is a static dashed track with a translucent fill. No
+ *    `@keyframes`, no transition, no width written from JS. There is no byte
+ *    counter to base a width on, and a moving stripe would read as "progress"
+ *    that nobody measured.
+ *  - the disabled state is visually distinct from the enabled one, so a
+ *    greyed button is never mistaken for a clickable one.
+ *
+ * Only tokens defined in `:root` (styles.css) are used - the self-check fails
+ * the build on an undefined custom property rather than letting it fall back
+ * to transparent.
+ */
+
+.settings__update {
+  border-top: 1px solid var(--c-border);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+}
+
+.update__title {
+  font-size: var(--fs-2);
+  line-height: var(--lh-tight);
+  margin: 0 0 var(--space-3);
+  color: var(--c-text);
+}
+
+.update__hint,
+.update__note,
+.update__status,
+.update__warn {
+  font-size: var(--fs-1);
+  line-height: var(--lh-base);
+  color: var(--c-text-dim);
+  margin: var(--space-2) 0;
+}
+
+.update__warn {
+  color: var(--c-progress);
+  background: var(--c-progress-soft);
+  border: 1px solid var(--c-progress-line);
+  border-radius: var(--radius-1);
+  padding: var(--space-2) var(--space-3);
+}
+
+.update__status[data-phase="error"] {
+  color: var(--c-danger);
+}
+
+.update__status[data-phase="done"] {
+  color: var(--c-ok);
+}
+
+.update__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+
+.update__fact {
+  display: contents;
+}
+
+.update__fact-key {
+  font-size: var(--fs-1);
+  color: var(--c-text-dim);
+}
+
+.update__fact-val {
+  font-size: var(--fs-1);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  margin: 0;
+  word-break: break-all;
+}
+
+.update__source {
+  margin: var(--space-3) 0;
+}
+
+.update__label {
+  display: block;
+  font-size: var(--fs-1);
+  color: var(--c-text-dim);
+  margin-bottom: var(--space-1);
+}
+
+.update__input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: var(--fs-1);
+  color: var(--c-text);
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-1);
+  padding: var(--space-1) var(--space-2);
+}
+
+.update__input:focus {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 1px;
+}
+
+.update__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.update__button {
+  font-size: var(--fs-1);
+  line-height: var(--lh-tight);
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-1);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.update__button--primary {
+  color: var(--c-surface);
+  background: var(--c-pending);
+  border-color: var(--c-pending);
+}
+
+.update__button[disabled] {
+  cursor: not-allowed;
+  color: var(--c-text-dim);
+  background: var(--c-neutral-soft);
+  border-color: var(--c-neutral-line);
+  opacity: 0.7;
+}
+
+.update__button[disabled].update__button--primary {
+  color: var(--c-neutral);
+  background: var(--c-neutral-soft);
+  border-color: var(--c-neutral-line);
+}
+
+.update__progress-host {
+  margin: var(--space-3) 0;
+}
+
+.update__progress-host[data-visible="false"] {
+  display: none;
+}
+
+.update__progress {
+  position: relative;
+  height: 8px;
+  border: 1px dashed var(--c-pending-line);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--c-surface-2);
+}
+
+/* static, translucent: present but never claims a position */
+.update__progress-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--c-pending);
+  opacity: 0.25;
+}
+
+.update__raw {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-0);
+  color: var(--c-text-dim);
+  background: var(--c-neutral-soft);
+  border: 1px solid var(--c-neutral-line);
+  border-radius: var(--radius-1);
+  padding: var(--space-2);
+  margin: var(--space-2) 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

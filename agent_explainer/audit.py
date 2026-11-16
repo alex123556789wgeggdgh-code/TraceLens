@@ -26,6 +26,12 @@
    密钥类键写成 ``<redacted:api_key#sha256:ab12cd34ef56>``（保留同值可辨识的短指纹），
    邮箱/手机号打码，IP 默认只到网段（``ip_scope="subnet"``）。审计要能复盘“改了什么参数名”，
    但不该变成密钥仓库。审计里**不存请求体原文**。
+   唯一的**字段级**豁免（R5-3b / PM-VERDICT-R5-3 §4）：``fields.snapshot_sha256`` 这类
+   **锚定摘要**逐字落盘——sha256 里出现 ≥11 位连续数字是常态（实测 11%），照 PII 规则
+   打码就等于把锚砸坏（TP-12「前态快照摘要逐字进链」）。豁免只认「键名白名单 + 含字母的
+   纯 hex 摘要形状」（:func:`is_anchor_digest` 单点，纯数字的 PII 形状永不豁免），
+   ``PII_PATTERNS`` 本体与阈值一字未放宽，同一个键塞散文进来照旧打码，
+   ``journal_id`` 那类 id 的掩码口径逐字不变。
 6. **决定 ≠ 生效**：审计记录的是“谁在什么时候决定做什么”，绝不写“已执行/已完成”。
    事件类型里只有 decision / correction / seal / export / access_denied / note /
    record_reset，加上 4.3 的 auth.login / auth.login_failed / auth.logout / auth.denied（t18 入白名单）；执行结果由 ``execution_receipt`` 那条线回报。
@@ -66,10 +72,21 @@ __all__ = [
     "AuditOperationForbidden", "AuditExportError",
     "canonical_json", "sha256_ref", "entry_hash", "utc_now", "iso_utc", "parse_time",
     "redact_params", "redact_client_info", "redact_text", "PII_PATTERNS",
+    "ANCHOR_DIGEST_FIELDS", "is_anchor_digest",
     "diff_params", "build_event",
     "event_from_decision", "AuditLog", "ExportResult",
     "default_log_path", "open_log", "verify_file", "render_html",
     "entries_to_rows", "entries_to_csv", "render_pdf_bytes",
+    # R8-3（B8-1）：责任认定书模板 + 哈希链二维码（QR 载荷 = sealed_head）
+    "CERT_TITLE", "CERT_QR_FIELD", "CERT_QR_NOTE", "NO_SEAL_NOTE", "CERT_DISCLOSURE",
+    "REDUCTION_NOTE", "ANCHOR_HONEST_NOTE", "ANCHOR_TX_HONEST_NOTE", "ANCHOR_STATE_TEXT",
+    # R8-5（D-2）：CID 与「未锚定 / 待接入」同屏的措辞单点（compliance 侧引用同一常量）
+    "CID_NO_ANCHOR_NOTE", "CID_SELF_REF_NOTE", "ANCHOR_DEFERRED_NOTE",
+    "CERT_VERIFY_GUIDE", "DISPLAY_FORBIDDEN_WORDS", "QR_MODULE_PT", "QR_QUIET_MODULES",
+    "latest_sealed_head", "certificate_period", "build_certificate", "certificate_text",
+    "certificate_qr", "certificate_svg", "certificate_inline_svg",
+    "qr_side", "qr_rect_plan", "qr_plan_to_matrix", "draw_qr_block", "qr_pdf_flowable",
+    "draw_certificate_block",
 ]
 
 APP_ID = "tracelens"
@@ -106,6 +123,11 @@ EVENTS: tuple[str, ...] = (
     # 现在原生名字合法，`query(event="auth.denied")` 直接可查。历史文件不改写，
     # 服务端仍按旧映射写（access_denied/note + fields.auth_event），保持兼容。
     "auth.login", "auth.login_failed", "auth.logout", "auth.denied",
+    # R1-4（PM-VERDICT-R1-3 §3.1，L1 已批）：journal 锚定事件的原生名。R1-3 落盘当时
+    # 白名单里没有它，只能借 ``note`` + ``fields.rollback_event`` 记（auth 域先例）；
+    # 现在真名合法，``query(event="rollback.anchored")`` 直接可查。扩白名单只影响
+    # **新写入**：历史行一条不改写（旧行的 note + fields.rollback_event 继续可读可查）。
+    "rollback.anchored",
 )
 ACTOR_ROLES: tuple[str, ...] = ("local", "owner", "member", "viewer", "system")
 
@@ -160,6 +182,53 @@ PII_PATTERNS: dict[str, re.Pattern[str]] = {
     "aws_key": re.compile(r"\bAKIA[0-9A-Z]{12,}\b"),
     "pem_block": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 }
+
+# --------------------------------------------------------------------------- #
+# 锚定摘要的**字段级**掩码豁免（R5-3b / PM-VERDICT-R5-3 §4，L1 已批）
+# --------------------------------------------------------------------------- #
+#: 缺陷：sha256 的十六进制串里出现 ≥11 位连续数字是**常态**（实测 20000 个真实
+#: sha256 里 11.0% 被 ``long_digits`` 啃掉一段，``cn_mobile``/``id_card`` 各再加
+#: 0.3%/0.1%，是前者的子集，去重后总计 11.0%）。锚定事件 ``fields.snapshot_sha256``
+#: 一旦被掩码，
+#: TP-12「前态快照摘要逐字进链」就破：取证无法把链上的摘要与 journal 条目的前态
+#: 快照逐字对上——锚住的是哪份前态，从此查无实据。
+#:
+#: 口径（TASK-R5-3b §2，三条都写死在 :func:`is_anchor_digest` 一个判据里）：
+#:
+#: * **字段级**，不是规则级：``PII_PATTERNS`` 的本体、阈值、顺序一字不动，
+#:   自由文本（``reason``/``note``/``changed_fields``/非敏感参数值）里的 11-20 位
+#:   数字串照旧打码。豁免只认下面这几个键名。
+#: * **形状闸门**：只放过**含字母的**纯 hex 摘要（8-64 位 ``[0-9a-fA-F]``，且至少一个
+#:   字母）。纯数字串——银行卡 / 手机号 / 身份证那类 PII 的形状——**永不进豁免**；
+#:   真摘要几乎必然含 hex 字母（64 位全数字的概率 = 0.625^64 ≈ 8.6e-14，实测 20000 例 0 例）。
+#:   形状之外的值一律回到原脱敏链，宁严勿松：同一个键塞散文、邮箱、卡号照旧全量打码。
+#:   豁免是「这个键的**摘要值**不掩码」，不是「这个键不脱敏」。
+#: * 同事件其他字段的掩码逐字不变：``journal_id`` 落盘掩码是既定口径
+#:   （``test_r1_acceptance`` 注释在案，PM 历次裁决采信），本轮不顺手放开。
+#:
+#: 只影响**新写入**：历史行的掩码摘要一条不改写（追加式纪律），链结构与签名域零改动。
+ANCHOR_DIGEST_FIELDS: frozenset[str] = frozenset({"snapshot_sha256"})
+#: 摘要形状：8-64 位十六进制。收 8 位起是给 sha256 与截断引用（``sha256:`` 前 12 位
+#: 那类）留出余量。
+_ANCHOR_DIGEST_RE = re.compile(r"\A[0-9a-fA-F]{8,64}\Z")
+#: 字母闸门：把「纯数字串」挡在豁免之外（PII 防线不能让豁免啃到，见上）。
+_ANCHOR_LETTER_RE = re.compile(r"[a-fA-F]")
+
+
+def is_anchor_digest(key: Any, value: Any) -> bool:
+    """这个键值对是「锚定摘要逐字落盘」的豁免对象吗？
+
+    三个条件缺一不可：**键名**命中 :data:`ANCHOR_DIGEST_FIELDS`（按 :func:`_key_norm`
+    归一化，口径同 ``SENSITIVE_KEYS``）、**值是纯 hex**（:data:`_ANCHOR_DIGEST_RE`）、
+    且**含至少一个 hex 字母**（:data:`_ANCHOR_LETTER_RE`，纯数字的 PII 形状一律不豁免）。
+    判据只在这里写一份：``redact_params`` 的两条入口（字典键、带键名的标量）都调它，
+    豁免面没有第二个落点，也不会被调用方绕过。
+    """
+    return (_key_norm(key) in {_key_norm(k) for k in ANCHOR_DIGEST_FIELDS}
+            and isinstance(value, str)
+            and bool(_ANCHOR_DIGEST_RE.match(value))
+            and bool(_ANCHOR_LETTER_RE.search(value)))
+
 
 #: API 层禁止的操作语义：类上不存在这些方法，调用即抛 AuditOperationForbidden。
 FORBIDDEN_OPERATIONS: tuple[str, ...] = (
@@ -421,8 +490,14 @@ def _mask_value(key: Any, value: Any) -> Any:
     return f"<redacted:{name}:{type(value).__name__}>"
 
 
-def redact_params(params: Any, *, redact: bool = True, _depth: int = 0) -> Any:
-    """递归脱敏参数字典；嵌套容器一起处理，深度超限整段折成哈希引用。"""
+def redact_params(params: Any, *, redact: bool = True, _depth: int = 0,
+                  _key: Any = None) -> Any:
+    """递归脱敏参数字典；嵌套容器一起处理，深度超限整段折成哈希引用。
+
+    ``_key`` 是**调用方内部**带上来的键名（``build_event`` 的 ``extra`` 那条路只把值
+    递进来，键名会丢）：只为 :func:`is_anchor_digest` 的字段级豁免认得出键，
+    不改变任何其他脱敏行为，也不属于对外签名。
+    """
     if params is None:
         return None
     if _depth > 6:
@@ -438,6 +513,10 @@ def redact_params(params: Any, *, redact: bool = True, _depth: int = 0) -> Any:
         for key, value in params.items():
             if _is_sensitive(key):
                 out[str(key)] = _mask_value(key, value)
+            elif is_anchor_digest(key, value):
+                # R5-3b：锚定摘要逐字落盘（字段级 + 摘要形状，判据单点见函数名）；
+                # 敏感键优先在上面拦住，豁免永远排在整值打码之后，不越 PII 防线。
+                out[str(key)] = value
             elif isinstance(value, (Mapping, list, tuple)):
                 out[str(key)] = redact_params(value, redact=True, _depth=_depth + 1)
             else:
@@ -446,6 +525,8 @@ def redact_params(params: Any, *, redact: bool = True, _depth: int = 0) -> Any:
         return out
     if isinstance(params, (list, tuple)):
         return [redact_params(v, redact=True, _depth=_depth + 1) for v in params]
+    if is_anchor_digest(_key, params):
+        return params                      # R5-3b：同上，键名由调用方带进来
     return redact_text(params)
 
 
@@ -638,7 +719,11 @@ def build_event(event: str, *, actor_id: str, ts: Any = None,
             name = str(key)
             if name in payload or name in ("seq", "hash", "entry_hash", "prev_hash"):
                 continue
-            payload[name] = redact_params(value, redact=redact)
+            # R5-3b（PM-VERDICT-R5-3 §4，L1 已批）：把键名一并递进 redact_params。
+            # 以前这里只递值，键名在这一跳丢掉 → 锚定摘要被当自由文本走掩码，
+            # fields.snapshot_sha256 落盘带星（TP-12 破）。豁免判据（键名白名单 +
+            # 摘要形状）收在 is_anchor_digest 单点，这里只补"键名"这一口信息。
+            payload[name] = redact_params(value, redact=redact, _key=name)
     canonical_json(payload)     # 早炸：别让不可序列化的值活到写盘那一步
     return payload
 
@@ -1023,10 +1108,20 @@ class AuditLog:
                     title: str = "TraceLens 用户操作审计",
                     notes: Sequence[str] | None = None,
                     note: str | None = None,
-                    _fallback: str | None = None) -> ExportResult:
-        """可打印 HTML 导出：零外链、零脚本，浏览器 Ctrl+P 存 PDF。"""
+                    _fallback: str | None = None,
+                    certificate: Mapping[str, Any] | None = None,
+                    status: Mapping[str, Any] | None = None) -> ExportResult:
+        """可打印 HTML 导出：零外链、零脚本，浏览器 Ctrl+P 存 PDF。
+
+        ``certificate``（R8-3 / B8-1）：责任认定书区块（含 QR，载荷 = ``sealed_head``）；
+        不传则就地取数，传了就直接用（PDF 回退路径与 PDF 共用同一份，两处不各写各的）。
+        ``status``：链校验结果，传进来就复用，同一次导出不复算第二遍（只读操作）。
+        """
         items = list(rows) if rows is not None else self.read()
-        text = self.render_html(items, title=title, notes=notes)
+        chain = dict(status) if isinstance(status, Mapping) else self.verify(raise_on_tamper=False)
+        cert = (certificate if isinstance(certificate, Mapping)
+                else build_certificate(items, status=chain))
+        text = self.render_html(items, title=title, notes=notes, certificate=cert, status=chain)
         return self._finish_export("html", path, text, rows=rows, columns=CSV_COLUMNS,
                                    note=note or "可打印 HTML：零外链零脚本，浏览器 Ctrl+P 可存 PDF",
                                    _fallback=_fallback)
@@ -1040,12 +1135,18 @@ class AuditLog:
 
         ``prefer``：``auto``（默认）/ ``pdf``（拿不到 reportlab 就抛
         :class:`AuditExportError`）/ ``html``（直接出 HTML）。
+
+        两条产物都带责任认定书区块（R8-3 / B8-1）：PDF 用 reportlab 逐模块画方块，
+        回退 HTML 用内联 SVG —— 同一份 ``cert`` 取数，QR 载荷与正文链头行逐字相等。
         """
         items = list(rows) if rows is not None else self.read()
+        chain = self.verify(raise_on_tamper=False)
+        cert = build_certificate(items, status=chain)
         mode = prefer if prefer in ("auto", "pdf", "html") else "auto"
         if mode == "html":
             result = self.export_html(path, rows=items, title=title, notes=notes,
-                                      note="按要求直接生成可打印 HTML（未尝试 PDF）")
+                                      note="按要求直接生成可打印 HTML（未尝试 PDF）",
+                                      certificate=cert, status=chain)
             return result
         namespace, reason = _load_reportlab()
         if namespace is None:
@@ -1058,18 +1159,19 @@ class AuditLog:
                              "浏览器 Ctrl+P 即可存 PDF；HTML 零外链零脚本")
             return self.export_html(path, rows=items, title=title, notes=notes,
                                     note=fallback_note,
-                                    _fallback=reason)
+                                    _fallback=reason,
+                                    certificate=cert, status=chain)
         target = pathlib.Path(path) if path else default_export_path("pdf")
         try:
             payload = _build_pdf(namespace, target, items, title=title,
-                                 status=self.verify(raise_on_tamper=False),
-                                 notes=notes)
+                                 status=chain, notes=notes, certificate=cert)
         except Exception as exc:                    # 构建失败也不让审计丢内容
             reason = f"reportlab_build_failed:{type(exc).__name__}"
             return self.export_html(path, rows=items, title=title, notes=notes,
                                     note=f"PDF 构建失败（{reason}）：已生成可打印 HTML，"
                                          "浏览器 Ctrl+P 即可存 PDF",
-                                    _fallback=reason)
+                                    _fallback=reason,
+                                    certificate=cert, status=chain)
         data = target.read_bytes()
         return ExportResult(format="pdf", path=str(target), rows=len(items),
                             columns=CSV_COLUMNS, bytes=len(data),
@@ -1081,9 +1183,13 @@ class AuditLog:
 
     def render_html(self, rows: Sequence[Mapping[str, Any]], *,
                     title: str = "TraceLens 用户操作审计",
-                    notes: Sequence[str] | None = None) -> str:
-        return render_html(rows, title=title, status=self.verify(raise_on_tamper=False),
-                           notes=notes, log_path=str(self._path))
+                    notes: Sequence[str] | None = None,
+                    certificate: Mapping[str, Any] | None = None,
+                    status: Mapping[str, Any] | None = None) -> str:
+        return render_html(rows, title=title,
+                           status=(dict(status) if isinstance(status, Mapping)
+                                   else self.verify(raise_on_tamper=False)),
+                           notes=notes, log_path=str(self._path), certificate=certificate)
 
     def _finish_export(self, fmt: str, path: Any, text: str, *,
                        rows: Sequence[Mapping[str, Any]] | None,
@@ -1315,6 +1421,13 @@ CSV_COLUMNS: tuple[str, ...] = (
     "option_id", "event", "request_id", "original_params", "modified_params",
     "changed_fields", "reason", "client_info", "record_status_before",
     "record_status_after", "mode", "prev_hash", "hash",
+    # R8-2（B8-2「CSV 覆盖签名/哈希字段全集」，PM 任务书 §1.5 预批「仅尾部追加」，L1）：
+    # 前 20 列的名字与顺序一字未动，以下四列只追加在尾部，旧消费者按下标/表头断言不受影响。
+    # entry_hash 与 hash 恒等（audit.py:894：t8/t11 读的就是这个名字）；这里按名导出，
+    # 是为了 ELK/Splunk 侧按 `entry_hash` 建索引/告警的消费者能直接取到（语义重复，已申报）。
+    # record_facts_hash / source_facts_hash 是载荷事实哈希；sealed_head 是封印锚点哈希
+    # （只有 seal 条目有值，其余行为空）。四列全部取自条目实键，不新增、不回填历史行。
+    "entry_hash", "record_facts_hash", "source_facts_hash", "sealed_head",
 )
 
 _HTML_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -1383,13 +1496,457 @@ DEFAULT_HTML_NOTES: tuple[str, ...] = (
     "「决定」记录的是用户决定做什么，不等于已执行：是否生效以执行端回报的 execution_receipt 为准。",
 )
 
+# --------------------------------------------------------------------------- #
+# 责任认定书模板与哈希链二维码（R8-3 / B8-1，TASK-R8-3 §2.1 / §2.2）
+# --------------------------------------------------------------------------- #
+# 口径（PM 任务书 §1.4 / HANDOFF §4 既定 A 案）：
+#   QR 载荷 = ``sealed_head`` —— 审计账本 ``seal()`` 写入的**封印锚点哈希**；
+#   **不是** ``compliance.build_bundle()`` 的三段归约 ``root_hash``，**不是** Merkle 根。
+#   两个值在同一条链上本来就长得不一样（链头快照 vs 三段哈希归约），模板把它们
+#   分行、各带限定语写出来，谁也不冒充谁。
+#   取数只有一个出口（:func:`latest_sealed_head`）；正文行与二维码都从
+#   ``cert["qr_payload"]`` 这一个值来 —— 所以「PDF 里的码」与「PDF 里的字」逐字相等
+#   是由构造保证的，钉测只锁这条构造。
+CERT_TITLE: str = "TraceLens 责任认定书（模板）"
+#: QR 载荷取自条目里的哪个键（机器可读，钉测按名核对）。
+CERT_QR_FIELD: str = "sealed_head"
+CERT_QR_NOTE: str = ("QR 载荷 = sealed_head：审计账本 seal() 写入的封印锚点哈希"
+                     "（哈希链根哈希 A 案口径）；不是三段归约 root_hash，也不是 Merkle 根")
+#: 无封印锚点时的诚实措辞：留空、不伪造、不拿别的哈希顶替（§1.4）。
+NO_SEAL_NOTE: str = "无封印锚点，二维码不可用"
+#: 「验签通过≠背书齐备」两句（HANDOFF §4 展示纪律：随摘要引用，两层账本不混为一谈）。
+CERT_DISCLOSURE: tuple[str, ...] = (
+    "验签通过≠背书齐备。",
+    "本文件的哈希与二维码只证明内容可离线复算，不构成 secretariat 签名账本的背书。",
+)
+#: 三段归约的固定限定语（§2.1 第 3 项：不得与链头混淆）。
+REDUCTION_NOTE: str = "三段归约（records/audit/letters 逐条哈希的归约值），非链头、非 Merkle 根"
+#: 锚定诚实态（0.4）：只写「未接入 / 待接入」，不写完成态措辞。
+ANCHOR_HONEST_NOTE: str = "anchor_state: unavailable（未接入锚定后端，待接入）"
+ANCHOR_TX_HONEST_NOTE: str = "eth_tx_hash: None（该值不存在，不是「待填」）"
+# --------------------------------------------------------------------------- #
+# R8-5（D-2 三项约束 / B8-3 按 D-2 验收）：CID 与「未锚定」**必须同屏**。
+#   离线 CIDv1 是真值（``compliance.cid_for`` 可复算），真值也会说谎：一个孤零零摆在
+#   认定书上的 CID 会被读成「已经存证」。所以措辞单点写在这里，compliance 侧引用同一
+#   组常量，两条渲染链（真 PDF / 可打印 HTML）与 meta 用同一句话——不存在各处各写一套、
+#   某一处漏了限定语。**只写降级态，不写完成态**（0.4 展示纪律）。
+# --------------------------------------------------------------------------- #
+CID_NO_ANCHOR_NOTE: str = ("ipfs_cid 未锚定（no anchor）/ 待接入：本机无 IPFS pinning、无链上交易，"
+                           "该 CID 只由导出字节离线复算")
+#: 本文件自身的 CID 不可能写进本文件（写进去字节就变了、CID 就不是它了），
+#: 所以模板**不预填**，只如实指出它住在导出记录的 ``ipfs_cid`` 字段里。
+CID_SELF_REF_NOTE: str = ("本文件自身的 CID 由导出时对最终字节复算、写进导出记录的 ipfs_cid 字段；"
+                          "模板不预填——预填即自指失真")
+#: D-2 第 3 项：「上链 ≤2 分钟」是**延后**不是删除。写进导出件，免得降级态被读成永久放弃。
+ANCHOR_DEFERRED_NOTE: str = ("B8-3「上链 ≤2 分钟」延后而非删除：提供 RPC / 密钥后启用，届时仍是验收项")
+#: 0.6.0 唯一诚实的锚定状态（与 ``compliance.ANCHOR_STATE`` 同值；不 import 过去，
+#: 免得审计侧反向依赖 compliance —— 两边都是常量，钉测逐字核对）。
+ANCHOR_STATE_TEXT: str = "unavailable"
+#: 验证指引（§2.1 第 5 项：只写指引；``tools/verify_export.py`` 归 R8-4，本轮不实现）。
+CERT_VERIFY_GUIDE: str = ("验证指引：哈希可离线复算 —— 逐条 canonical_json → sha256 → "
+                          "按 prev_hash 续接成链，封印条目的 sealed_head 应等于当时的链头；"
+                          "独立验证脚本 tools/verify_export.py 属 R8-4，本模板只给指引、不含实现")
+#: 展示纪律禁语（0.4 / HANDOFF §4）。**只**出现在测试与报告里做扫描，
+#: 绝不写进导出件正文——写了就等于把禁语摆上了台面。
+DISPLAY_FORBIDDEN_WORDS: tuple[str, ...] = ("已恢复", "已撤销", "已上链", "已冲正完成")
+#: PDF 里每个 QR 模块的边长（pt）与静区宽度（模块数）；静区按 ISO 口径 4 模块。
+QR_MODULE_PT: float = 3.2
+QR_QUIET_MODULES: int = 4
+
+
+def latest_sealed_head(rows: Sequence[Mapping[str, Any]] | None) -> dict[str, Any]:
+    """QR 载荷的**唯一取数出口**：条目列表里最后一次 ``seal()`` 记的 ``sealed_head``。
+
+    口径（判断，报告如实申报）：同一条链可能封很多次，``seal()`` 记的是**当时**的链头，
+    所以取**最后一次**封印 —— 它覆盖到导出时的整段历史，是最强的锚点；更早的封印
+    仍在条目里可查（``seals`` 计数一并给出）。
+    没有 seal 条目 / 值为空 → ``sealed_head=None`` + 如实 ``note``，调用方**必须**
+    留空并省略二维码，绝不拿链头、``root_hash`` 或任何别的哈希顶替（§1.4）。
+    """
+    seals = 0
+    found: tuple[str, str] | None = None
+    for entry in (rows or ()):
+        if not isinstance(entry, Mapping) or entry.get("event") != "seal":
+            continue
+        seals += 1
+        value = entry.get(CERT_QR_FIELD)
+        if isinstance(value, str) and value.strip():
+            found = (value.strip(),
+                     f"第 {entry.get('seq')} 条 seal 事件（sealed_count={entry.get('sealed_count')}）")
+    if found is None:
+        note = NO_SEAL_NOTE if seals == 0 else f"seal 条目共 {seals} 条，sealed_head 均为空：{NO_SEAL_NOTE}"
+        return {"sealed_head": None, "source": None, "seals": seals, "note": note}
+    return {"sealed_head": found[0], "source": found[1], "seals": seals, "note": CERT_QR_NOTE}
+
+
+def certificate_period(rows: Sequence[Mapping[str, Any]] | None = None,
+                       period: Mapping[str, Any] | None = None) -> str:
+    """期间一句话：有显式 ``period`` 用显式，否则按条目 ``ts`` 极值，都没有就如实说未限定。"""
+    if isinstance(period, Mapping) and period:
+        since = period.get("since") or period.get("from") or ""
+        until = period.get("until") or period.get("to") or ""
+        if since or until:
+            return f"{since or '（起）'} ~ {until or '（止）'}"
+    stamps = [str(entry.get("ts")) for entry in (rows or ())
+              if isinstance(entry, Mapping) and entry.get("ts")]
+    if stamps:
+        return f"{min(stamps)} ~ {max(stamps)}（按条目 ts 极值）"
+    return "未限定时间范围"
+
+
+def build_certificate(rows: Sequence[Mapping[str, Any]] | None = None, *,
+                      status: Mapping[str, Any] | None = None,
+                      title: str = CERT_TITLE,
+                      period: Mapping[str, Any] | None = None,
+                      generated_at: str | None = None,
+                      lang: str = "zh",
+                      root_hash: str | None = None,
+                      section_hashes: Mapping[str, Any] | None = None,
+                      counts: Mapping[str, Any] | None = None,
+                      seal_info: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """组一份责任认定书的**数据**（PDF / 可打印 HTML 同构，两条渲染链共用）。
+
+    只做取数与措辞，不写文件、不追加账本、不新增任何条目键：
+    ``sealed_head`` 从审计条目里读（:func:`latest_sealed_head`），读不到就留空并写明
+    「无封印锚点，二维码不可用」。``qr_payload`` 是正文与二维码**共用**的同一个值。
+    """
+    chain = dict(status or {})
+    items = [entry for entry in (rows or ()) if isinstance(entry, Mapping)]
+    seal = dict(seal_info) if isinstance(seal_info, Mapping) else latest_sealed_head(items)
+    sealed_head = seal.get("sealed_head")
+    sealed_head = sealed_head if isinstance(sealed_head, str) and sealed_head.strip() else None
+    if counts is None:
+        counts = {"records": None, "audit": chain.get("count", len(items)), "letters": None}
+    return {
+        "title": str(title),
+        "period": certificate_period(items, period),
+        "generated_at": str(generated_at or iso_utc(utc_now())),
+        "lang": str(lang or "zh"),
+        "sealed_head": sealed_head,
+        "sealed_head_field": CERT_QR_FIELD,
+        "sealed_head_source": seal.get("source"),
+        "seals": seal.get("seals", 0),
+        "chain_head": chain.get("head"),
+        "chain_ok": chain.get("ok"),
+        "chain_count": chain.get("count", len(items)),
+        "root_hash": root_hash,
+        "reduction_note": REDUCTION_NOTE,
+        "section_hashes": dict(section_hashes or {}),
+        "anchor_state": ANCHOR_STATE_TEXT,
+        "anchor_note": ANCHOR_HONEST_NOTE,
+        "eth_tx_hash": None,
+        "eth_tx_note": ANCHOR_TX_HONEST_NOTE,
+        # R8-5（D-2 第 1 项）：CID 的诚实态字段与措辞**同屏**进认定书数据本体。
+        # ``ipfs_cid`` 在这里恒 None：本文件自身的 CID 由导出时对最终字节算得（写进导出
+        # 记录），模板拿不到、也不许预填一个假 CID 冒充"已算好"。调用方（compliance 导出面）
+        # 若真有一个可归属的 CID，可显式传进来，同屏的未锚定措辞照旧跟着走。
+        "ipfs_cid": None,
+        "cid_anchor_note": CID_NO_ANCHOR_NOTE,
+        "cid_self_ref_note": CID_SELF_REF_NOTE,
+        "anchor_deferred_note": ANCHOR_DEFERRED_NOTE,
+        "counts": dict(counts),
+        "verify_guide": CERT_VERIFY_GUIDE,
+        "disclosure": list(CERT_DISCLOSURE),
+        "qr_field": CERT_QR_FIELD,
+        "qr_payload": sealed_head,
+        "qr_note": str(seal.get("note") or CERT_QR_NOTE) if sealed_head else str(seal.get("note") or NO_SEAL_NOTE),
+    }
+
+
+def certificate_text(cert: Mapping[str, Any], *, include_title: bool = True) -> list[str]:
+    """模板正文行（§2.1 六项，顺序固定；PDF 逐行画、HTML 逐行列）。
+
+    链头行与 ``qr_payload`` 同源：正文里写的 ``sealed_head`` 与二维码载荷是**同一个字符串**，
+    不存在两处各写各的（钉测锁这条）。
+    """
+    counts = cert.get("counts") if isinstance(cert.get("counts"), Mapping) else {}
+    lines: list[str] = []
+    if include_title:
+        lines.append(str(cert.get("title") or CERT_TITLE))
+    lines.append(f"period: {cert.get('period')}")
+    lines.append(f"generated_at: {cert.get('generated_at')}")
+    lines.append(f"lang: {cert.get('lang')}")
+    head = cert.get("sealed_head")
+    lines.append(f"sealed_head: {head}" if head else f"sealed_head: （空）{NO_SEAL_NOTE}")
+    lines.append(f"sealed_head_source: {cert.get('sealed_head_source') or NO_SEAL_NOTE}")
+    lines.append(f"sealed_head_note: {CERT_QR_NOTE}")
+    lines.append(f"chain_head: {cert.get('chain_head') or '（本次导出上下文未提供链尖哈希）'}"
+                 f"（链尖 = 最新一条的哈希；封印锚点 = seal() 当时记下的链头，两者不同）")
+    lines.append(f"chain_ok: {cert.get('chain_ok')} · seals: {cert.get('seals')} "
+                 f"· count: {cert.get('chain_count')}")
+    root = cert.get("root_hash")
+    if root:
+        lines.append(f"root_hash(三段归约): {root}")
+        lines.append(f"root_hash_note: {cert.get('reduction_note')}")
+    else:
+        lines.append("root_hash(三段归约): （不适用：本导出面只有审计链，三段归约在 compliance 导出面）")
+    sections = cert.get("section_hashes") if isinstance(cert.get("section_hashes"), Mapping) else {}
+    for name in ("records", "audit", "letters"):
+        value = sections.get(name)
+        if value:
+            lines.append(f"{name}_hash: {value}")
+    if not sections:
+        lines.append("records_hash / audit_hash / letters_hash: （不适用：本导出面只有审计链）")
+    lines.append(str(cert.get("anchor_note") or ANCHOR_HONEST_NOTE))
+    lines.append(str(cert.get("eth_tx_note") or ANCHOR_TX_HONEST_NOTE))
+    # R8-5（D-2 第 1 项 / §2.1 同屏判据）：CID 行与「未锚定（no anchor）/ 待接入」**相邻成行**，
+    # 顺序固定：CID 本体 → 未锚定 → 本体出处 → 延后项。缺任何一个限定语，离线 CID 就会被
+    # 读成完成态；这一段的职责是**把降级说全**，不是把 CID 说没。
+    cid_value = cert.get("ipfs_cid")
+    lines.append(f"ipfs_cid: {cid_value}" if cid_value
+                 else "ipfs_cid: （本文件自身的 CID 见导出记录的 ipfs_cid 字段，模板不预填）")
+    lines.append(str(cert.get("cid_anchor_note") or CID_NO_ANCHOR_NOTE))
+    lines.append(str(cert.get("cid_self_ref_note") or CID_SELF_REF_NOTE))
+    lines.append(str(cert.get("anchor_deferred_note") or ANCHOR_DEFERRED_NOTE))
+    lines.append(f"counts: records={counts.get('records')} audit={counts.get('audit')} "
+                 f"letters={counts.get('letters')}")
+    lines.append(str(cert.get("verify_guide") or CERT_VERIFY_GUIDE))
+    payload = cert.get("qr_payload")
+    lines.append(f"qr_payload: {payload}" if payload else f"qr_payload: （空）{NO_SEAL_NOTE}")
+    lines.append(f"qr_note: {cert.get('qr_note') or NO_SEAL_NOTE}")
+    for sentence in (cert.get("disclosure") or CERT_DISCLOSURE):
+        lines.append(str(sentence))
+    return lines
+
+
+def certificate_qr(cert: Mapping[str, Any]) -> list[list[int]] | None:
+    """QR 矩阵：载荷就是 ``cert["qr_payload"]``（= 正文那行 ``sealed_head`` 的同一个串）。
+
+    载荷为空 → 返回 ``None``（调用方必须省略二维码并如实写明），**不编码空占位码**、
+    不拿别的哈希顶替。编码器是仓库自带的 ``agent_explainer/qr.py``（纯标准库）。
+    """
+    payload = cert.get("qr_payload") if isinstance(cert, Mapping) else None
+    if not isinstance(payload, str) or not payload.strip():
+        return None
+    from . import qr as _qr
+    return _qr.encode(payload.strip())
+
+
+def certificate_svg(cert: Mapping[str, Any], *, scale: int = 4,
+                    border: int = QR_QUIET_MODULES) -> str | None:
+    """独立 SVG 字符串（``qr.to_svg`` 原样产物）：零脚本、零外链、带 ``viewBox``。"""
+    matrix = certificate_qr(cert)
+    if matrix is None:
+        return None
+    from . import qr as _qr
+    return _qr.to_svg(matrix, scale=scale, border=border)
+
+
+_XML_DECL_RE = re.compile(r"^\s*<\?xml[^\n]*\?>\s*")
+_XMLNS_ATTR_RE = re.compile(r'\sxmlns="[^"]*"')
+
+
+def certificate_inline_svg(cert: Mapping[str, Any], *, scale: int = 4,
+                           border: int = QR_QUIET_MODULES) -> str | None:
+    """可打印 HTML 用的内联 SVG：``qr.to_svg`` 产物里**只**去掉 XML 声明与 ``xmlns`` 声明。
+
+    为什么必须删这两处（写死在这里，别让下一个人猜）：
+
+    * HTML5 里内联的 SVG 不需要命名空间声明，删掉不影响渲染；
+    * 仓内「零外链」闸门（``tests/test_audit_export.py``）禁的是**字面**的网络协议前缀串，
+      而 ``qr.to_svg`` 的 ``xmlns`` 取值正是一串 W3C 命名空间 URL，直接内联必然命中。
+      （这个 URL 本函数**不写全**：包源码里出现字面网络串会撞离线纯度闸门
+      ``tests/test_audit_log.py::PurityTests`` 与 ``tests/test_trace_adapter.py::OfflinePurityTests``。）
+
+    几何一字不动：``viewBox`` 与全部 ``rect`` 坐标保持 ``to_svg`` 的原值（钉测逐坐标比对），
+    所以删声明不改变码的形状，只改「放进 HTML 的方式」。
+    """
+    svg = certificate_svg(cert, scale=scale, border=border)
+    if svg is None:
+        return None
+    body = _XML_DECL_RE.sub("", svg, count=1)
+    return _XMLNS_ATTR_RE.sub("", body, count=1)
+
+
+def _certificate_html(cert: Mapping[str, Any]) -> str:
+    """责任认定书区块（可打印 HTML 版）：逐行正文 + 内联 SVG 二维码，零脚本零外链。
+
+    没有封印锚点时**不画码**，只写一句诚实说明（§1.4：不伪造、不顶替）。
+    """
+    parts: list[str] = ['<section class="cert">']
+    parts.append(f"<h2>{_html.escape(str(cert.get('title') or CERT_TITLE))}</h2>")
+    parts.append("<ul>")
+    for line in certificate_text(cert, include_title=False):
+        parts.append(f"<li><code>{_html.escape(line)}</code></li>")
+    parts.append("</ul>")
+    payload = cert.get("qr_payload")
+    svg = certificate_inline_svg(cert)
+    if svg is not None:
+        field = _html.escape(str(cert.get("qr_field") or CERT_QR_FIELD))
+        parts.append('<figure class="qr">')
+        parts.append(svg.rstrip())
+        parts.append(f'<figcaption>二维码载荷逐字等于正文的 <code>{field}</code> 行：'
+                     f'<code>{_html.escape(str(payload))}</code>'
+                     '（编码器 agent_explainer/qr.py，纯标准库；链上锚定未接入）'
+                     '</figcaption>')
+        parts.append("</figure>")
+    else:
+        note = _html.escape(str(cert.get("qr_note") or NO_SEAL_NOTE))
+        parts.append(f'<p class="qr">（本文件无二维码）{note}</p>')
+    parts.append("</section>")
+    return "".join(parts)
+
+
+def qr_side(size: int, *, module: float = QR_MODULE_PT,
+            border: int = QR_QUIET_MODULES) -> float:
+    """QR 区块（含静区）的边长（pt）。``size`` 是矩阵边长（``4v+17``）。"""
+    return (int(size) + 2 * border) * module
+
+
+def qr_rect_plan(matrix: Sequence[Sequence[int]], *, x: float, y: float,
+                 module: float = QR_MODULE_PT,
+                 border: int = QR_QUIET_MODULES) -> list[tuple[float, float, float, float]]:
+    """深色模块 → reportlab 矩形计划 ``(x, y, w, h)``（``y`` 是矩形**下沿**）。
+
+    矩阵第 0 行画在最上方：``y = y_top - (border + row + 1) * module``。
+    ``x`` / ``y`` 是 QR 区块（含静区）的左下角与**上沿**，逐模块画方块、零第三方图像库。
+    """
+    size = len(matrix)
+    plan: list[tuple[float, float, float, float]] = []
+    for row in range(size):
+        line_y = y - (border + row + 1) * module
+        for col in range(size):
+            if matrix[row][col]:
+                plan.append((x + (border + col) * module, line_y, module, module))
+    return plan
+
+
+def qr_plan_to_matrix(plan: Sequence[Sequence[float]], *, x: float, y: float,
+                      module: float = QR_MODULE_PT, border: int = QR_QUIET_MODULES,
+                      size: int) -> list[list[int]]:
+    """矩形计划 → 矩阵（:func:`qr_rect_plan` 的逆）。钉测用它证明「画出去的方块」可还原。"""
+    grid = [[0] * int(size) for _ in range(int(size))]
+    for rect in plan:
+        rx, ry = float(rect[0]), float(rect[1])
+        col = round((rx - x) / module) - border
+        row = round((y - ry) / module) - border - 1
+        if 0 <= row < int(size) and 0 <= col < int(size):
+            grid[row][col] = 1
+    return grid
+
+
+def draw_qr_block(canvas: Any, matrix: Sequence[Sequence[int]], *, x: float, y: float,
+                  module: float = QR_MODULE_PT,
+                  border: int = QR_QUIET_MODULES) -> dict[str, Any]:
+    """在 reportlab canvas 上逐模块画方块（白底 + 静区 + 深色块）；返回实测信息。"""
+    size = len(matrix)
+    side = qr_side(size, module=module, border=border)
+    canvas.saveState()
+    canvas.setFillColorRGB(1, 1, 1)
+    canvas.rect(x, y - side, side, side, stroke=0, fill=1)
+    canvas.setFillColorRGB(0, 0, 0)
+    drawn = 0
+    for rect in qr_rect_plan(matrix, x=x, y=y, module=module, border=border):
+        canvas.rect(rect[0], rect[1], rect[2], rect[3], stroke=0, fill=1)
+        drawn += 1
+    canvas.restoreState()
+    return {"drawn": True, "size": size, "modules": drawn, "side_pt": side,
+            "x": x, "y": y, "module_pt": module, "border": border}
+
+
+def qr_pdf_flowable(platypus: Any, cert: Mapping[str, Any], *,
+                    module: float = QR_MODULE_PT,
+                    border: int = QR_QUIET_MODULES) -> tuple[Any | None, dict[str, Any]]:
+    """把 QR 包成 platypus ``Flowable``（逐模块画方块）；返回 ``(flowable|None, 实测说明)``。
+
+    任何一步不成立都**如实返回 None + 原因**，不画假码：
+    无封印锚点 / 载荷为空 / 命名空间里没有 ``Flowable``（测试替身、精简安装）。
+    """
+    matrix = certificate_qr(cert)
+    if matrix is None:
+        return None, {"drawn": False,
+                      "reason": str(cert.get("qr_note") or NO_SEAL_NOTE)}
+    base = getattr(platypus, "Flowable", None)
+    if not isinstance(base, type):
+        return None, {"drawn": False, "size": len(matrix),
+                      "modules": sum(sum(row) for row in matrix),
+                      "reason": "platypus.Flowable 不可用（测试替身/精简安装）：本文件未画二维码"}
+    size = len(matrix)
+    side = qr_side(size, module=module, border=border)
+    plan = qr_rect_plan(matrix, x=0.0, y=side, module=module, border=border)
+
+    class _QrFlowable(base):  # noqa: N801 - 局部排版单元
+        """QR 的排版单元：白底 + 逐模块黑方块（零图像、零第三方）。"""
+
+        def __init__(self) -> None:
+            self.side_pt = side
+
+        def wrap(self, availWidth: float, availHeight: float) -> tuple[float, float]:
+            return (self.side_pt, self.side_pt)
+
+        def draw(self) -> None:
+            canv = self.canv
+            canv.saveState()
+            canv.setFillColorRGB(1, 1, 1)
+            canv.rect(0, 0, self.side_pt, self.side_pt, stroke=0, fill=1)
+            canv.setFillColorRGB(0, 0, 0)
+            for rect in plan:
+                canv.rect(rect[0], rect[1], rect[2], rect[3], stroke=0, fill=1)
+            canv.restoreState()
+
+    return _QrFlowable(), {"drawn": True, "size": size, "modules": len(plan),
+                           "side_pt": side, "module_pt": module, "border": border,
+                           "payload": cert.get("qr_payload")}
+
+
+def draw_certificate_block(canvas: Any, cert: Mapping[str, Any], *, font: str,
+                           y: float, x: float = 50.0, page_height: float = 842.0,
+                           bottom: float = 40.0, font_size: float = 8.0,
+                           module: float = QR_MODULE_PT,
+                           border: int = QR_QUIET_MODULES) -> float:
+    """在 canvas 上画责任认定书的**图形区**：逐模块画方块 + 载荷明文行；返回新的 ``y``。
+
+    封印锚点、二维码编码与绘制都住在本模块**单点**（§11.10 的表述保持为真：
+    ``compliance.py`` 里没有相关代码，它只是把画布交进来）。页边不够就换页。
+
+    没有封印锚点 → **一块都不画**，只写一行诚实说明（§1.4：不伪造、不顶替、不画占位码）。
+    载荷明文行与 PDF 正文里的链头行同源（``cert["qr_payload"]``），扫码比对可逐字相等。
+    """
+    matrix = certificate_qr(cert)
+    canvas.setFont(font, font_size)
+    if matrix is None:
+        y -= 16
+        if y < bottom:
+            canvas.showPage()
+            canvas.setFont(font, font_size)
+            y = page_height - 60
+        canvas.drawString(x, y, "qr: none (no sealed_head in this export context)")
+        y -= 12
+        canvas.drawString(x, y, str(cert.get("qr_note") or NO_SEAL_NOTE))
+        return y
+    side = qr_side(len(matrix), module=module, border=border)
+    if y - 10 - side - 26 < bottom:
+        canvas.showPage()
+        canvas.setFont(font, font_size)
+        y = page_height - 60
+    draw_qr_block(canvas, matrix, x=x, y=y - 10, module=module, border=border)
+    y = y - 10 - side - 12
+    canvas.setFont(font, font_size)
+    canvas.drawString(x, y, f"qr_payload: {cert.get('qr_payload')}")
+    y -= 12
+    canvas.drawString(x, y, "qr: payload = sealed_head (audit seal anchor), "
+                            "verbatim equal to the sealed_head line above")
+    return y
+
+
 
 def render_html(rows: Sequence[Mapping[str, Any]], *,
                 title: str = "TraceLens 用户操作审计",
                 status: Mapping[str, Any] | None = None,
                 notes: Sequence[str] | None = None,
-                log_path: str | None = None) -> str:
-    """可打印 HTML：内联 CSS、A4 横向、零外链、零脚本。"""
+                log_path: str | None = None,
+                footer_note: str | None = None,
+                certificate: Mapping[str, Any] | None = None) -> str:
+    """可打印 HTML：内联 CSS、A4 横向、零外链、零脚本。
+
+    ``footer_note``：数据来源标记（0.5.1 收口 README 已知限制 #3）——
+    演示数据的横幅只在界面里，导出件离开页面就没了上下文，所以来源说明
+    要写进文件本体（页脚 + 说明区都有）。
+
+    ``certificate``：责任认定书区块（R8-3 / B8-1）。传了才渲染（不传 = 输出逐字
+    不变，HTTP 面与既有调用零影响）；QR 用内联 SVG（``qr.to_svg`` 产物去掉 ``xmlns``，
+    零脚本零外链），载荷与正文的 ``sealed_head`` 行同源逐字相等。
+    """
     chain = dict(status or {})
     table = entries_to_rows(rows, columns=[c for c, _ in _HTML_COLUMNS])
     labels = [label for _, label in _HTML_COLUMNS]
@@ -1421,6 +1978,14 @@ def render_html(rows: Sequence[Mapping[str, Any]], *,
                  "tbody tr:nth-child(even){background:#fafbfd}"
                  "code{font-family:ui-monospace,Consolas,monospace;font-size:11px}"
                  "footer{margin-top:12px;font-size:11px;color:#5b6472}"
+                  ".cert{border:1px solid #cfd8e3;border-radius:6px;padding:8px 10px;"
+                  "margin:0 0 12px;font-size:12px;background:#fbfcfe}"
+                  ".cert h2{font-size:14px;margin:0 0 6px}"
+                  ".cert ul{margin:0 0 8px;padding-left:18px}"
+                  ".cert li{margin:0 0 2px}"
+                  "figure.qr{margin:8px 0 0;padding:0}"
+                  "figure.qr svg{width:132px;height:132px}"
+                  "figcaption{font-size:11px;color:#5b6472;margin-top:4px}"
                  "@page{size:A4 landscape;margin:10mm}"
                  "@media print{body{margin:0;font-size:10px}.chain{print-color-adjust:exact}}"
                  "</style></head><body>")
@@ -1440,6 +2005,8 @@ def render_html(rows: Sequence[Mapping[str, Any]], *,
     for note in notes_list:
         lines.append(f"<li>{_html.escape(str(note))}</li>")
     lines.append("</ul>")
+    if isinstance(certificate, Mapping):
+        lines.append(_certificate_html(certificate))
     lines.append("<table><thead><tr>")
     for label in labels:
         lines.append(f"<th>{_html.escape(label)}</th>")
@@ -1453,6 +2020,8 @@ def render_html(rows: Sequence[Mapping[str, Any]], *,
     lines.append(f'<footer>链头 <code>{_html.escape(head)}</code> · 文件哈希 '
                  f'<code>{_html.escape(str(chain.get("file_sha256") or ""))}</code> · '
                  f'审计 schema {AUDIT_SCHEMA_VERSION} · 本页零外链零脚本，Ctrl+P 可存 PDF</footer>')
+    if footer_note:
+        lines.append(f'<footer>{_html.escape(str(footer_note))}</footer>')
     lines.append("</body></html>")
     return "\n".join(lines)
 
@@ -1470,29 +2039,112 @@ def _load_reportlab() -> tuple[Mapping[str, Any] | None, str | None]:
         }
     except Exception as exc:                        # ImportError 之外的沙箱拒绝也算
         return None, f"reportlab_unavailable:{type(exc).__name__}"
+    # 字体相关模块是**可选**的：拿不到就退 CID / Helvetica，不能把「出 PDF」整件事拖死
+    # （录制型替身与精简安装都没有它们；R8-7b 首次改法把它们并进必选导入，两例钉测立刻失守）。
+    # 只看注入的包本身：``pdfbase`` 没有 ``__path__`` = 替身模块（不是真包），**不要去取子模块**，
+    # 否则 ``importlib`` 会顺着 ``sys.modules`` 摸到别的用例导入过的真模块，把替身整体绕过。
+    package = namespace["pdfbase"]
+    if getattr(package, "__path__", None):
+        for key, modname in (("pdfmetrics", "reportlab.pdfbase.pdfmetrics"),
+                             ("ttfonts", "reportlab.pdfbase.ttfonts")):
+            try:
+                namespace[key] = importlib.import_module(modname)
+            except Exception:                       # noqa: BLE001
+                namespace[key] = None
+    else:
+        namespace["pdfmetrics"] = None
+        namespace["ttfonts"] = None
     return namespace, None
 
 
+#: PDF 中文字体候选（先嵌入 TrueType → 自包含，任何阅读器都能显示）。
+#: ``(注册名, 路径, .ttc 子字体序号)``：命中第一个能注册的就用，路径不存在直接跳过。
+PDF_FONT_CANDIDATES: tuple[tuple[str, str, int], ...] = (
+    ("TraceLensCJK", r"C:\Windows\Fonts\msyh.ttc", 0),      # 微软雅黑
+    ("TraceLensCJK", r"C:\Windows\Fonts\simhei.ttf", 0),    # 黑体（单文件，最稳）
+    ("TraceLensCJK", r"C:\Windows\Fonts\Deng.ttf", 0),      # 等线
+    ("TraceLensCJK", r"C:\Windows\Fonts\simsun.ttc", 0),    # 宋体
+    ("TraceLensCJK", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 0),
+    ("TraceLensCJK", "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", 0),
+    ("TraceLensCJK", "/System/Library/Fonts/PingFang.ttc", 0),
+)
+
+
 def _register_pdf_font(namespace: Mapping[str, Any]) -> tuple[str, str]:
-    """尝试注册中文 CID 字体；失败就退回 Helvetica 并说明可能丢字。"""
-    pdfbase = namespace["pdfbase"]
-    cidfonts = namespace["cidfonts"]
-    for name in ("STSong-Light", "STSongStd-Light", "HeiseiMin-W3"):
-        try:
-            cidfonts.UnicodeCIDFont(name)
-            pdfbase.registerFont(name)
-            return name, f"注册 CJK 字体 {name}"
-        except Exception:
-            continue
+    """注册中文 PDF 字体，优先级：**嵌入 TTF** → 自带 CID → Helvetica（并说明丢字）。
+
+    R8-7b 修复（PM 亲自，老板授权「按最优解拍板」后实件取证发现），两处缺陷同源：
+
+    1. ``registerFont`` 住在 :mod:`reportlab.pdfbase.pdfmetrics`，**不在** ``reportlab.pdfbase``
+       包上。旧实现写 ``pdfbase.registerFont(name)`` 必然抛 ``AttributeError``，三个候选字体
+       全在同一个异常上失败 → 永远退回 Helvetica，于是**每一次 PDF 导出的中文全部丢失**
+       （认定书正文不可读，却仍返回 ``format="pdf"`` / ``fallback=None``，即「看着成功」）。
+    2. 只依赖 reportlab 自带 ``STSong-Light`` 也不够：那是**不嵌入**的 CID 字体，对方阅读器
+       没有 Adobe 亚洲字体包就显示方块。对外举证的交付物必须**自包含**，所以优先嵌入
+       系统 TrueType（reportlab 自动子集化，体积可控）。
+    """
+    pdfmetrics = namespace.get("pdfmetrics")
+    ttfonts = namespace.get("ttfonts")
+    pdfbase = namespace.get("pdfbase")
+
+    def _register(font: Any, name: str) -> None:
+        """把字体登记进 reportlab。
+
+        优先级按**注入的命名空间**决定，不让 `sys.modules` 里的残留模块越权：
+
+        1. 注入的 ``pdfbase`` 自带 ``registerFont`` → 按**名字**登记（录制型替身 / 旧版口径）；
+           真实 reportlab 的 ``reportlab.pdfbase`` 包上**没有**这个属性，所以这条只对替身生效。
+        2. 否则用注入的 ``pdfmetrics.registerFont`` 按**字体对象**登记（当前真实口径）。
+        3. 都没有 → 抛出去，让上层按「无 CJK」如实退回。
+
+        第 1 条必须在第 2 条之前：否则别的用例导入过真 ``pdfmetrics`` 后它常驻
+        ``sys.modules``，替身注入会被整体绕过（R8-7b 第二次踩点）。
+        """
+        legacy = getattr(pdfbase, "registerFont", None)
+        if legacy is not None:
+            legacy(name)
+            return
+        if pdfmetrics is not None and hasattr(pdfmetrics, "registerFont"):
+            pdfmetrics.registerFont(font)
+            return
+        raise RuntimeError("当前 reportlab 没有 registerFont：无法登记 CJK 字体")
+
+    # ① 嵌入 TrueType：PDF 自包含，不靠对方装字体
+    if ttfonts is not None:
+        for name, path, index in PDF_FONT_CANDIDATES:
+            try:
+                if not pathlib.Path(path).exists():
+                    continue
+                font = ttfonts.TTFont(name, path, subfontIndex=index)
+                _register(font, name)
+                return name, f"嵌入 CJK 字体 {pathlib.Path(path).name}（TrueType 子集，PDF 自包含）"
+            except Exception:                   # noqa: BLE001
+                continue
+
+    # ② 退回 reportlab 自带 CID 字体（不嵌入：对方需带亚洲字体包才显示中文）
+    cidfonts = namespace.get("cidfonts")
+    if cidfonts is not None:
+        for name in ("STSong-Light", "STSongStd-Light", "HeiseiMin-W3"):
+            try:
+                font = cidfonts.UnicodeCIDFont(name)
+                _register(font, name)
+                return name, (f"使用 CID 字体 {name}（**未嵌入**：对方阅读器缺亚洲字体包时"
+                              "中文显示为方块，建议改用可打印 HTML 或装中文字体）")
+            except Exception:                   # noqa: BLE001
+                continue
     return "Helvetica", "未找到可用 CJK 字体：中文可能被丢弃，建议改用可打印 HTML"
 
 
 def _build_pdf(namespace: Mapping[str, Any], target: Any,
                entries: Sequence[Mapping[str, Any]], *, title: str,
-               status: Mapping[str, Any], notes: Sequence[str] | None = None) -> dict[str, Any]:
+               status: Mapping[str, Any], notes: Sequence[str] | None = None,
+               certificate: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """用 reportlab 排一份 A4 横向表格；调用方负责回退。
 
     ``target`` 可以是路径（写文件）也可以是可写字节流（HTTP 直接回字节，不落盘）。
+
+    ``certificate``（R8-3 / B8-1）：责任认定书区块 —— 逐行正文 + 二维码（逐模块画方块，
+    零图像零第三方）。不传 = 输出与旧版一致；载荷与正文链头行同源（``cert["qr_payload"]``）。
     """
     platypus = namespace["platypus"]
     pagesizes = namespace["pagesizes"]
@@ -1502,6 +2154,23 @@ def _build_pdf(namespace: Mapping[str, Any], target: Any,
     sheet = styles.getSampleStyleSheet()
     title_style = sheet["Title"] if hasattr(sheet, "__getitem__") else getattr(sheet, "Title")
     body_style = sheet["Normal"] if hasattr(sheet, "__getitem__") else getattr(sheet, "Normal")
+    # R8-7b：注册好的字体必须**同时套到标题与正文**，否则只有表格走新字体，
+    # 标题（Title 默认 Helvetica-Bold）与段落（Normal 默认 Helvetica）里的中文仍然落不下来。
+    # 「尽力而为」：录制型替身里的样式是字符串占位，套不上就跳过 —— 绝不能因为改样式
+    # 把整份 PDF 拖成 HTML 回退（首改即踩：异常冒到 export_pdf 的兜底分支）。
+    try:
+        title_style = title_style.clone(title_style.name, fontName=font,
+                                       fontSize=title_style.fontSize,
+                                       leading=title_style.leading)
+        body_style = body_style.clone(body_style.name, fontName=font,
+                                      fontSize=body_style.fontSize,
+                                      leading=body_style.leading)
+    except Exception:                            # noqa: BLE001
+        try:
+            title_style.fontName = font
+            body_style.fontName = font
+        except Exception:                        # noqa: BLE001 - 占位样式：跳过，不影响真实路径
+            pass
     table = entries_to_rows(entries, columns=[c for c, _ in _HTML_COLUMNS])
     data = [[label for _, label in _HTML_COLUMNS]] + table[1:]
     sink = str(target) if isinstance(target, (str, pathlib.Path)) else target
@@ -1518,6 +2187,16 @@ def _build_pdf(namespace: Mapping[str, Any], target: Any,
                        platypus.Paragraph(font_note, body_style)]
     for note in (notes if notes is not None else DEFAULT_HTML_NOTES):
         flow.append(platypus.Paragraph(str(note), body_style))
+    cert_info: dict[str, Any] = {"enabled": certificate is not None}
+    if certificate is not None:
+        for line in certificate_text(certificate):
+            flow.append(platypus.Paragraph(line, body_style))
+        qr_flow, qr_info = qr_pdf_flowable(platypus, certificate)
+        cert_info["qr"] = qr_info
+        if qr_flow is not None:
+            flow.append(platypus.Spacer(1, 3 * units.mm))
+            flow.append(qr_flow)
+        flow.append(platypus.Spacer(1, 4 * units.mm))
     flow.append(platypus.Spacer(1, 4 * units.mm))
     grid = platypus.Table(data, repeatRows=1)
     grid.setStyle(platypus.TableStyle([
@@ -1530,7 +2209,7 @@ def _build_pdf(namespace: Mapping[str, Any], target: Any,
     flow.append(grid)
     doc.build(flow)
     return {"font": font, "font_note": font_note, "rows": len(data),
-            "path": str(target)}
+            "path": str(target), "certificate": cert_info}
 
 
 # --------------------------------------------------------------------------- #
@@ -1541,12 +2220,17 @@ def _build_pdf(namespace: Mapping[str, Any], target: Any,
 def render_pdf_bytes(entries: Sequence[Mapping[str, Any]], *,
                      title: str = "TraceLens 用户操作审计",
                      status: Mapping[str, Any] | None = None,
-                     notes: Sequence[str] | None = None) -> tuple[bytes, dict[str, Any]]:
+                     notes: Sequence[str] | None = None,
+                     certificate: Mapping[str, Any] | None = None) -> tuple[bytes, dict[str, Any]]:
     """在内存里排 PDF 并返回 ``(字节, 说明)``；reportlab 不可用抛 :class:`AuditExportError`。
 
     HTTP 层要直接回一份 PDF，不能让服务自己往磁盘写文件（server.py 零文件写入是
     t13/t14 钉住的纯度），所以这里只吃内存流。调用方拿到
     :class:`AuditExportError` 就按规格退回可打印 HTML 并说明原因。
+
+    ``certificate``（R8-3 / B8-1）：责任认定书区块。默认 ``None`` = 关闭，
+    既有 HTTP 面的字节一字不变（启用要改 ``server.py`` 的调用点，超出本任务边界，
+    已按 §4 第 5 项登记遗留）。
     """
     namespace, reason = _load_reportlab()
     if namespace is None:
@@ -1556,7 +2240,7 @@ def render_pdf_bytes(entries: Sequence[Mapping[str, Any]], *,
                                detail={"reason": reason})
     buffer = io.BytesIO()
     payload = _build_pdf(namespace, buffer, list(entries), title=title,
-                         status=dict(status or {}), notes=notes)
+                         status=dict(status or {}), notes=notes, certificate=certificate)
     payload.pop("path", None)
     payload["rows"] = max(0, int(payload.get("rows", 1)) - 1)
     data = buffer.getvalue()

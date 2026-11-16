@@ -1,1 +1,1010 @@
-/* TraceLens 5.0 - cards styles (owner replaces this placeholder). */
+/*
+ * TraceLens 5.0 - card decorations (web/ext/cards.css)
+ * ------------------------------------------------------------------
+ * Styles for the trust-layer card decorations (web/ext/cards.js). Loaded after
+ * styles.css, so it may reach the existing card and timeline hooks; every rule
+ * is scoped to a `cards__*` class, to a `data-*` fact the render already
+ * carries, or to the trust modal, and every value is a design token from
+ * styles.css (no literals, no motion above 200ms).
+ */
+
+/* ---------------------------------------------------------------- *
+ * 1. shared pieces
+ * ---------------------------------------------------------------- */
+
+.card__detail .cards__rollback {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: var(--line-1) dashed var(--c-border);
+}
+
+.card__detail .cards__rollback-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.card__detail .cards__rollback-btn {
+  padding: var(--space-1) var(--space-3);
+  border: var(--line-1) solid var(--c-border);
+  border-radius: var(--radius-full);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-1);
+  cursor: pointer;
+}
+
+.card__detail .cards__rollback-btn:hover:not(:disabled) {
+  border-color: var(--c-pending);
+  background: var(--c-pending-soft);
+}
+
+.card__detail .cards__rollback-btn:disabled {
+  cursor: not-allowed;
+  color: var(--c-text-dim);
+  background: var(--c-surface-2);
+  border-style: dashed;
+}
+
+.card__detail .cards__note {
+  margin: 0;
+  color: var(--c-text-dim);
+  font-size: var(--fs-1);
+  line-height: var(--lh-base);
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__note--quiet {
+  border-left: var(--line-1) dashed var(--c-neutral-line);
+  padding-left: var(--space-2);
+}
+
+.card__detail .cards__note--blocked,
+.card__detail .cards__note--truncated {
+  border-left: var(--line-1) solid var(--c-danger-line);
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+  padding-left: var(--space-2);
+}
+
+.card__detail .cards__note--confirm {
+  border-left: var(--line-1) solid var(--c-progress-line);
+  background: var(--c-progress-soft);
+  color: var(--c-progress);
+  padding-left: var(--space-2);
+}
+
+.card__detail .cards__note--receipt,
+.card__detail .cards__note--pilot,
+.card__detail .cards__note--level,
+.card__detail .cards__note--inverse,
+.card__detail .cards__note--rolled {
+  border-left: var(--line-1) dashed var(--c-border);
+  padding-left: var(--space-2);
+}
+
+.card__detail .cards__label {
+  margin: var(--space-1) 0 0;
+  color: var(--c-text-dim);
+  font-size: var(--fs-0);
+  letter-spacing: 0.02em;
+}
+
+.card__detail .cards__code,
+.card__detail .cards__plan-code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-0);
+  color: var(--c-text-dim);
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__plan-data {
+  display: block;
+  font-size: var(--fs-1);
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__plan-data--reason {
+  border-left: var(--line-1) dashed var(--c-danger-line);
+  padding-left: var(--space-2);
+}
+
+.card__detail .cards__inverse,
+.card__detail .cards__receipt {
+  margin: 0;
+  font-size: var(--fs-1);
+  font-family: var(--font-mono);
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__chip {
+  display: inline-block;
+  padding: 1px var(--space-2);
+  border: var(--line-1) solid var(--c-progress-line);
+  border-radius: var(--radius-full);
+  background: var(--c-progress-soft);
+  color: var(--c-progress);
+  font-size: var(--fs-0);
+}
+
+.card__detail .cards__error {
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* ---------------------------------------------------------------- *
+ * 2. G-24: rolled back reads as rolled back (grey + strike-through)
+ * ---------------------------------------------------------------- *
+ * The fact rides on the card (`data-rollback`, written by app.js from the
+ * server's read-time state) so the rule works on a collapsed card too; the
+ * trust layer adds `data-trust-rolled` when it decorates the detail body.
+ */
+
+article.card[data-rollback="rolled_back"] .card__l1 {
+  color: var(--c-text-dim);
+  text-decoration: line-through;
+  text-decoration-thickness: from-font;
+}
+
+article.card[data-rollback="rolled_back"] .card__dot {
+  border-color: var(--c-neutral);
+  background: var(--c-neutral-soft);
+}
+
+article.card[data-rollback="rolled_back"] {
+  border-left: var(--line-1) dashed var(--c-neutral-line);
+  background: var(--c-surface-2);
+}
+
+article.card[data-trust-rolled="true"] .card__meta {
+  color: var(--c-text-dim);
+}
+
+.card__detail .cards__rolled {
+  margin: 0;
+  color: var(--c-text-dim);
+  font-size: var(--fs-1);
+  text-decoration: line-through;
+  text-decoration-thickness: from-font;
+}
+
+article.card[data-rollback="rollback_blocked"] {
+  border-left: var(--line-1) solid var(--c-danger-line);
+}
+
+/* ---------------------------------------------------------------- *
+ * 3. G-24: the chain between a step and its compensation (dashed, jumpable)
+ * ---------------------------------------------------------------- */
+
+.card__detail .cards__refs {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.card__detail .cards__refs-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.card__detail .cards__refs-label {
+  font-size: var(--fs-0);
+  color: var(--c-text-dim);
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__refs-more {
+  font-family: var(--font-mono);
+  font-size: var(--fs-0);
+  color: var(--c-text-dim);
+}
+
+.card__detail .cards__ref {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 1px var(--space-2);
+  border: var(--line-1) dashed var(--c-border);
+  border-radius: var(--radius-1);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-0);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__ref::before {
+  content: "\2504\2504";
+  color: var(--c-neutral);
+  letter-spacing: -0.1em;
+}
+
+.card__detail .cards__ref:hover {
+  border-style: solid;
+  border-color: var(--c-pending);
+  background: var(--c-pending-soft);
+}
+
+/* ---------------------------------------------------------------- *
+ * 4. timeline (A6): the dashed link back to the step a rollback undid
+ * ---------------------------------------------------------------- */
+
+.timeline__tick[data-rolled="rolled_back"] {
+  position: relative;
+}
+
+.timeline__tick[data-rolled="rolled_back"] .timeline__dot {
+  border: var(--line-1) dashed var(--c-neutral);
+  background: transparent;
+}
+
+.timeline__tick[data-rolled="rolled_back"] .timeline__time {
+  color: var(--c-text-dim);
+  text-decoration: line-through;
+  text-decoration-thickness: from-font;
+}
+
+.timeline__tick[data-rolled="rolled_back"]::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: calc(100% - var(--space-1));
+  width: 0;
+  height: var(--space-3);
+  border-left: var(--line-1) dashed var(--c-neutral-line);
+}
+
+.timeline__tick[data-rollback-ref] {
+  border-left: var(--line-1) dashed var(--c-neutral-line);
+  padding-left: var(--space-2);
+}
+
+/* ---------------------------------------------------------------- *
+ * 5. G-22: the plan dialog (G-20 facts, dependency list, notices)
+ * ---------------------------------------------------------------- */
+
+#trust-modal .cards-plan {
+  display: grid;
+  gap: var(--space-2);
+}
+
+#trust-modal .cards__plan-head {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--line-1) solid var(--c-border);
+}
+
+#trust-modal .cards__plan-describe {
+  margin: 0;
+  font-size: var(--fs-3);
+  line-height: var(--lh-tight);
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+}
+
+#trust-modal .cards__plan-meta,
+#trust-modal .cards__plan-scope {
+  margin: 0;
+  font-size: var(--fs-1);
+  color: var(--c-text-dim);
+  overflow-wrap: anywhere;
+}
+
+#trust-modal .cards__plan-row {
+  display: grid;
+  gap: var(--space-1);
+}
+
+#trust-modal .cards__plan-blockers,
+#trust-modal .cards__plan-notices {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: var(--line-1) solid var(--c-border);
+  border-radius: var(--radius-1);
+  background: var(--c-surface-2);
+}
+
+#trust-modal .cards__plan-blocker {
+  display: grid;
+  gap: var(--space-1);
+  padding-left: var(--space-2);
+  border-left: var(--line-1) solid var(--c-danger-line);
+}
+
+#trust-modal .cards__plan-notice {
+  display: grid;
+  gap: var(--space-1);
+  padding-left: var(--space-2);
+  border-left: var(--line-1) dashed var(--c-progress-line);
+}
+
+#trust-modal .cards__plan-row--actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+  border-top: var(--line-1) solid var(--c-border);
+}
+
+/* ---------------------------------------------------------------- *
+ * 5. confidence ring (R2-3 / REQ-002 B2-2 + B2-1)
+ * ---------------------------------------------------------------- *
+ * The band comes from web/ext/cards.js, which keeps a hand-written copy of
+ * confidence.THRESHOLDS (selfcheck check 94 pins the two against each other).
+ * This file only maps a band token onto colour tokens from styles.css, so no
+ * colour literal appears here, and it never restates a threshold.
+ *
+ * Placement: the ring goes into the card head grid at column 1, on the row
+ * under the status dot. The title (column 2), the expand label (column 3) and
+ * the 4.12 hint row keep exactly the cells the R1-9 checks pin, so the ring
+ * cannot move the head layout.
+ * ---------------------------------------------------------------- */
+
+.card__toggle .cards__badge.cards__conf {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid var(--c-neutral-line);
+  border-radius: var(--radius-full);
+  background: var(--c-neutral-soft);
+  color: var(--c-text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-0);
+  line-height: 1;
+  text-align: center;
+  overflow: hidden;
+  cursor: help;
+}
+
+/* four bands = the four colour tokens confidence.COLOR_BY_BAND names:
+ * green -> ok, light_green -> ok_soft, yellow -> progress, red -> danger */
+.card__toggle .cards__conf[data-band="green"] {
+  border-color: var(--c-ok);
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.card__toggle .cards__conf[data-band="light_green"] {
+  border-color: var(--c-ok-line);
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.card__toggle .cards__conf[data-band="yellow"] {
+  border-color: var(--c-progress);
+  background: var(--c-progress-soft);
+  color: var(--c-progress);
+}
+
+.card__toggle .cards__conf[data-band="red"] {
+  border-color: var(--c-danger);
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+}
+
+/* "no source to judge from": a hollow dashed ring with no number in it */
+.card__toggle .cards__conf[data-band="neutral"] {
+  border-style: dashed;
+  background: var(--c-neutral-soft);
+  color: var(--c-text-dim);
+}
+
+/* below the policy threshold (< 0.5): orange-red border + a slow pulse.
+ * A rolled-back card is excluded on purpose: the R1-6 grey / strike-through /
+ * dashed look is the louder fact there, so the attention pulse never repaints
+ * it (web/selfcheck.mjs check 44 pins the rolled-back rules). */
+article.card[data-trust-attention="low"]:not([data-rollback="rolled_back"]) {
+  --conf-pulse: 1600ms;
+  border-left-color: var(--c-danger);
+  animation: cards-attention-pulse var(--conf-pulse) var(--ease) infinite;
+}
+
+article.card[data-trust-attention="low"] .cards__conf[data-band="red"] {
+  box-shadow: 0 0 0 2px var(--c-danger-line);
+}
+
+@keyframes cards-attention-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--c-progress-line);
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--c-danger-line);
+  }
+}
+
+/* the source line in the detail area (B2-1: traceable, and readable as text) */
+.card__detail .cards__source {
+  margin: var(--space-2) 0 0;
+  color: var(--c-text-dim);
+  font-size: var(--fs-1);
+  line-height: var(--lh-base);
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__source[data-band="neutral"],
+.card__detail .cards__source[data-method="default"],
+.card__detail .cards__source[data-method="unknown"] {
+  border-left: var(--line-1) dashed var(--c-neutral-line);
+  padding-left: var(--space-2);
+  color: var(--c-text-dim);
+}
+
+.card__detail .cards__source-samples {
+  margin-left: var(--space-2);
+  color: var(--c-text-dim);
+}
+
+.card__detail .cards__source-few {
+  margin-left: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: var(--line-1) solid var(--c-progress-line);
+  background: var(--c-progress-soft);
+  color: var(--c-progress);
+}
+
+/* motion discipline: the 200ms cap covers UI transitions, and this loop is a
+ * looping attention pulse; the prefers-reduced-motion preference in styles.css
+ * section 11 kills animations globally, and this block says it for this layer
+ * too, so the pulse never runs against that preference. */
+@media (prefers-reduced-motion: reduce) {
+  article.card[data-trust-attention="low"] {
+    animation: none;
+  }
+
+  .card__toggle .cards__badge.cards__conf {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------- *
+ * 6. R3-4 evidence face: thumbnails, fingerprint, non-modal zoom
+ * ---------------------------------------------------------------- *
+ * The strip is a wrapping row of thumbnails: a diff opens in place (`details`),
+ * a diagram is the inlined SVG, and a screenshot entry without bytes says
+ * "not wired yet" (docs/07 D-7) instead of painting a broken image.
+ * The meta row is the record's own `sha256` / `bytes` / `provided_by`, shown as
+ * "the fingerprint of this evidence", its size, and who put it here — every
+ * value read verbatim from the landed record, never rewritten here.
+ *
+ * The zoom layer is **non-modal on purpose** (PM §2.1 asks for a layer or a new
+ * view, non-blocking preferred): the layer is transparent and
+ * `pointer-events: none`, only the sheet takes pointers. There is no scrim, no
+ * scroll lock and no focus trap, so the card list stays readable, scrollable
+ * and clickable while an evidence file is enlarged; the close button and Esc
+ * dismiss the layer alone.
+ */
+
+.card__detail .cards__evidence {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: var(--line-1) dashed var(--c-border);
+}
+
+.card__detail .cards__evidence-title {
+  margin: 0;
+  color: var(--c-text-dim);
+  font-size: var(--fs-1);
+  letter-spacing: 0.02em;
+}
+
+.card__detail .cards__strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.card__detail .cards__item {
+  display: grid;
+  gap: var(--space-1);
+  width: 14rem;
+  max-width: 100%;
+}
+
+.card__detail .cards__thumb {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+  min-height: 6rem;
+  padding: var(--space-2);
+  border: var(--line-1) solid var(--c-border);
+  border-radius: var(--radius-2);
+  background: var(--c-surface-2);
+  color: var(--c-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.card__detail .cards__thumb:hover {
+  border-color: var(--c-pending-line);
+  background: var(--c-pending-soft);
+}
+
+.card__detail .cards__thumb:focus-visible {
+  outline: var(--line-1) solid var(--c-focus);
+  outline-offset: 2px;
+}
+
+.card__detail .cards__thumb-img {
+  width: 100%;
+  max-height: 7rem;
+  object-fit: contain;
+  border-radius: var(--radius-1);
+  background: var(--c-surface);
+}
+
+.card__detail .cards__thumb-svg {
+  display: block;
+  min-height: 2rem;
+}
+
+.card__detail .cards__thumb-svg svg {
+  width: 100%;
+  height: auto;
+  max-height: 6rem;
+}
+
+.card__detail .cards__kind {
+  display: block;
+  color: var(--c-text-dim);
+  font-size: var(--fs-3);
+}
+
+.card__detail .cards__thumb-kind {
+  color: var(--c-text-dim);
+  font-size: var(--fs-0);
+  letter-spacing: 0.02em;
+}
+
+.card__detail .cards__thumb-label {
+  color: var(--c-text-dim);
+  font-size: var(--fs-1);
+}
+
+.card__detail .cards__thumb-caption {
+  color: var(--c-text);
+  font-size: var(--fs-1);
+  line-height: var(--lh-base);
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__diff {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.card__detail .cards__diff summary {
+  list-style: none;
+}
+
+.card__detail .cards__diff-body {
+  max-height: 18rem;
+  margin: 0;
+  padding: var(--space-2);
+  overflow: auto;
+  border: var(--line-1) solid var(--c-border);
+  border-radius: var(--radius-1);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-0);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__link-btn {
+  justify-self: start;
+  padding: var(--space-1) var(--space-2);
+  border: var(--line-1) solid var(--c-border);
+  border-radius: var(--radius-full);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-1);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.card__detail .cards__link-btn:hover:not(:disabled) {
+  border-color: var(--c-pending-line);
+  background: var(--c-pending-soft);
+}
+
+.card__detail .cards__link-btn:disabled {
+  color: var(--c-text-dim);
+  background: var(--c-surface-2);
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+/* the record's own fingerprint / size / provenance line (R3-4 §2.6) */
+.card__detail .cards__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  color: var(--c-text-dim);
+  font-size: var(--fs-0);
+  line-height: var(--lh-base);
+}
+
+.card__detail .cards__fingerprint {
+  margin: 0;
+  color: var(--c-text-dim);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  cursor: help;
+}
+
+.card__detail .cards__prov,
+.card__detail .cards__size {
+  color: var(--c-text-dim);
+}
+
+/* D-7: a screenshot entry with no bytes is stated as not wired yet */
+.card__detail .cards__note.cards__pending {
+  border-left: var(--line-1) dashed var(--c-progress-line);
+  background: var(--c-progress-soft);
+  color: var(--c-progress);
+  padding-left: var(--space-2);
+}
+
+.card__detail .cards__feedback {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  align-items: center;
+}
+
+.card__detail .cards__vote {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border: var(--line-1) solid var(--c-border);
+  border-radius: var(--radius-full);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-1);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.card__detail .cards__vote:hover:not(:disabled) {
+  border-color: var(--c-pending-line);
+  background: var(--c-pending-soft);
+}
+
+.card__detail .cards__vote[aria-pressed="true"] {
+  border-color: var(--c-ok-line);
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.card__detail .cards__vote:disabled {
+  color: var(--c-text-dim);
+  background: var(--c-surface-2);
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.card__detail .cards__count-wrap {
+  display: inline-flex;
+}
+
+.card__detail .cards__count {
+  font-family: var(--font-mono);
+}
+
+.card__detail .cards__vote-state-host {
+  display: grid;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.card__detail .cards__vote-state {
+  color: var(--c-text-dim);
+  font-size: var(--fs-0);
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__vote-state-ok {
+  color: var(--c-ok);
+}
+
+/* the non-modal zoom layer: transparent, pointer-events pass around the sheet */
+.cards__zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: var(--space-4);
+  background: transparent;
+  pointer-events: none;
+}
+
+.cards__zoom-sheet {
+  display: grid;
+  gap: var(--space-2);
+  width: min(var(--sheet-max), 92vw);
+  max-height: 70vh;
+  padding: var(--space-3);
+  overflow: auto;
+  border: var(--line-1) solid var(--c-border);
+  border-radius: var(--radius-2);
+  background: var(--c-surface);
+  box-shadow: var(--c-shadow);
+  pointer-events: auto;
+}
+
+.cards__zoom-head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cards__zoom-title {
+  margin: 0;
+  font-size: var(--fs-2);
+  color: var(--c-text);
+}
+
+.cards__zoom-close {
+  padding: var(--space-1) var(--space-2);
+  border: var(--line-1) solid var(--c-border);
+  border-radius: var(--radius-full);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-1);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.cards__zoom-close:hover {
+  border-color: var(--c-danger-line);
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+}
+
+.cards__zoom-body {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.cards__zoom-caption {
+  margin: 0;
+  color: var(--c-text);
+  font-size: var(--fs-1);
+  overflow-wrap: anywhere;
+}
+
+.cards__zoom-content {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.cards__zoom-content svg,
+.cards__zoom-content .cards__img {
+  width: 100%;
+  height: auto;
+  max-height: 48vh;
+  object-fit: contain;
+  background: var(--c-surface-2);
+  border-radius: var(--radius-1);
+}
+
+.cards__zoom-note {
+  border-left: var(--line-1) dashed var(--c-neutral-line);
+  padding-left: var(--space-2);
+}
+
+/* ---------------------------------------------------------------- *
+ * 7. R3-4 causal bubble: the "why" affordance, the honesty marker
+ * ---------------------------------------------------------------- *
+ * The bubble is a plain expander (`pop.hidden` toggles), never a modal, and it
+ * is only painted when the record carries an explanation — no explanation, no
+ * bubble (PM §2.2). The marker line reads `causal_explanation.model` out loud:
+ * `template` says "template-generated" (every word is record copy, recomputable
+ * offline) and never dresses up as AI; `llm` is the only case that may say
+ * "AI-generated", the same honesty line `human_readable.may_contain_inference`
+ * already rides on in app.js.
+ */
+
+.card__detail .cards__causal {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: var(--line-1) dashed var(--c-border);
+}
+
+.card__detail .cards__causal--request {
+  gap: var(--space-1);
+}
+
+.card__detail .cards__why {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  justify-self: start;
+  padding: var(--space-1) var(--space-2);
+  border: var(--line-1) solid var(--c-border);
+  border-radius: var(--radius-full);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-1);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.card__detail .cards__why:hover {
+  border-color: var(--c-pending-line);
+  background: var(--c-pending-soft);
+}
+
+.card__detail .cards__why:focus-visible {
+  outline: var(--line-1) solid var(--c-focus);
+  outline-offset: 2px;
+}
+
+.card__detail .cards__why[aria-expanded="true"] {
+  border-color: var(--c-progress-line);
+  background: var(--c-progress-soft);
+  color: var(--c-progress);
+}
+
+.card__detail .cards__why-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25em;
+  height: 1.25em;
+  border: var(--line-1) solid currentColor;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-0);
+}
+
+.card__detail .cards__causal-pop {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-left: var(--line-1) solid var(--c-border);
+  background: var(--c-surface-2);
+  border-radius: var(--radius-1);
+}
+
+.card__detail .cards__causal-pop[hidden] {
+  display: none;
+}
+
+.card__detail .cards__causal-label {
+  margin: 0;
+  color: var(--c-text-dim);
+  font-size: var(--fs-0);
+  letter-spacing: 0.02em;
+}
+
+.card__detail .cards__causal-text {
+  margin: 0;
+  color: var(--c-text);
+  font-size: var(--fs-1);
+  line-height: var(--lh-base);
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__causal-list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-3);
+}
+
+.card__detail .cards__causal-item {
+  display: grid;
+  gap: 2px;
+  color: var(--c-text);
+  font-size: var(--fs-1);
+}
+
+.card__detail .cards__causal-option,
+.card__detail .cards__causal-expected,
+.card__detail .cards__causal-why {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.card__detail .cards__causal-option {
+  color: var(--c-text);
+}
+
+.card__detail .cards__causal-expected,
+.card__detail .cards__causal-why {
+  color: var(--c-text-dim);
+}
+
+.card__detail .cards__causal-model {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  align-items: center;
+  margin: 0;
+}
+
+.card__detail .cards__badge {
+  display: inline-block;
+  padding: 1px var(--space-2);
+  border: var(--line-1) solid var(--c-neutral-line);
+  border-radius: var(--radius-full);
+  background: var(--c-neutral-soft);
+  color: var(--c-text-dim);
+  font-size: var(--fs-0);
+  white-space: nowrap;
+}
+
+.card__detail .cards__badge-template {
+  border-color: var(--c-neutral-line);
+  background: var(--c-neutral-soft);
+  color: var(--c-text-dim);
+}
+
+.card__detail .cards__badge-ai {
+  border-color: var(--c-progress-line);
+  background: var(--c-progress-soft);
+  color: var(--c-progress);
+}
+
+.card__detail .cards__badge-unknown {
+  border-style: dashed;
+  border-color: var(--c-progress-line);
+  background: var(--c-progress-soft);
+  color: var(--c-progress);
+}
+
+.card__detail .cards__causal-model-note {
+  color: var(--c-text-dim);
+  font-size: var(--fs-0);
+  line-height: var(--lh-base);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card__detail .cards__thumb,
+  .card__detail .cards__link-btn,
+  .card__detail .cards__vote,
+  .card__detail .cards__why,
+  .cards__zoom-close {
+    transition: none;
+  }
+}

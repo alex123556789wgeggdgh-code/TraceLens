@@ -29,6 +29,8 @@ for _p in (str(ROOT), str(ROOT / "tools")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from agent_explainer import crypto_sig as cs  # noqa: E402
+from agent_explainer import ingest  # noqa: E402
 from agent_explainer import trace_adapter as ta  # noqa: E402
 import facts_hash  # noqa: E402
 import validate_schema as vs  # noqa: E402
@@ -456,6 +458,256 @@ class NativeInputTests(unittest.TestCase):
             for step in hr["l2"]:
                 self.assertLessEqual(len(step), vs.L2_MAX_PER_STEP, rec["id"])
             self.assertLessEqual(len(hr["l3"]), vs.L3_MAX, rec["id"])
+
+
+# ----------------------------------------------------------------------------------
+# 4b. 5.0 扩展字段进可选名单（S0-2b）：闸门放行九个、照旧拦受保护与名单外新键
+# ----------------------------------------------------------------------------------
+
+#: 扩名单之前的既有可选名单（逐字快照，钉铁律 2「只扩不改」）。
+OPTIONAL_KEYS_BEFORE_S0_2B: tuple[str, ...] = (
+    "received_at", "sequence_no", "agent_name", "depth", "run_id",
+    "requires_action_reason", "action_due_at", "uncertainty", "impact_scope",
+    "error", "suggested_next", "context", "trace_link", "labels",
+)
+
+#: 必填名单的逐字快照（铁律 2：REQUIRED_RECORD_KEYS 不动）。
+REQUIRED_KEYS_SNAPSHOT: tuple[str, ...] = (
+    "schema_version", "id", "timestamp", "agent_id", "actor_id", "workspace_id",
+    "session_id", "parent_action_id", "action_type", "tool_used", "intent",
+    "rationale", "result_summary", "human_readable", "confidence", "cost",
+    "latency_ms", "status", "requires_action", "intervention_options",
+    "user_intervention", "execution_receipt", "risk_level", "policy", "source",
+    "demo_data", "synthetic",
+)
+
+SHAREE_DID = cs.did_from_name("s0-2b-sharee", kind="user")
+
+
+def expansion_values() -> dict:
+    """`ingest.EXPANSION_MERGE_FIELDS` 九个字段各一个 schema 合法值（形状取自 schema 文件）。"""
+    return {
+        "group_id": "grp-s0-2b",
+        "shared_users": [{"did": SHAREE_DID, "permission": "view",
+                          "shared_at": "2026-11-14T00:00:00Z"}],
+        "multimedia_evidence": [{"kind": "screenshot", "evidence_id": "ev-s0-2b",
+                                 "media_type": "image/png",
+                                 "uri": "local://evidence/s0-2b.png",
+                                 "sha256": "a" * 64, "bytes": 2048,
+                                 "caption": "合成截图（非真实采集）",
+                                 "provided_by": "server"}],
+        "causal_explanation": {"counterfactual": "若当时选「只复制不覆盖」，线上文件不会被改",
+                               "alternatives": [{"option": "只复制不覆盖",
+                                                 "expected": "线上文件保持原样",
+                                                 "why": "复制不触发覆盖"}],
+                               "model": "template", "language": "zh"},
+        "rollback_ref": "act-s0-2b-original",
+        "rollback_state": "none",
+        "improvement_suggestion": {"id": "sug-s0-2b", "tool": "files.upload",
+                                   "param": "overwrite", "direction": "down",
+                                   "occurrences": 2, "status": "pending"},
+        "evidence_feedback": {"like": 3, "dislike": 1,
+                              "updated_at": "2026-11-14T00:00:00Z"},
+        "confidence_source": {"method": "logprobs", "logprob": 0.82, "samples": 12},
+    }
+
+
+def forged_protected_values() -> dict:
+    """受保护字段的伪造值（永不许经合并进存储；网关侧也进不了字段封闭名单）。"""
+    return {
+        "user_intervention": {"decision": "approve", "reason": "导入方替用户决定"},
+        "intervention_options": [{"id": "forged", "kind": "approve",
+                                  "label": "替批", "consequence": "直接放行"}],
+        "human_readable": {"l1": "导入方自己写的文案", "l2": ["一步", "两步", "三步"], "l3": ""},
+        "source": {"kind": "manual"},
+        "demo_data": True,
+        "synthetic": True,
+        "policy": {"name": "forged-policy", "version": "0", "rules": []},
+        "signature": "deadbeef" * 8,
+        "entry_hash": "0" * 64,
+        "prev_hash": "1" * 64,
+        "agent_pubkey": "Zm9yZ2VkLXB1YmtleQ==",
+        "approval": {"state": "approved"},
+        "tsa_timestamp": "2026-01-01T00:00:00Z",
+        "input_hash": "2" * 64,
+        "output_hash": "3" * 64,
+        "execution_receipt": {"state": "executed"},
+        "intervention_history": [{"target_action_id": "act-fake",
+                                  "decision": "approve", "actor_id": "attacker"}],
+        "human_owner": cs.did_from_name("s0-2b-attacker", kind="user"),
+        "delegation_chain": [cs.did_from_name("s0-2b-attacker", kind="user")],
+    }
+
+
+def native_base(aid: str) -> dict:
+    """原生夹具第一条：字段齐全、schema v1.1 合法（用来做「只加一个字段」的对照）。"""
+    rec = copy.deepcopy(load(NATIVE_PATH)["records"][0])
+    rec["id"] = aid
+    rec["parent_action_id"] = None
+    return rec
+
+
+class ExpansionFieldGateTests(unittest.TestCase):
+    """S0-2b：9 个 5.0 字段进 `OPTIONAL_RECORD_KEYS` 之后，闸门哲学不变。
+
+    钉四件事：
+    1. 名单只**变长**（既有条目一字不动，必填名单一字不动）；
+    2. 九个字段逐个过 `_assert_shape`，并且真的落进合并产物（端到端通道打通）；
+    3. 受保护字段仍进不了存储（不在名单 → 适配器闸门拒；是记录字段的 → 合并层剥离）；
+    4. 名单外新键仍 400（`ADAPTER_OUTPUT_INVALID`）。
+    """
+
+    # -- 名单本体（铁律 1/2/4） --------------------------------------------------
+
+    def test_optional_list_only_grew_the_nine_fields(self) -> None:
+        keys = ta.OPTIONAL_RECORD_KEYS
+        self.assertEqual(OPTIONAL_KEYS_BEFORE_S0_2B, keys[:len(OPTIONAL_KEYS_BEFORE_S0_2B)],
+                         "既有条目必须原样在最前面：只扩名单，不重排、不改名")
+        self.assertEqual(tuple(ingest.EXPANSION_MERGE_FIELDS), keys[len(OPTIONAL_KEYS_BEFORE_S0_2B):],
+                         "新增段与 ingest.EXPANSION_MERGE_FIELDS 逐字等价（含顺序）")
+        self.assertEqual(len(keys), len(set(keys)), "可选名单不能有重复键")
+        self.assertEqual(set(), set(ingest.EXPANSION_PROTECTED_FIELDS) & set(keys),
+                         "受保护字段绝不能进可选名单")
+
+    def test_required_keys_are_untouched(self) -> None:
+        self.assertEqual(REQUIRED_KEYS_SNAPSHOT, ta.REQUIRED_RECORD_KEYS)
+
+    def test_the_nine_fields_are_existing_schema_keys(self) -> None:
+        """零新增 schema 键：九个字段本来就是 ActionRecord v1.1 的顶层属性。"""
+        props = set(SCHEMA["properties"])
+        missing = [name for name in ta.OPTIONAL_RECORD_KEYS if name not in props]
+        self.assertEqual([], missing, f"这些可选字段不在 schema 顶层属性里：{missing}")
+
+    # -- 放行：九个字段逐个过闸门，并落进合并产物 --------------------------------
+
+    def test_the_nine_fields_pass_the_shape_gate_one_by_one(self) -> None:
+        values = expansion_values()
+        self.assertEqual(set(ingest.EXPANSION_MERGE_FIELDS), set(values))
+        for field in ingest.EXPANSION_MERGE_FIELDS:
+            rec = native_base(f"act-s0-2b-{field}")
+            rec[field] = copy.deepcopy(values[field])
+            out = ta.convert_trace_to_action_record([rec], now=FIXED_NOW)
+            self.assertEqual(1, len(out), field)
+            got = out[0]
+            self.assertIn(field, got, f"{field} 被 _assert_shape 拦掉了")
+            self.assertEqual(values[field], got[field],
+                             f"{field} 必须原样透传（原生路径不加工，既有口径）")
+            self.assertEqual([], schema_errors(got), f"{field}：schema 不通过")
+
+    def test_the_nine_fields_together_reach_the_merge_product(self) -> None:
+        """过闸门 → 进合并层 → 白名单内合并：这就是 S0-2 缺的那条端到端通道。"""
+        before = native_base("act-s0-2b-merge")
+        incoming = native_base("act-s0-2b-merge")
+        for field, value in expansion_values().items():
+            self.assertNotIn(field, before, f"夹具基线不该已带 {field}（否则合并断言无意义）")
+            incoming[field] = copy.deepcopy(value)
+        converted = ta.convert_trace_to_action_record([incoming], now=FIXED_NOW)[0]
+        merged, changed, stripped = ingest.merge_facts_full(before, converted)
+        names = {c["field"] for c in changed}
+        self.assertEqual(set(ingest.EXPANSION_MERGE_FIELDS), names & set(ingest.EXPANSION_MERGE_FIELDS))
+        # 原生入参本来就带 id / source / user_intervention 这类受保护记录字段：合并层逐名剥离并上报
+        # （既有口径）。这九个字段一个都不许被剥掉。
+        self.assertFalse(set(stripped) & set(ingest.EXPANSION_MERGE_FIELDS),
+                         f"扩展字段被剥掉了：{sorted(set(stripped) & set(ingest.EXPANSION_MERGE_FIELDS))}")
+        self.assertTrue(set(stripped) <= set(ingest.ALL_PROTECTED_FIELDS),
+                        f"只许剥受保护字段：{sorted(set(stripped) - set(ingest.ALL_PROTECTED_FIELDS))}")
+        for field, value in expansion_values().items():
+            self.assertEqual(value, merged[field], f"{field} 没进合并产物")
+        for entry in changed:
+            self.assertIn("before", entry)
+            self.assertIn("after", entry)
+        self.assertEqual([], schema_errors(merged), "合并产物必须仍 schema 合法")
+
+    def test_the_nine_fields_are_not_archived_as_unknown_keys(self) -> None:
+        """认识的键不再当未知字段归档；名单外的键依旧被闸门挡在门外（不是静默丢）。"""
+        rec = native_base("act-s0-2b-raw")
+        for field, value in expansion_values().items():
+            rec[field] = copy.deepcopy(value)
+        out = ta.convert_with_raw([rec], now=FIXED_NOW)
+        self.assertEqual(1, len(out.records))
+        self.assertEqual({}, out.raw_payloads,
+                         "九个字段是已知字段：不该产生 record_unknown_keys 归档")
+        self.assertEqual(0, out.stats["unknown_field_records"])
+        stray = native_base("act-s0-2b-raw-stray")
+        stray["brand_new_key"] = 1
+        with self.assertRaises(ta.TraceFormatError) as ctx:
+            ta.convert_with_raw([stray], now=FIXED_NOW)
+        self.assertEqual("ADAPTER_OUTPUT_INVALID", ctx.exception.code)
+        self.assertIn("brand_new_key", ctx.exception.reason)
+
+    # -- 拒：受保护字段与名单外新键 ----------------------------------------------
+
+    def test_protected_fields_that_are_not_record_keys_still_400(self) -> None:
+        """`signature` / `intervention_history` / `human_owner` 等不在名单里 → 适配器闸门照旧拦。"""
+        gate = [name for name in ingest.ALL_PROTECTED_FIELDS
+                if name not in set(ta.REQUIRED_RECORD_KEYS) | set(ta.OPTIONAL_RECORD_KEYS)]
+        self.assertIn("signature", gate)
+        self.assertIn("intervention_history", gate)
+        self.assertIn("human_owner", gate)
+        forged = forged_protected_values()
+        self.assertEqual([], [name for name in gate if name not in forged],
+                         "伪造值必须覆盖每个被闸门拦的受保护字段")
+        for name in gate:
+            rec = native_base(f"act-s0-2b-ban-{name}")
+            rec[name] = copy.deepcopy(forged[name])
+            with self.assertRaises(ta.TraceFormatError, msg=name) as ctx:
+                ta.convert_trace_to_action_record([rec], now=FIXED_NOW)
+            self.assertEqual("ADAPTER_OUTPUT_INVALID", ctx.exception.code, name)
+            self.assertIn(name, ctx.exception.reason, "要说出是哪个字段被拦")
+
+    def test_protected_record_keys_never_merge_and_are_reported(self) -> None:
+        """`source` / `policy` / `user_intervention` 等本身是记录字段：入参带得进闸门（既有口径），
+        但合并层逐个剥离并如实上报 —— 受保护语义一点没削弱。"""
+        before = native_base("act-s0-2b-protect")
+        forged = forged_protected_values()
+        merge_blocked = [name for name in ingest.ALL_PROTECTED_FIELDS
+                         if name in set(ta.REQUIRED_RECORD_KEYS) | set(ta.OPTIONAL_RECORD_KEYS)]
+        self.assertIn("user_intervention", merge_blocked)
+        self.assertIn("source", merge_blocked)
+        self.assertIn("id", merge_blocked)
+        incoming = native_base("act-s0-2b-protect")
+        incoming["user_intervention"] = copy.deepcopy(forged["user_intervention"])
+        incoming["source"] = copy.deepcopy(forged["source"])
+        incoming["policy"] = copy.deepcopy(forged["policy"])
+        incoming["execution_receipt"] = copy.deepcopy(forged["execution_receipt"])
+        incoming["demo_data"] = True
+        incoming["synthetic"] = True
+        incoming["human_readable"] = copy.deepcopy(forged["human_readable"])
+        incoming["intervention_options"] = copy.deepcopy(forged["intervention_options"])
+        converted = ta.convert_trace_to_action_record([incoming], now=FIXED_NOW)[0]
+        merged, changed, stripped = ingest.merge_facts_full(before, converted)
+        for name in merge_blocked:
+            self.assertIn(name, stripped, f"{name} 必须逐名上报被剥掉")
+            self.assertEqual(before[name], merged[name], f"{name} 被入参覆盖了")
+        self.assertFalse({c["field"] for c in changed} & set(ingest.ALL_PROTECTED_FIELDS),
+                         "受保护字段不得记进 changed_fields")
+
+    def test_key_outside_every_list_is_still_rejected(self) -> None:
+        for name in ("brand_new_key", "EXPANSION_MERGE_FIELDS", "signaturex"):
+            rec = native_base(f"act-s0-2b-extra-{name}")
+            rec[name] = "whatever"
+            with self.assertRaises(ta.TraceFormatError, msg=name) as ctx:
+                ta.convert_trace_to_action_record([rec], now=FIXED_NOW)
+            self.assertEqual("ADAPTER_OUTPUT_INVALID", ctx.exception.code, name)
+            self.assertIn(name, ctx.exception.reason, f"要说清多出的是 {name}")
+            self.assertTrue(ctx.exception.hint, "必须给出可操作的提示（既有口径）")
+
+    def test_the_gate_code_is_the_same_as_before(self) -> None:
+        """`_assert_shape` 的 code / hint 一字未动：缺必填、多键都还是同一条错误。"""
+        rec = native_base("act-s0-2b-missing")
+        del rec["intent"]
+        with self.assertRaises(ta.TraceFormatError) as ctx:
+            ta.convert_trace_to_action_record([rec], now=FIXED_NOW)
+        self.assertEqual("TRACE_FIELD_MISSING", ctx.exception.code)
+
+    def test_privacy_scan_of_the_new_fields_is_the_existing_rule(self) -> None:
+        """既有脱敏口径：原生路径不逐字段改写（没有针对这九个字段的新规则）。
+        合成夹具里不得出现真实路径/邮箱/密钥（隐私 lint 扫整条记录，含新字段）。"""
+        rec = native_base("act-s0-2b-privacy")
+        for field, value in expansion_values().items():
+            rec[field] = copy.deepcopy(value)
+        out = ta.convert_trace_to_action_record([rec], now=FIXED_NOW)[0]
+        self.assertEqual([], privacy_hits(out), "新字段随记录一起过隐私 lint")
 
 
 # ----------------------------------------------------------------------------------

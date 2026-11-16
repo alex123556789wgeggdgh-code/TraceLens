@@ -2660,6 +2660,13 @@
     for (var i = 0; i < ZONE_ORDER.length; i += 1) {
       renderZoneSection(host, ZONE_ORDER[i], i);
     }
+    /* M2-PRE 1 (PM-VERDICT-R1-9 ruling 3): a zones rebuild is the main path the
+     * trust layer must hear about, so the notify lives here, next to the DOM it
+     * just built - the shell's card-tree watcher stays as the fallback. The
+     * listener pass is idempotent (every injected node carries
+     * data-trust-decorated and each surface checks it first), so renderAll's
+     * own trailing notify adds nothing but a second no-op pass. */
+    notify();
   }
 
   function renderZoneSection(host, zone, index) {
@@ -2724,6 +2731,15 @@
     return 'ok';
   }
 
+  /* R1-6 (G-24): the read-time rollback state is a server-derived string, so
+   * the DOM only ever carries a whitelisted token; unknown values read 'none'. */
+  function rollbackStateKey(record) {
+    var value = str(record && record.rollback_state);
+    if (value === 'rolled_back') return 'rolled_back';
+    if (value === 'rollback_blocked') return 'rollback_blocked';
+    return 'none';
+  }
+
   function renderCard(host, record, zone, opts) {
     if (!record) return null;
     opts = opts || {};
@@ -2749,7 +2765,12 @@
         demo: isDemo ? 'true' : 'false',
         decided: decided ? 'true' : 'false',
         priority: opts.priority ? 'true' : 'false',
-        focused: focused ? 'true' : 'false'
+        focused: focused ? 'true' : 'false',
+        /* R1-6 (G-24): the grey + strike-through rule has to work on a
+         * collapsed card too, so the fact the server derived at read time
+         * rides on the card itself and the styling stays a CSS rule. */
+        rollback: rollbackStateKey(record),
+        rollbackRef: hasText(record.rollback_ref) ? str(record.rollback_ref) : ''
       },
       tabindex: '0',
       role: 'listitem'
@@ -4013,9 +4034,18 @@
     var strip = add(rail, el('ol', { class: 'timeline__strip', dataset: { hook: 'timeline-items', total: total } }));
     state.records.forEach(function (r, i) {
       var selected = i === index;
+      var rolledState = rollbackStateKey(r);
+      var rolledRef = hasText(r.rollback_ref) ? str(r.rollback_ref) : '';
       var li = add(strip, el('li', {
         class: 'timeline__tick' + (selected ? ' is-selected' : ''),
-        dataset: { id: str(r.id), color: colorRoleOf(r), index: i, selected: selected ? 'true' : 'false' }
+        dataset: {
+          id: str(r.id), color: colorRoleOf(r), index: i, selected: selected ? 'true' : 'false',
+          /* R1-6 (A6): the tick carries the same read-time facts as the card,
+           * so the dashed link to the step a rollback undid is CSS, and the
+           * jump stays a plain data-id lookup. */
+          rolled: rolledState,
+          rollbackRef: rolledRef
+        }
       }));
       var tick = add(li, el('button', {
         class: 'timeline__tick-btn',
@@ -4024,6 +4054,8 @@
         dataset: { hook: 'timeline-tick', index: i, card: str(r.id) }
       }));
       aria(tick, 'timeline.tick.aria', { i: i + 1, time: formatTimestamp(r.timestamp, i18n.lang) });
+      if (rolledState === 'rolled_back') tick.setAttribute('title', t('cards.rollback.timeline.rolled'));
+      if (rolledRef) li.setAttribute('title', t('cards.rollback.timeline.ref', { id: rolledRef }));
       add(tick, el('span', { class: 'timeline__dot', 'aria-hidden': 'true' }));
       add(tick, el('span', { class: 'timeline__time', text: formatTimestamp(r.timestamp, i18n.lang) }));
     });
@@ -6214,6 +6246,22 @@
       settingsNote(secBox, 'settings.center.load_failed', null, true);
     }
 
+    /* ---- 0.6.0 update channel: mount point only ----
+     * The section itself lives in ext/update.js (dictionary copy, indeterminate
+     * progress, honest browser-mode line). This panel only hands over a host so
+     * that the settings card keeps a single rendering path. When the extension
+     * is absent the host is marked, not silently left empty. */
+    var updateHost = add(card, el('div', {
+      class: 'settings__section settings__update',
+      dataset: { hook: 'settings-update-host' }
+    }));
+    var updateMod = global.TraceLensUpdate;
+    if (updateMod && typeof updateMod.mount === 'function') {
+      updateMod.mount(updateHost);
+    } else {
+      updateHost.setAttribute('data-missing', 'true');
+    }
+
     var feedback = add(card, el('p', { class: 'settings__feedback', dataset: { hook: 'settings-feedback' } }));
     i18nText(feedback, state.settings.feedback, state.settings.feedbackParams);
     /* a role without settings.write can still read the whole page: say so in one
@@ -6264,11 +6312,33 @@
   var EXPORT_ERROR_KEYS = {
     EXPORT_FORMAT_INVALID: 'export.error.format_invalid',
     AUDIT_CHAIN_BROKEN: 'export.error.chain_broken',
+    /* R8-1 (pre-export verification gate, B8-4 first half): the compliance-side chain
+     * code gets its dictionary line here, so a refusal that wrote nothing can never be
+     * rendered as a success once R8-6 mounts the export face. Zero new call face this
+     * round: the compliance export route stays declared-but-unmounted. */
+    COMPLIANCE_CHAIN_BROKEN: 'export.error.compliance_chain_broken',
     AUDIT_QUERY_INVALID: 'export.error.query_invalid',
     AUDIT_REPORTLAB_UNAVAILABLE: 'export.error.reportlab_missing',
     ROUTE_NOT_FOUND: 'export.error.route_not_found',
     NETWORK_ERROR: 'export.error.network',
     TIMEOUT: 'export.error.timeout'
+  };
+  /* R8-5 (REQ-008 B8-3 under the BOSS-REPLY-PM-PLAN-001 §D-2 ruling): the degraded
+   * anchoring state is a fact the page has to state where a person looks for the
+   * evidence file. The two values below are the backend's own constants, not the
+   * page's opinion - compliance.ANCHOR_STATE is 'unavailable' and an export record's
+   * eth_tx_hash is always None (no placeholder, no invented hash). The compliance
+   * export face is not mounted this round (R8-6), so there is no live CID to render
+   * here, and the panel must not imply one: no progress line, no completion wording,
+   * no fake transaction hash. Every sentence is dictionary copy, pinned by
+   * tests/test_export_degraded_display.py + the R8-5 selfcheck case. */
+  var EXPORT_ANCHOR_STATE = 'unavailable';
+  var EXPORT_ETH_TX_HASH = 'none';
+  var EXPORT_ANCHOR_COPY_KEYS = {
+    state: 'export.anchor.state',
+    cid: 'export.anchor.cid',
+    tx: 'export.anchor.tx',
+    deferred: 'export.anchor.deferred'
   };
 
   function auditErrorKey(data, codes, fallback) {
@@ -7187,6 +7257,39 @@
       }
     });
 
+    /* R8-6 (a): what the three buttons mean, printed instead of implied. A
+     * reader must be able to quote the format without clicking and guessing;
+     * the buttons stay the only control, this line is the explicit state. */
+    var formatNode = add(box, el('p', {
+      class: 'rail__hook-meta export__format', dataset: { hook: 'export-format' }
+    }));
+    i18nText(formatNode, 'export.format.current');
+
+    /* R8-6 (a): the range this export will carry. READ from the audit filters
+     * only - this panel has no authority to rewrite what the audit view
+     * decided, and a second filter state here would be a second fact source. */
+    var exportFilters = isObj(state.audit.filters) ? state.audit.filters : {};
+    var filterSince = hasText(exportFilters.since) ? str(exportFilters.since) : '';
+    var filterUntil = hasText(exportFilters.until) ? str(exportFilters.until) : '';
+    var rangeNode = add(box, el('div', {
+      class: 'rail__hook-meta export__range', dataset: { hook: 'export-range' }
+    }));
+    rangeNode.setAttribute('data-since', filterSince);
+    rangeNode.setAttribute('data-until', filterUntil);
+    rangeNode.setAttribute('data-limit', str(state.audit.limit));
+    var rangeText = (filterSince || filterUntil)
+      ? (filterSince || '…') + ' → ' + (filterUntil || '…')
+      : t('export.range.all_time');
+    i18nText(add(rangeNode, el('span', {
+      class: 'export__range-label', dataset: { hook: 'export-range-text' }
+    })), 'export.range.label', { value: rangeText });
+    i18nText(add(rangeNode, el('span', {
+      class: 'export__range-limit', dataset: { hook: 'export-range-limit' }
+    })), 'export.range.limit', { value: str(state.audit.limit) });
+    i18nText(add(rangeNode, el('p', {
+      class: 'rail__hook-note export__range-note', dataset: { hook: 'export-range-note' }
+    })), 'export.range.note');
+
     /* the reason line is the whole point of the disabled state: a person must
      * learn why the button is dead, not just see a grey rectangle */
     var reason = state.exportPanel.reason;
@@ -7230,6 +7333,53 @@
       class: 'rail__hook-feedback export__feedback', dataset: { hook: 'export-feedback' }
     }));
     i18nText(feedback, state.exportPanel.feedback, state.exportPanel.feedbackParams);
+
+    /* R8-6 (b)(c): progress and result are rendered by ext/compliance.js, which
+     * is loaded AFTER this file. The lookup is lazy on purpose - by the time
+     * this panel repaints, the extension is registered. If it is missing the
+     * panel simply has no bar: it never fakes a percentage locally, and it
+     * never builds a result card out of values the response did not carry. */
+    var complianceExt = global.TraceLensCompliance || null;
+    var progressHost = add(box, el('div', {
+      class: 'export__progress-host', dataset: { hook: 'export-progress-host' }
+    }));
+    var resultHost = add(box, el('div', {
+      class: 'export__result-host', dataset: { hook: 'export-result-host' }
+    }));
+    if (complianceExt && typeof complianceExt.renderProgress === 'function') {
+      complianceExt.renderProgress(progressHost, { busy: !!state.exportPanel.busy });
+    } else {
+      progressHost.setAttribute('data-visible', 'false');
+      progressHost.setAttribute('data-missing', 'true');
+    }
+    if (complianceExt && typeof complianceExt.renderResult === 'function') {
+      complianceExt.renderResult(resultHost, { last: last });
+    } else {
+      resultHost.setAttribute('data-visible', 'false');
+      resultHost.setAttribute('data-missing', 'true');
+    }
+
+    /* R8-5 (D-2): the degraded anchoring state sits in the same panel as the file
+     * a person just pulled, so the offline CID can never be read as "on chain".
+     * The block is static on purpose - R8-6 owns the live export face (button,
+     * format/range picker, progress, result page). It renders the backend's two
+     * constants and four dictionary lines, and nothing else: no progress bar, no
+     * completion claim, no hash that was never produced. */
+    var anchorBox = add(box, el('div', {
+      class: 'export__anchor', dataset: { hook: 'export-anchor' }
+    }));
+    anchorBox.setAttribute('data-anchor-state', EXPORT_ANCHOR_STATE);
+    anchorBox.setAttribute('data-eth-tx-hash', EXPORT_ETH_TX_HASH);
+    anchorBox.setAttribute('data-cid-anchored', 'false');
+    anchorBox.setAttribute('data-copy-keys', Object.keys(EXPORT_ANCHOR_COPY_KEYS).map(function (name) {
+      return EXPORT_ANCHOR_COPY_KEYS[name];
+    }).join(' '));
+    Object.keys(EXPORT_ANCHOR_COPY_KEYS).forEach(function (name) {
+      i18nText(add(anchorBox, el('p', {
+        class: 'rail__hook-note export__anchor-line',
+        dataset: { hook: 'export-anchor-' + name }
+      })), EXPORT_ANCHOR_COPY_KEYS[name]);
+    });
   }
 
   function renderAuditPanel(box) {
@@ -7894,6 +8044,15 @@
       return { ok: opened, path: state.exportPanel.lastPath };
     },
     exportState: function () { return exportSnapshot(); },
+    /* REQ-008 workspace page: mount the ONE export panel into a caller-supplied
+     * host. Same buttons, same disabled reasons, same printed values as the
+     * audit rail - the workspace never grows a parallel export implementation. */
+    renderExportPanel: function (host) {
+      if (!host) return null;
+      while (host.firstChild) host.removeChild(host.firstChild);
+      renderExportPanel(host);
+      return host;
+    },
     exportPathFor: function (format) { return exportRequestPath(format); },
     /* 4.9 import (t22): the rig drives the same entries a person sees (paste,
      * pick a file, Import, Clear) and reads back exactly what the server said.
@@ -8101,6 +8260,12 @@
     formatConfidence: function (value) { return formatConfidence(value); },
     zoneOf: function (record) { return zoneOf(record); },
     recordById: function (id) { return recordById(id); },
+    /* R1-6 (G-20): read-only snapshot of the meta that came with the last
+     * record payload. The rollback facts live there (`meta.rollback_view`) and
+     * are derived at read time by the server, never stored, so the trust layer
+     * reads them from this door instead of fetching the payload a second time.
+     * Nothing writes into the returned object; it is the server's own shape. */
+    metaInfo: function () { return isObj(state.meta) ? state.meta : {}; },
     renderAll: function () { renderAll(); return true; },
     extRequest: function (target, body, opts) { return extRequest(target, body, opts); },
     extEndpoints: function () { return EXT_ENDPOINT_NAMES.slice(); },

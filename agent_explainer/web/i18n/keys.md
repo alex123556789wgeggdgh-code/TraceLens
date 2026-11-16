@@ -8,7 +8,7 @@
 - 渲染出来的节点都会带 `data-i18n="<key>"` 与 `data-i18n-lang`，因此"界面残留中文"可以机器断言，不靠人眼。
 - 新增文案的顺序：先加 `zh.json` + `en.json` → `node selfcheck.mjs --sync-keys --sync-embed` → 在 `app.js` 用 `t(`key`)` 引用。
 
-**Key 总数：1115（zh 1115 / en 1115，双向一致）**
+**Key 总数：1565（zh 1565 / en 1565，双向一致）**
 
 ## `action_type`（17 个）
 
@@ -31,6 +31,102 @@
 | `action_type.unknown` | 其他动作 | Other action |
 | `action_type.wait` | 等待 | Wait |
 | `action_type.write` | 写入 | Write |
+
+## `analytics`（91 个）
+
+| key | zh | en |
+| --- | --- | --- |
+| `analytics.chart.aria` | 干预率趋势折线，{points} 个桶，最高 {max}，最低 {min} | Intervention rate line, {points} buckets, peak {max}, low {min} |
+| `analytics.chart.empty` | 这个区间没有趋势点：区间内没有记录。 | No trend point in this range: there are no records in it. |
+| `analytics.chart.title` | 干预率趋势 | Intervention rate trend |
+| `analytics.chart.x` | 时间桶 | Time bucket |
+| `analytics.chart.y` | 干预率 | Rate |
+| `analytics.duration.hours` | {value} 小时 | {value} h |
+| `analytics.duration.minutes` | {value} 分钟 | {value} min |
+| `analytics.duration.missing` | — | — |
+| `analytics.duration.seconds` | {value} 秒 | {value} s |
+| `analytics.empty` | 现在没有读数可显示：这个区间里没有记录，或这一轮查询还没回来。 | Nothing to show yet: this range has no records, or this read has not come back. |
+| `analytics.export.busy` | 导出中：正在按 {format} 请求服务端实发件… | Exporting: asking the server for the served artifact as {format}… |
+| `analytics.export.bytes` | 存盘字节与服务端实发一致（CSV 含服务端 UTF-8 BOM），上面那枚指纹对得上这个文件。 | The saved bytes equal the served bytes (the CSV carries the server UTF-8 BOM), so the fingerprint above describes this file. |
+| `analytics.export.csv` | 导出 CSV | Export CSV |
+| `analytics.export.denied` | 这个账号没有 audit.export：导出按钮已收起，仪表盘只能看、不能外发。 | This account has no audit.export: the export buttons are collapsed, the dashboard can be read but not shipped out. |
+| `analytics.export.failed` | 导出没成功：{code} — {message} | The export did not work: {code} — {message} |
+| `analytics.export.fallback` | 已降级：请求 {requested}，实发 {format}。原因：{reason}。这不是坏掉，也不算成功——降级说明写在文件第一屏与元数据段里。 | Degraded: asked {requested}, served {format}. Reason: {reason}. This is not broken and it is not a success; the reason is written on the first screen of the file and in its metadata section. |
+| `analytics.export.format_missing` | 服务端没送 X-TraceLens-Export-Format：界面不知道实发的是什么格式，因此不说「已导出」。 | The server sent no X-TraceLens-Export-Format: the page does not know what was served, so it does not say exported. |
+| `analytics.export.not_saved` | 这一轮没有文件存盘：界面只说做到的事，不说打算做的事。 | No file was saved in this round: the page reports what it did, not what it intended to do. |
+| `analytics.export.note` | CSV 与 PDF 两枚按钮，格式枚举冻结为 csv\|pdf（format=html 由服务端拒 400）。PDF 拿不到 reportlab 时服务端出可打印 HTML：文件名、格式提示与降级原因一律按实发格式写，界面不把降级画成成功。 | Two buttons, CSV and PDF; the format enum is frozen at csv\|pdf (format=html is a server-side 400). When reportlab is missing the server ships printable HTML: the filename, the format header and the fallback reason always describe the bytes actually served, and the page never paints a degradation as a success. |
+| `analytics.export.offline` | 导出需要服务端：当前离线，界面不生成「看起来像」的文件。 | Exporting needs the server: this page is offline, and it will not fabricate a file that only looks right. |
+| `analytics.export.pdf` | 导出 PDF | Export PDF |
+| `analytics.export.pdf_direct` | 实发 PDF 是二进制：界面按同一 URL 交给浏览器直接取服务端字节，那是一次新的响应，指纹以那次的响应头为准。 | A served PDF is binary: the page hands the same URL to the browser so it takes the server bytes. That is a new response, and its fingerprint is the one in that response header. |
+| `analytics.export.plane_echo` | 导出件里的来源标注：{value}（本次扫描 {scanned} 条）——纸面上也带着这份数字怎么来的。 | Provenance inside the artifact: {value} (this read scanned {scanned} records), so the paper carries where its numbers came from. |
+| `analytics.export.print` | 实发的是可打印 HTML：零外链零脚本，样式内联，页面第一屏写着降级原因。 | What was served is printable HTML: no external links, no script, styles inline, and the first screen states the degradation reason. |
+| `analytics.export.print_open` | 在新标签打开（Ctrl+P 存 PDF） | Open in a new tab (Ctrl+P saves a PDF) |
+| `analytics.export.print_unavailable` | 这个环境没有新标签能力：文件已按实发格式存盘，请用浏览器打开后按 Ctrl+P。 | This environment has no new-tab capability: the file was saved in the served format, open it in a browser and press Ctrl+P. |
+| `analytics.export.printed` | 已在新标签打开实发的可打印 HTML。 | The served printable HTML is open in a new tab. |
+| `analytics.export.result` | 实发文件：{filename}（实发格式 {format}，名字取自服务端 Content-Disposition） | Served artifact: {filename} (served format {format}, name taken from the server Content-Disposition) |
+| `analytics.export.server_note` | 服务端附注：{note} | Server note: {note} |
+| `analytics.export.sha` | 这份文件的指纹：{sha}（离线可复核「这就是当时导出的那份」） | Fingerprint of this file: {sha} (verify offline that this is the artifact exported at that moment) |
+| `analytics.export.sha_missing` | 这份文件没有指纹头：服务端未提供 X-TraceLens-Export-Sha256，界面不编一个。 | This file has no fingerprint header: the server did not send X-TraceLens-Export-Sha256, and the page does not invent one. |
+| `analytics.export.title` | 导出这份仪表盘 | Export this dashboard |
+| `analytics.export.toast` | 已按实发格式存盘：{format} | Saved in the format the server served: {format} |
+| `analytics.export.toast_fallback` | 已降级存盘：请求 {requested}，实发 {format}（原因见面板） | Saved as a degradation: asked {requested}, served {format} (the panel states why) |
+| `analytics.filter.agent` | Agent 筛选 | Agent filter |
+| `analytics.filter.agent.placeholder` | 留空＝全部 Agent | Empty means every agent |
+| `analytics.filter.apply` | 应用筛选 | Apply filters |
+| `analytics.filter.aria` | 仪表盘筛选 | Dashboard filters |
+| `analytics.filter.from` | 开始日期 | From date |
+| `analytics.filter.granularity` | 趋势粒度 | Trend granularity |
+| `analytics.filter.refresh` | 重新查询 | Query again |
+| `analytics.filter.to` | 结束日期 | To date |
+| `analytics.granularity.day` | 按天 | Per day |
+| `analytics.granularity.week` | 按周 | Per week |
+| `analytics.heat.cell` | {tool} · {param}：改过 {count} 次 | {tool} - {param}: edited {count} times |
+| `analytics.heat.empty` | 没有改过参数的记录：热力图是空的，不是加载失败。 | No record edited a parameter: the heatmap is empty, that is not a load failure. |
+| `analytics.heat.legend.high` | 多 | many |
+| `analytics.heat.legend.low` | 少 | few |
+| `analytics.heat.title` | 常改参数热力 | Parameter edit heatmap |
+| `analytics.heat.tool` | 工具 | Tool |
+| `analytics.metric.approval` | 平均批准时长 | Average approval latency |
+| `analytics.metric.bar.aria` | 比例 {value} | Share {value} |
+| `analytics.metric.interventions` | 总干预 | Total interventions |
+| `analytics.metric.missing` | — | — |
+| `analytics.metric.rate` | 干预率 | Intervention rate |
+| `analytics.metric.tasks` | 总任务 | Total tasks |
+| `analytics.metric.trust` | 信任健康度 | Trust health |
+| `analytics.metric.trust.derived` | 服务端没送这个指标：这条是界面按 1 − 干预率 画的草图，不是服务端的数 | The server did not send this metric: this sketch is the page computing 1 minus the rate, not the server's number |
+| `analytics.metric.trust.hint` | = 1 − 干预率（服务端算好送来的数） | = 1 minus the intervention rate (the number the server sent) |
+| `analytics.metric.users` | 拍板人数 | People who decided |
+| `analytics.metric.users.hint` | 只数真的拍过板的人，用户 id 已脱敏 | Counts only people who actually decided; user ids are anonymised |
+| `analytics.plane.generated` | 本次读数由服务端在 {at} 生成；界面不自己算指标。 | The server generated this read at {at}; the page does not compute metrics itself. |
+| `analytics.plane.head` | 账本链头：{head} | Ledger chain head: {head} |
+| `analytics.plane.not_durable` | 账本没写进：本轮数字从内存复算视图读出，下次调用会幂等重试。 | The ledger write did not land: these numbers came from the in-memory recompute view, and the next call retries idempotently. |
+| `analytics.plane.pre` | 预聚合命中：数字从追加式账本 agg_daily.jsonl 的合并行读出。 | Pre-aggregated read: the numbers come from the merged rows of the append-only ledger agg_daily.jsonl. |
+| `analytics.plane.problems` | 账本里有 {count} 行读不动，原因码随元数据一起送出，界面不翻译猜测。 | {count} ledger rows could not be read; the reason codes travel with the metadata, the page does not translate a guess. |
+| `analytics.plane.reason` | 未预聚合的原因码：{code} | Fallback reason code: {code} |
+| `analytics.plane.reason.agent_filter` | 原因码 agent_filter：按 Agent 筛选走逐行扫描——账本行按天与工具聚合，没有 Agent 维度。 | Reason code agent_filter: an agent filter walks the records line by line, because ledger rows aggregate by day and tool and carry no agent dimension. |
+| `analytics.plane.reason.chain_tampered` | 原因码 chain_tampered：账本哈希链校验不过，已退到逐行扫描，问题清单随元数据一起送出。 | Reason code chain_tampered: the ledger hash chain did not verify, so this read scanned and the problem list travels with the metadata. |
+| `analytics.plane.reason.custom_salt` | 原因码 custom_salt：设了自定义脱敏盐值，账本合并不参与，退回逐行扫描。 | Reason code custom_salt: a custom anonymisation salt is set, which the ledger merge does not carry, so this read scans. |
+| `analytics.plane.reason.input_not_rerunnable` | 原因码 input_not_rerunnable：记录输入是一次性迭代器，无法二次流式复算。 | Reason code input_not_rerunnable: the record input is a one-shot iterator that cannot be re-scanned. |
+| `analytics.plane.reason.ledger_missing_no_records` | 原因码 ledger_missing_no_records：账本还不存在且没有可聚合记录，本轮如实走扫描。 | Reason code ledger_missing_no_records: there is no ledger yet and nothing to aggregate, so this read honestly scans. |
+| `analytics.plane.reason.ledger_unreadable` | 原因码 ledger_unreadable：账本读不动（权限或文件问题），已如实退到逐行扫描。 | Reason code ledger_unreadable: the ledger could not be read (permission or file trouble), so this read honestly scanned instead. |
+| `analytics.plane.reason.no_ledger_wired` | 原因码 no_ledger_wired：这个服务端实例没接预聚合账本，只能逐行扫描。 | Reason code no_ledger_wired: this server instance has no pre-aggregation ledger wired, so it can only scan. |
+| `analytics.plane.refresh` | 无推送通道：刷新＝查询时机（进入面板、应用筛选、点重新查询），不是服务端推送。 | There is no push channel: a refresh is a query moment (opening the panel, applying filters, pressing Query again), not a server push. |
+| `analytics.plane.scanned` | 本次逐行扫描 {count} 条记录（内存 O(1)，不整载）。 | This read walked {count} records line by line (O(1) memory, nothing loaded whole). |
+| `analytics.plane.slow` | 未预聚合，加载较慢：本次实测 {ms} ms。「≤3s」只在预聚合命中时成立。 | Not pre-aggregated, this read is slow: measured {ms} ms. The three-second promise only holds on a pre-aggregated read. |
+| `analytics.plane.slow_hit` | 预聚合命中，但本次实测 {ms} ms：慢在磁盘与账本这一侧，不是聚合口径。 | Pre-aggregated, and this read still measured {ms} ms: the cost sits on the disk and ledger side, not in the aggregation rules. |
+| `analytics.plane.stream` | 未预聚合：这一份数字是本次逐行扫描记录算出来的。 | Not pre-aggregated: this set of numbers was computed by walking the records line by line just now. |
+| `analytics.plane.timing.pre` | 预聚合命中：这一份的「≤3s」承诺成立（实测值就写在上面）。 | Pre-aggregated read: the three-second promise applies to this one, and the measured value sits right above. |
+| `analytics.plane.timing.stream` | 未预聚合：这一份没有「≤3s」可承诺，数字是逐行扫描算的。 | Not pre-aggregated: there is no three-second promise to make for this read, the numbers came from a line-by-line scan. |
+| `analytics.plane.title` | 数据面：这些数字怎么来的 | Data plane: where these numbers come from |
+| `analytics.plane.unknown` | 服务端没送来源标注：这份数字是账本合并行还是逐行扫描算的，界面无从得知。 | The server sent no provenance note: the page cannot tell whether the ledger answered or a line-by-line scan did. |
+| `analytics.subtitle` | 总任务 / 总干预 / 干预率 / 信任健康度，加上趋势、常改参数与排行。每个数字都从记录逐条复算，算不出就如实是 0。 | Total tasks, total interventions, intervention rate, trust health, plus the trend, the parameters people keep editing and the rankings. Every number is recomputed from the records; what cannot be computed stays an honest zero. |
+| `analytics.tab` | 队长仪表盘 | Lead dashboard |
+| `analytics.title` | 队长仪表盘 | Lead dashboard |
+| `analytics.top.count` | {count} 次 | {count} times |
+| `analytics.top.empty` | 没有可排的条目。 | Nothing to rank. |
+| `analytics.top.parameters` | 最常改的参数 | Most edited parameters |
+| `analytics.top.rejected` | 最常拒绝的工具 | Most rejected tools |
+| `analytics.top.title` | 排行 | Rankings |
 
 ## `audit`（39 个）
 
@@ -224,15 +320,21 @@
 | `card.tool.aria` | 工具 {name} 版本 {version} | Tool {name} version {version} |
 | `card.tool.none` | 未使用工具 | No tool used |
 
-## `cards`（50 个）
+## `cards`（142 个）
 
 | key | zh | en |
 | --- | --- | --- |
 | `cards.causal.alternatives` | 其他选择 | Alternatives |
+| `cards.causal.badge.llm` | AI 生成 | AI-generated |
+| `cards.causal.badge.template` | 模板生成 | Template-generated |
+| `cards.causal.badge.unknown` | 生成方式未标注 | Generator not labelled |
 | `cards.causal.counterfactual` | 反事实 | Counterfactual |
 | `cards.causal.empty` | 这条记录没有因果解释。 | This record has no causal explanation. |
 | `cards.causal.expected` | 预期：{expected} | Expected: {expected} |
 | `cards.causal.model` | 生成方式：{model} | Generated by: {model} |
+| `cards.causal.note.llm` | 这段文案由模型生成，可能包含推断：逐字事实请看证据指纹与账本。 | This text was generated by a model and may contain inference: verbatim facts live in the evidence fingerprint and the ledger. |
+| `cards.causal.note.model_unknown` | 记录里没有写这段文案是谁生成的，界面不猜。 | The record does not say who generated this text; the page does not guess. |
+| `cards.causal.note.template` | 文案逐字取自记录字段（候选标签、后果、参数改动），不含 AI 推断，可离线复算。 | Every word is taken verbatim from record fields (option labels, consequences, parameter changes): no AI inference, recomputable offline. |
 | `cards.causal.option` | 方案 {option} | Option {option} |
 | `cards.causal.reason` | 原因：{why} | Why: {why} |
 | `cards.causal.request` | 请求因果解释 | Request causal explanation |
@@ -240,44 +342,130 @@
 | `cards.causal.request.done` | 因果解释已生成，正在刷新。 | Causal explanation generated; refreshing. |
 | `cards.causal.request.failed` | 因果解释没有生成。 | The causal explanation was not generated. |
 | `cards.causal.request.offline` | 离线预览：生成因果解释需要服务端。 | Offline preview: generating an explanation needs the server. |
+| `cards.causal.request.pending` | 正在生成因果解释，请稍候… | Generating the causal explanation, please wait... |
 | `cards.causal.why` | 为什么 | Why |
 | `cards.confidence.aria` | 置信度 {value} | Confidence {value} |
+| `cards.confidence.band.green` | 高（≥0.9） | high (>= 0.9) |
+| `cards.confidence.band.light_green` | 较高（0.7-0.9） | fairly high (0.7-0.9) |
+| `cards.confidence.band.neutral` | 无来源可判 | no source to judge from |
+| `cards.confidence.band.red` | 低（<0.5） | low (< 0.5) |
+| `cards.confidence.band.yellow` | 中（0.5-0.7） | medium (0.5-0.7) |
+| `cards.confidence.few_samples` |  · 样本不足（{samples} 条 < 5）：这个数字不稳，别当结论看 |  - too few samples ({samples} < 5): this number is not stable, do not read it as a conclusion |
+| `cards.confidence.hover` | 置信度 {value} · 来源：{method} | Confidence {value} - source: {method} |
+| `cards.confidence.method.default` | 默认（来源没给依据） | default (the source gave no basis) |
+| `cards.confidence.method.hybrid` | 混合（多路来源） | hybrid (several sources) |
+| `cards.confidence.method.logprobs` | 对数概率（logprobs） | token log-probabilities (logprobs) |
+| `cards.confidence.method.template` | 模板/外部给定 | template / given from outside |
+| `cards.confidence.method.tool_success_rate` | 工具成功率 | tool success rate |
+| `cards.confidence.method.unknown` | 来源不可判 | source not decidable |
+| `cards.confidence.samples` |  · 样本 {samples} 条 |  - {samples} samples |
 | `cards.confidence.source` | 置信度来源：{method} | Confidence source: {method} |
+| `cards.confidence.source.none` | 置信度来源：无来源可判 | Confidence source: none to judge from |
+| `cards.confidence.unknown` | 置信度：无来源可判（不显示数字） | Confidence: no source to judge from (no number shown) |
 | `cards.evidence.aria` | 证据：{caption} | Evidence: {caption} |
 | `cards.evidence.caption.empty` | 无说明 | No caption |
 | `cards.evidence.diff.open` | 放大差异 | Enlarge diff |
 | `cards.evidence.diff.summary` | 查看差异文本 | Show diff text |
 | `cards.evidence.fetch.failed` | 证据文件没有取回。 | The evidence file could not be fetched. |
+| `cards.evidence.fingerprint` | 指纹：{sha} | Fingerprint: {sha} |
+| `cards.evidence.fingerprint.aria` | 这份证据的指纹 {sha}（sha256，可按字节离线复算） | The fingerprint of this evidence {sha} (sha256, recomputable offline byte by byte) |
 | `cards.evidence.kind.diagram` | 流程图 | Diagram |
 | `cards.evidence.kind.diff` | 差异 | Diff |
 | `cards.evidence.kind.file` | 证据文件 | Evidence file |
 | `cards.evidence.kind.screenshot` | 截图 | Screenshot |
 | `cards.evidence.modal.title` | 证据详情 | Evidence details |
 | `cards.evidence.open` | 放大证据 {caption} | Enlarge evidence {caption} |
+| `cards.evidence.provided_by.runtime` | 来源：系统随决定自动生成（provided_by=runtime） | Source: generated by the system with the decision (provided_by=runtime) |
+| `cards.evidence.provided_by.server` | 来源：服务端生成（provided_by=server） | Source: produced by the server (provided_by=server) |
+| `cards.evidence.provided_by.unknown` | 来源：记录里没有标注 provided_by，界面不猜 | Source: the record does not state provided_by - the page does not guess |
+| `cards.evidence.provided_by.user` | 来源：用户主动上传（provided_by=user） | Source: uploaded by the user (provided_by=user) |
 | `cards.evidence.remote` | 证据文件在服务端，离线预览只显示说明。 | The evidence file is on the server; offline shows the caption only. |
+| `cards.evidence.screenshot.pending` | 截图证据待接入：运行时不自动产截图（D-7），需由执行端或用户主动上传。 | Screenshot evidence is not wired yet: the runtime never captures screenshots automatically (D-7); an executor or the user has to upload one. |
+| `cards.evidence.size` | 大小：{size} | Size: {size} |
 | `cards.evidence.title` | 多媒体证据 | Multimedia evidence |
+| `cards.evidence.vote.count.pending` | 反馈已落账；这份响应没带回计数，计数以账本为准，刷新后显示。 | Feedback landed; this response carried no counts. The ledger owns those numbers - they show after a refresh. |
 | `cards.evidence.vote.dislike` | 没帮助 | Not helpful |
 | `cards.evidence.vote.dislike.aria` | 这条证据没帮助（{count}） | This evidence is not helpful ({count}) |
 | `cards.evidence.vote.done` | 已记录你的反馈。 | Your feedback is recorded. |
 | `cards.evidence.vote.failed` | 反馈没有提交成功。 | The feedback was not submitted. |
+| `cards.evidence.vote.failed.code` | 反馈没有提交成功（{code}）。 | Your feedback was not submitted ({code}). |
 | `cards.evidence.vote.like` | 有帮助 | Helpful |
 | `cards.evidence.vote.like.aria` | 这条证据有帮助（{count}） | This evidence is helpful ({count}) |
 | `cards.evidence.vote.offline` | 离线预览：投票需要服务端。 | Offline preview: voting needs the server. |
+| `cards.evidence.zoom.aria` | 放大查看{kind}证据（不遮挡页面） | Enlarge {kind} evidence (does not block the page) |
+| `cards.evidence.zoom.close` | 关闭放大视图 | Close the enlarged view |
+| `cards.evidence.zoom.nonmodal` | 这是非模态放大层：页面照常可读可滚，关掉即可继续操作。 | This is a non-modal layer: the page stays readable and scrollable; close it and continue. |
 | `cards.rollback.blocked` | 回滚被阻塞：还有依赖未处理。 | Rollback is blocked: dependent steps are still open. |
+| `cards.rollback.blocked.already` | 撤销日志里已有这一步的回滚，界面不再提供回滚入口。 | The undo journal already holds a rollback for this step, so the page offers no rollback entry. |
+| `cards.rollback.blocked.code` | 阻断码：{code} | Blocker code: {code} |
+| `cards.rollback.blocked.detail` | 被阻塞的关联步骤（{count} 条） | Blocked related steps ({count}) |
+| `cards.rollback.blocked.irreversible` | 服务端把这一步判为不可逆，界面不提供回滚。 | The server judged this step irreversible, so the page offers no rollback. |
+| `cards.rollback.blocked.no_effect` | 这一步没有可撤销的外部副作用，服务端不给回滚。 | This step has no external side effect to undo, so the server refuses the rollback. |
+| `cards.rollback.blocked.note` | 回滚被阻塞：下面是读时派生的阻断明细。 | Rollback is blocked: the read-time blocker details are below. |
+| `cards.rollback.blocked.reason_label` | 服务端给出的原因（原文照展示） | Reason from the server (shown verbatim) |
 | `cards.rollback.button` | 回滚这一步 | Roll back this step |
 | `cards.rollback.confirm.body` | 将尝试撤销这一步。回执状态以服务端为准，不会写成已恢复。 | This will attempt to undo the step. The receipt comes from the server and is never written as restored. |
+| `cards.rollback.confirm.describe` | 此操作将撤销【{describe}】 | This operation will undo: {describe} |
 | `cards.rollback.confirm.title` | 确认回滚 | Confirm rollback |
 | `cards.rollback.confirm.yes` | 确认回滚 | Roll back |
+| `cards.rollback.confirm.yes_all` | 确认回滚（含依赖，带 confirm_all） | Roll back (dependencies included, with confirm_all) |
 | `cards.rollback.done` | 回滚已提交，正在刷新记录。 | Rollback submitted; refreshing records. |
+| `cards.rollback.done.receipt` | 回滚已提交；逆向回执状态：{state}（回执以服务端为准）。 | Rollback submitted; inverse receipt state: {state} (the receipt is the server's). |
+| `cards.rollback.error.rollback_already_rolled_back` | 这一步已经回滚过（ROLLBACK_ALREADY_ROLLED_BACK）。 | This step was already rolled back (ROLLBACK_ALREADY_ROLLED_BACK). |
+| `cards.rollback.error.rollback_dependents_irreversible` | 依赖闭包里有撤销不掉的成员（ROLLBACK_DEPENDENTS_IRREVERSIBLE）。 | The dependency closure holds members that cannot be undone (ROLLBACK_DEPENDENTS_IRREVERSIBLE). |
+| `cards.rollback.error.rollback_dependents_pending` | 依赖步骤还没确认（ROLLBACK_DEPENDENTS_PENDING）：确认后带 confirm_all 重试。 | Dependent steps are not confirmed yet (ROLLBACK_DEPENDENTS_PENDING): confirm and retry with confirm_all. |
+| `cards.rollback.error.rollback_field_invalid` | 回滚请求的字段不合法（ROLLBACK_FIELD_INVALID）。 | The rollback request carries an invalid field (ROLLBACK_FIELD_INVALID). |
+| `cards.rollback.error.rollback_idempotency_mismatch` | 这个幂等键已用于另一个 action_id（ROLLBACK_IDEMPOTENCY_MISMATCH）。 | This idempotency key already belongs to another action_id (ROLLBACK_IDEMPOTENCY_MISMATCH). |
+| `cards.rollback.error.rollback_inverse_failed` | 逆向动作失败（ROLLBACK_INVERSE_FAILED）。 | The inverse action failed (ROLLBACK_INVERSE_FAILED). |
+| `cards.rollback.error.rollback_journal_unreadable` | 撤销日志读不动（ROLLBACK_JOURNAL_UNREADABLE），界面不宣称可回滚。 | The undo journal cannot be read (ROLLBACK_JOURNAL_UNREADABLE); the page does not claim the step is reversible. |
+| `cards.rollback.error.rollback_not_found` | 找不到要回滚的动作（ROLLBACK_NOT_FOUND）。 | The action to roll back was not found (ROLLBACK_NOT_FOUND). |
+| `cards.rollback.error.rollback_not_reversible` | 服务端判定这一步不可逆（ROLLBACK_NOT_REVERSIBLE）。 | The server judged this step irreversible (ROLLBACK_NOT_REVERSIBLE). |
 | `cards.rollback.failed` | 回滚没有成功。 | The rollback did not succeed. |
+| `cards.rollback.inverse.label` | 逆向动作：{op} | Inverse action: {op} |
 | `cards.rollback.irreversible` | 这一步标记为不可逆，界面不提供回滚。 | This step is marked irreversible, so the page offers no rollback. |
+| `cards.rollback.journal_unreadable` | 撤销日志读不动：界面收起回滚入口，绝不宣称可回滚。 | The undo journal cannot be read: the page closes the rollback entry and never claims the step is reversible. |
+| `cards.rollback.kept_declared` | 这条记录的回滚状态来自来源声明（导入字段），界面按来源展示，不改写成产品判定。 | This record's rollback state came from the source declaration (imported field); the page shows the source value and does not overwrite it with a product verdict. |
+| `cards.rollback.next.ref` | 这一步的回滚补偿记录 {id} | Rollback compensation record for this step: {id} |
+| `cards.rollback.next.ref.aria` | 跳到这一步的回滚补偿记录 {id} | Go to the rollback compensation record for this step: {id} |
 | `cards.rollback.no_permission` | 当前角色没有干预权限。 | This role cannot intervene. |
+| `cards.rollback.no_side_effect` | 这条记录没有工具动作，没有可撤销的外部副作用，界面不提供回滚。 | This record has no tool action, so there is no external side effect to undo; the page offers no rollback. |
 | `cards.rollback.offline` | 离线预览：回滚需要服务端，按钮暂时不可用。 | Offline preview: rollback needs the server, so the button is unavailable. |
 | `cards.rollback.pending` | 正在回滚… | Rolling back… |
+| `cards.rollback.pilot.chip` | 沙箱试点 | Sandbox pilot |
+| `cards.rollback.pilot.note` | 沙箱试点只表示真实写入发生在显式白名单的沙箱根内；外部生产系统未触碰，不得说成外部系统已撤销。 | Sandbox pilot only means the real write happened inside the explicitly whitelisted sandbox root; the production system was not touched, and it is never phrased as the external system having undone the step. |
+| `cards.rollback.plan.blocked_stop` | 计划阻断：没有可执行的撤销路径，界面不发送请求。 | The plan is blocked: there is no executable undo path, so the page sends nothing. |
+| `cards.rollback.plan.blockers` | 阻断原因（服务端逐条给出，界面照实展示） | Blockers (one per reason, straight from the server) |
+| `cards.rollback.plan.close` | 关闭（不回滚） | Close (no rollback) |
+| `cards.rollback.plan.confirm_needed` | 计划要求二次确认：确认后请求带 confirm_all=true。 | The plan requires a second confirmation: after you confirm, the request carries confirm_all=true. |
+| `cards.rollback.plan.deps` | 将一并回滚的后续步骤（{count} 个） | Later steps rolled back together ({count}) |
+| `cards.rollback.plan.deps.aria` | 依赖步骤 {id} | Dependent step {id} |
+| `cards.rollback.plan.deps.none` | 没有后续依赖：只回滚这一步。 | No later dependencies: only this step is rolled back. |
+| `cards.rollback.plan.failed` | 回滚计划没有读回来，本次不发送回滚请求。 | The rollback plan did not come back, so no rollback request is sent. |
+| `cards.rollback.plan.loading` | 正在读取回滚计划：依赖闭包、阻断原因与提示都由服务端算出。 | Reading the rollback plan: the dependency closure, blockers and notices all come from the server. |
+| `cards.rollback.plan.member.aria` | 闭包成员 {id} | Closure member {id} |
+| `cards.rollback.plan.notices` | 非阻断提示（必须显示，不静默） | Non-blocking notices (always shown, never silent) |
+| `cards.rollback.plan.order` | 执行顺序（深→浅，目标在末位）：{count} 条 | Execution order (deepest first, target last): {count} records |
+| `cards.rollback.plan.retry` | 重新读取计划 | Read the plan again |
+| `cards.rollback.plan.scope` | 本次将回滚 {count} 条记录（含依赖闭包，目标在末位） | This rollback covers {count} records (dependency closure included, target last) |
+| `cards.rollback.plan.target` | 目标步骤：{id} | Target step: {id} |
+| `cards.rollback.plan.tool` | 目标工具：{tool} | Target tool: {tool} |
+| `cards.rollback.plan.truncated` | 依赖比深度上限更深：{count} 个成员未纳入本次范围（丢弃条数如实报）。 | Dependencies run deeper than the depth cap: {count} members are outside this scope (the dropped count is stated). |
+| `cards.rollback.receipt.executed_registry` | 注册表级执行器已真实执行逆向动作；外部回执未上报。 | The registry executor really ran the inverse action; no external receipt was reported. |
+| `cards.rollback.receipt.executed_sandbox` | 沙箱试点：逆向动作在显式白名单的沙箱根内真实写入，外部生产系统未触碰。 | Sandbox pilot: the inverse action really wrote inside the explicitly whitelisted sandbox root; the production system was not touched. |
+| `cards.rollback.receipt.failed` | 逆向动作失败：本次没有落终态成功，请核对撤销日志。 | The inverse action failed: no terminal success was recorded, check the undo journal. |
+| `cards.rollback.receipt.label` | 逆向回执：{state} | Inverse receipt: {state} |
+| `cards.rollback.receipt.note` | 回执文案（服务端原文）：{note} | Receipt wording (verbatim from the server): {note} |
+| `cards.rollback.receipt.simulated_local` | 本地模拟：逆向动作只在本地记录，外部系统未调用（不写成已恢复）。 | Local simulation: the inverse action is only recorded locally, no external system was called (never written as restored). |
+| `cards.rollback.receipt.unreported` | 外部系统未回执（execution_receipt.state=unreported）。 | No external receipt (execution_receipt.state=unreported). |
+| `cards.rollback.record.level` | 记录级补偿：只撤销本系统内的记录级效果，已生成与已外发的内容不可撤回。 | Record-level compensation: only the record-level effect inside this system is undone; content already generated or sent cannot be recalled. |
 | `cards.rollback.ref` | 被回滚的步骤 {id} | Rolled-back step {id} |
 | `cards.rollback.ref.aria` | 跳到被回滚的步骤 {id} | Go to the rolled-back step {id} |
 | `cards.rollback.ref.missing` | 原步骤不在当前列表里。 | The original step is not in this list. |
 | `cards.rollback.rolled` | 已回滚 | Rolled back |
+| `cards.rollback.rolled.note` | 这一步已在撤销范围内（状态由服务端读时派生，不落盘）。 | This step is inside the undo scope (the state is derived at read time, never stored). |
+| `cards.rollback.timeline.ref` | 时间轴虚线指向被撤销的原步骤 {id} | The dashed timeline link points at the original step this rollback undid: {id} |
+| `cards.rollback.timeline.rolled` | 时间轴：这一步已回滚 | Timeline: this step is rolled back |
+| `cards.rollback.view_partial` | 这一批只核了前 {planned} 条（上限 {limit}），其余未判定，界面不宣称全部可回滚。 | Only the first {planned} rows of this batch were checked (cap {limit}); the rest are undecided, so the page never claims everything is reversible. |
 
 ## `compare`（28 个）
 
@@ -362,17 +550,22 @@
 | `error.missing_key` | 文案缺失：{key} | Missing text: {key} |
 | `error.record_invalid` | 这条记录不符合 ActionRecord v1.1，已跳过 | This record does not match ActionRecord v1.1 and was skipped |
 
-## `export`（27 个）
+## `export`（48 个）
 
 | key | zh | en |
 | --- | --- | --- |
 | `export.action.csv` | 下载 CSV | Download CSV |
 | `export.action.pdf` | 导出 PDF | Export PDF |
 | `export.action.print` | 打印 / 另存 PDF | Print / save as PDF |
+| `export.anchor.cid` | 离线 CID 由导出字节可复算，但未锚定（no anchor）：本机无 IPFS pinning、无链上交易 | The offline CID is recomputable from the exported bytes but is not anchored (no anchor): no IPFS pinning, no on-chain transaction |
+| `export.anchor.deferred` | B8-3「上链 ≤2 分钟」延后而非删除：提供 RPC / 密钥后启用，届时仍是验收项 | B8-3 on-chain within 2 minutes is deferred, not deleted: it stays an acceptance item once an RPC and keys are provided |
+| `export.anchor.state` | 存证降级态：anchor_state = unavailable（未接入锚定后端，待接入） | Evidence anchoring is degraded: anchor_state = unavailable (no anchor backend, awaiting integration) |
+| `export.anchor.tx` | eth_tx_hash 恒为 None：该值不存在，不是「待填」 | eth_tx_hash is always None: the value does not exist, it is not a field left to fill in |
 | `export.aria.csv` | 下载审计记录的 CSV 文件 | Download the audit trail as a CSV file |
 | `export.aria.pdf` | 导出审计记录的 PDF；服务器没有 PDF 引擎时给出可打印页面 | Export the audit trail as PDF; a printable page when the server has no PDF engine |
 | `export.aria.print` | 打开可打印的审计页面，在浏览器里按 Ctrl+P 存成 PDF | Open the printable audit page and press Ctrl+P to save it as PDF |
 | `export.error.chain_broken` | 审计哈希链已断开：为避免给出不可信的证据，服务器暂停导出。 | The audit hash chain is broken: the server refuses to export untrustworthy evidence. |
+| `export.error.compliance_chain_broken` | 导出前校验未通过：审计链或导出账本链已断裂，服务器一个字都没写——零证据文件、零导出记录。请先取证核对链头，按追加式纪律处理后再重试。 | Pre-export verification failed: the audit chain or the export ledger chain is broken, and the server wrote nothing at all - no evidence file, no export record. Verify the chain head and repair it append-only, then retry. |
 | `export.error.format_invalid` | 导出格式不支持：只支持 csv、html、pdf。 | Export format not supported: csv, html and pdf only. |
 | `export.error.generic` | 导出失败：请稍后重试，服务端返回里有详情。 | The export failed: try again later, the server message carries the detail. |
 | `export.error.network` | 连不上服务：导出失败，请确认本地服务已启动。 | Cannot reach the service: the export failed, so make sure the local server is running. |
@@ -384,25 +577,54 @@
 | `export.feedback.done` | 已导出 {format}：{rows} 条，文件 {filename}（内容指纹 {sha}）。 | Exported {format}: {rows} entries, file {filename} (content fingerprint {sha}). |
 | `export.feedback.idle` | 选一个格式：CSV 用来下载，HTML 用来打印，PDF 由服务器生成。 | Pick a format: CSV to download, HTML to print, PDF built by the server. |
 | `export.feedback.print_opened` | 已打开可打印页面：在浏览器按 Ctrl+P 就能存成 PDF。 | The printable page opened: press Ctrl+P in the browser to save it as PDF. |
+| `export.format.current` | 导出格式：csv / pdf / 可打印 html（点哪个按钮就是哪种格式） | Export formats: csv / pdf / printable html (the button you click picks the format) |
 | `export.hint` | 把审计记录导出成文件，交给家人、法务，或自己留档。 | Save the audit trail as a file for family, legal, or your own records. |
 | `export.note.need_permission` | 当前角色没有导出能力（audit.export）：可以查看，不能导出。 | This role has no export ability (audit.export): you may read, not export. |
 | `export.note.no_popup` | 浏览器拦住了新窗口：请允许弹出窗口，或自己打开 api/audit/export?format=html。 | The browser blocked the new tab: allow pop-ups, or open api/audit/export?format=html yourself. |
 | `export.note.offline` | 没有可连接的服务：导出需要连上本地服务后再试。 | There is no service to talk to: connect the local server and try again. |
 | `export.note.pdf_fallback` | 服务器没有 PDF 引擎：已给出可打印页面，按 Ctrl+P 就能存成 PDF。 | The server has no PDF engine, so a printable page opened instead: press Ctrl+P to save it as PDF. |
 | `export.note.pdf_font` | PDF 已生成，但服务器里没有可用中文字体：PDF 里的中文可能被丢弃。要留完整中文，请用「打印 / 另存 PDF」。 | The PDF was built, but the server has no Chinese font available: Chinese text may be dropped from the PDF. Use print / save as PDF to keep every character. |
+| `export.progress.aria` | 正在导出 | Export in progress |
+| `export.progress.busy` | 正在导出，请稍候 | Exporting, please wait |
+| `export.range.all_time` | 全部时间 | All time |
+| `export.range.label` | 本次导出范围：{value} | This export covers: {value} |
+| `export.range.limit` | 条数上限 {value} | Row cap {value} |
+| `export.range.note` | 范围继承审计筛选，本面板只读展示，不改写筛选条件 | The range follows the audit filters; this panel only reads them and never rewrites them |
+| `export.result.anchored` | 该文件未锚定（no anchor）/ 待接入：eth_tx_hash 不存在，本机没有链上交易 | This file is not anchored (no anchor) / awaiting integration: eth_tx_hash does not exist and no on-chain transaction exists on this machine |
+| `export.result.empty` | 本次会话还没有导出结果 | No export result in this session yet |
+| `export.result.fallback` | PDF 不可用，已退回可打印 HTML（{value}） | PDF was unavailable and fell back to printable HTML ({value}) |
+| `export.result.file` | 文件名 {value} | File name {value} |
+| `export.result.format` | 格式 {value} | Format {value} |
+| `export.result.rows` | 行数 {value} | Rows {value} |
+| `export.result.sha` | 内容指纹 sha256：{value} | Content fingerprint sha256: {value} |
+| `export.result.title` | 导出结果 | Export result |
+| `export.result.verify` | 离线验证：python tools/verify_export.py <导出文件>，逐字节复算链与列面 | Offline check: python tools/verify_export.py <exported file> recomputes the chain and the column face byte by byte |
 | `export.state.last` | 最近一次：{format}，{rows} 条，指纹 {sha}，文件 {filename} | Last export: {format}, {rows} entries, fingerprint {sha}, file {filename} |
 | `export.state.none` | 还没有导出过审计记录。 | No audit export yet. |
 | `export.title` | 导出审计 | Export audit |
 
-## `groups`（75 个）
+## `groups`（105 个）
 
 | key | zh | en |
 | --- | --- | --- |
+| `groups.agents.abbr_shared` | {count} 个 Agent 的缩写相同：用全称区分，不改写缩写规则、不加编号后缀。 | {count} agents share an abbreviation: the full name disambiguates them; the abbreviation rule is not rewritten and no index suffix is added. |
+| `groups.agents.color_shared` | {count} 个 Agent 共用同一色位：后端调色板只有 {size} 色，而并发上限是 10 个 Agent；唯一标识是 Agent 名与缩写，不是色块。 | {count} agents share a colour slot: the backend palette holds only {size} colours while the concurrency limit is 10 agents, so the colour chip is not the identity - the agent name and abbreviation are. |
 | `groups.agents.count` | {count} 个 | {count} |
+| `groups.agents.max_note` | 已展示 {shown} 个 Agent（并发上限 {max}）：本页不截断、不静默隐藏。 | Showing {shown} agents (concurrency limit {max}): this page never truncates and never silently hides an agent. |
 | `groups.agents.none` | 没有 Agent 信息。 | No agent information. |
 | `groups.agents.stuck` | 卡住 | stuck |
 | `groups.agents.stuck_count` | 卡住的 Agent：{count} 个 | Stuck agents: {count} |
 | `groups.agents.title` | 参与 Agent | Agents |
+| `groups.alias.basis` | 取法：{basis} | provenance: {basis} |
+| `groups.alias.basis.absent` | 响应未回传 updated_at_basis | the response sent no updated_at_basis |
+| `groups.alias.basis.closed_at` | 取组账本的 closed_at（组已关闭） | the group ledger's closed_at (the group is closed) |
+| `groups.alias.basis.created_at_fallback` | 组内没有可解析事件 → 回落 created_at（不是服务端当前时间） | no parsable event in the group -> created_at fallback (never the server clock) |
+| `groups.alias.basis.last_event` | 取组内最后事件的时间（可解析 timestamp 的最大值） | the last event in the group (largest parsable timestamp) |
+| `groups.alias.fields` | 响应层别名字段：{fields} | Response-level alias fields: {fields} |
+| `groups.alias.fields.missing` | 响应未回传 alias_fields：本页不自行声明哪些字段是别名。 | The response sent no alias_fields: this page does not declare which fields are aliases. |
+| `groups.alias.note.missing` | 响应未回传 note：口径没有随数据一起说明，界面不自行补写口径。 | The response carried no note: the provenance was not stated with the data, and the page does not write one in. |
+| `groups.alias.title` | 别名口径（响应层只读派生，账本实体未改） | Alias provenance (read-only response view; ledger entities unchanged) |
+| `groups.alias.updated.absent` | 响应未回传 updated_at：本页不用浏览器时间补齐。 | The response sent no updated_at: the page does not fill it in with the browser clock. |
 | `groups.create.done` | 任务组已创建。 | Task group created. |
 | `groups.create.field.agents` | Agent ID（逗号或换行分隔） | Agent IDs (comma or newline separated) |
 | `groups.create.field.objective` | 目标（可选） | Objective (optional) |
@@ -411,11 +633,13 @@
 | `groups.create.required` | 请填写标题，并至少给出一个 Agent ID。 | Fill in a title and at least one agent ID. |
 | `groups.create.submit` | 创建 | Create |
 | `groups.create.title` | 新建任务组 | New task group |
+| `groups.create.unavailable` | 基线未挂载 POST /api/groups（零新路由）：本页只做本地校验，提交时显示服务端的真实返回码，不假装建组成功。 | The baseline does not mount POST /api/groups (zero new routes): the form validates locally and shows the server's real code, never a fake success. |
 | `groups.detail.empty` | 从上面的列表里选一个任务组。 | Pick a task group from the list above. |
 | `groups.detail.group` | 任务组 {title} | Group {title} |
 | `groups.detail.reading` | 正在读取聚合结果… | Reading the aggregate... |
 | `groups.detail.refresh` | 刷新 | Refresh |
 | `groups.detail.status` | 状态 {status} | state {status} |
+| `groups.detail.updated` | 更新于 {time} | Updated {time} |
 | `groups.error.group_agents_exceeded` | Agent 数量超过上限（最多 10 个）。 | Too many agents (the limit is 10). |
 | `groups.error.group_closed` | 任务组已关闭。 | That task group is closed. |
 | `groups.error.group_field_invalid` | 任务组字段不合法。 | A task group field is not valid. |
@@ -423,6 +647,9 @@
 | `groups.error.group_write_failed` | 任务组写入失败。 | Writing the task group failed. |
 | `groups.intro` | 同一任务里多个 Agent 的记录按时间合并；进度、耗时与卡住的 Agent 都来自服务端聚合结果。 | Records from every agent in one task are merged by time; progress, elapsed time and stuck agents all come from the server aggregate. |
 | `groups.list.agents` | {count} 个 Agent | {count} agents |
+| `groups.list.col.created` | 创建于 | created |
+| `groups.list.col.status` | 状态 | status |
+| `groups.list.col.updated` | 更新于（含取法） | updated (with provenance) |
 | `groups.list.count` | 共 {count} 组 | {count} groups |
 | `groups.list.created` | 创建于 {time} | created {time} |
 | `groups.list.empty` | 还没有任务组。 | No task group yet. |
@@ -433,13 +660,17 @@
 | `groups.offline` | 没有连上服务端：聚合视图需要服务端回答，页面不会用示例数据顶替。 | No server connection: the aggregate view needs server answers and will not substitute sample data. |
 | `groups.progress.bar` | 完成比例 | Done ratio |
 | `groups.progress.label` | {done} 完成 / {running} 进行中 / {needs_me} 待人工 / 共 {total} | {done} done / {running} running / {needs_me} need a human / {total} total |
+| `groups.progress.members_not_denominator` | 成员数 {members}：只说明谁参与，不进进度分母。 | {members} members: they state who participates; they are not the progress denominator. |
+| `groups.progress.note` | 分母 = 本组视图内的记录条数（取自响应的 progress.total），不是成员数、也不是预估数。 | Denominator = the record count inside this group view (progress.total from the response), never a member count and never an estimate. |
 | `groups.progress.percent` | {percent}% | {percent}% |
 | `groups.progress.title` | 进度 | Progress |
 | `groups.resources.cost` | 总成本 {value} | Total cost {value} |
 | `groups.resources.elapsed` | 总耗时 {value} | Total elapsed {value} |
+| `groups.resources.elapsed_note` | 总耗时取服务端聚合窗口的确定性起止（window.total_ms），不使用浏览器当前时间。 | Elapsed time comes from the server's deterministic aggregate window (window.total_ms), not from the browser clock. |
 | `groups.resources.title` | 资源 | Resources |
 | `groups.resources.unknown` | 服务端未提供 | not provided by the server |
 | `groups.resources.window` | 时间窗 {start} — {end} | Window {start} - {end} |
+| `groups.resources.window.absent` | 时间窗未提供：组内没有可解析的时间戳。 | No window: the group has no parsable timestamps. |
 | `groups.status.approved` | 已批准 | approved |
 | `groups.status.expired` | 已过期 | expired |
 | `groups.status.failed` | 失败 | failed |
@@ -455,6 +686,7 @@
 | `groups.stuck.since` | 最后动作 {time} | Last action {time} |
 | `groups.stuck.title` | 卡住的 Agent | Stuck agents |
 | `groups.tab` | 多 Agent 聚合 | Multi-agent |
+| `groups.timeline.bad_time` | 时间戳缺失或不可解析：按服务端结果排在末尾，不猜时间。 | Missing or unparsable timestamp: kept at the end exactly as the server ordered it, no guessed time. |
 | `groups.timeline.col.action` | 动作 | Action |
 | `groups.timeline.col.agent` | Agent | Agent |
 | `groups.timeline.col.status` | 状态 | State |
@@ -467,8 +699,15 @@
 | `groups.timeline.filter.none` | 全不选 | Clear all |
 | `groups.timeline.hidden` | {count} 个 Agent 被隐藏 | {count} agents hidden |
 | `groups.timeline.no_match` | 当前过滤条件下没有记录。 | No record matches the current filter. |
+| `groups.timeline.sort.aria` | 切换合并时间线的时间顺序 | Switch the merged timeline's time order |
+| `groups.timeline.sort.asc` | 时间升序 | Time ascending |
+| `groups.timeline.sort.desc` | 时间降序 | Time descending |
 | `groups.timeline.title` | 合并时间线 | Merged timeline |
 | `groups.title` | 多 Agent 任务聚合 | Multi-agent task aggregation |
+| `groups.ungrouped.count` | {count} 条记录没有 group_id | {count} records have no group_id |
+| `groups.ungrouped.more` | 另有 {count} 条未逐条列出（计数已包含）。 | {count} more are not listed one by one (the count includes them). |
+| `groups.ungrouped.note` | 这些记录没有 group_id：单列展示，不猜进任何任务组。 | These records carry no group_id: they get their own column and are never guessed into a group. |
+| `groups.ungrouped.title` | 无归属记录（ungrouped） | Ungrouped records |
 | `groups.unit.hours` | {value} 小时 | {value} h |
 | `groups.unit.minutes` | {value} 分钟 | {value} min |
 | `groups.unit.ms` | {value} 毫秒 | {value} ms |
@@ -767,6 +1006,32 @@
 | `role.editor` | 编辑者 | Editor |
 | `role.unknown` | 未知角色 | Unknown role |
 | `role.viewer` | 只读 | Viewer |
+
+## `rollback`（21 个）
+
+| key | zh | en |
+| --- | --- | --- |
+| `rollback.error.rollback_already_rolled_back` | 这一步已经回滚过（ROLLBACK_ALREADY_ROLLED_BACK）。 | That action was already rolled back (ROLLBACK_ALREADY_ROLLED_BACK). |
+| `rollback.error.rollback_dependents_irreversible` | 依赖闭包里的成员没有逆向操作，只有可逆成员能回滚（confirm_all=true 只滚这些）（ROLLBACK_DEPENDENTS_IRREVERSIBLE）。 | Dependent steps in the closure have no inverse operation; only the reversible members can be rolled back, and confirm_all=true rolls just those (ROLLBACK_DEPENDENTS_IRREVERSIBLE). |
+| `rollback.error.rollback_dependents_pending` | 后续步骤依赖这一步：一起确认（confirm_all=true）或先把它们回滚（ROLLBACK_DEPENDENTS_PENDING）。 | Later actions depend on this one; confirm them together (confirm_all=true) or roll them back first (ROLLBACK_DEPENDENTS_PENDING). |
+| `rollback.error.rollback_field_invalid` | 回滚请求的字段缺失或类型不对（ROLLBACK_FIELD_INVALID）。 | A rollback field is missing or has the wrong type (ROLLBACK_FIELD_INVALID). |
+| `rollback.error.rollback_idempotency_mismatch` | 这个幂等键已用于另一个 action_id（ROLLBACK_IDEMPOTENCY_MISMATCH）。 | That idempotency key was already used for a different action_id (ROLLBACK_IDEMPOTENCY_MISMATCH). |
+| `rollback.error.rollback_inverse_failed` | 逆向操作失败；撤销日志记录了尝试过什么（ROLLBACK_INVERSE_FAILED）。 | The inverse operation failed; the journal records what was attempted (ROLLBACK_INVERSE_FAILED). |
+| `rollback.error.rollback_journal_unreadable` | 撤销日志读不动，回滚状态未知；本次没有计划也没有执行任何撤销（ROLLBACK_JOURNAL_UNREADABLE）。 | The undo journal cannot be read, so rollback state is unknown; nothing was planned or executed (ROLLBACK_JOURNAL_UNREADABLE). |
+| `rollback.error.rollback_not_found` | 没有记录的 action_id 对得上（ROLLBACK_NOT_FOUND）。 | No record matches that action_id (ROLLBACK_NOT_FOUND). |
+| `rollback.error.rollback_not_reversible` | 这一步没有登记逆向操作，不能回滚（ROLLBACK_NOT_REVERSIBLE）。 | That action has no registered inverse operation, so it cannot be rolled back (ROLLBACK_NOT_REVERSIBLE). |
+| `rollback.inverse.cancel_booking` | 取消预约 / 订单（取消本身是一条新的补偿记录） | Cancel the booking / order (the cancel is a new compensation record) |
+| `rollback.inverse.delete_generated` | 删除生成产物 | Delete the generated artefact |
+| `rollback.inverse.escalate_contract_rescission` | 升级解约 / 作废流程（合同）：本系统不撤回签署，只登记升级请求与补偿记录 | Escalate to a contract rescission / voiding process: this system does not withdraw the signature, it only records the escalation request and the compensation record |
+| `rollback.inverse.escalate_financial_reversal` | 升级人工冲正流程（资金）：本系统不撤销这笔资金转移，只登记升级请求与补偿记录 | Escalate to a manual payment reversal: this system does not reverse the transfer, it only records the escalation request and the compensation record |
+| `rollback.inverse.irreversible_contract` | 签署不可逆：签名后的合同文本已进入合同相对方与存证系统，本系统无法单方面撤回签署；请走解约 / 作废 / 补充协议流程，并追加一条补偿记录（不得宣称签署已撤销） | Signature is irreversible: the signed text already reached the counterparty and the evidence store, so this system cannot withdraw the signature; run the rescission / voiding / addendum process and append a compensation record (never claim the signature was undone) |
+| `rollback.inverse.irreversible_financial` | 资金转移不可逆：钱已离开本系统管辖的账户边界，本系统没有单方面撤销通道；请走支付 / 银行通道的人工冲正，再追加一条补偿记录留证（不得宣称这一步已撤销） | Money transfer is irreversible: the funds left the account boundary this system governs and there is no unilateral reversal channel; run the manual reversal through the payment / banking channel and append a compensation record (never claim this step was undone) |
+| `rollback.inverse.noop_read` | 只读动作：没有外部副作用，无需撤销 | Read-only action: no external side effect, nothing to undo |
+| `rollback.inverse.restore_file` | 还原被删除的文件（前态取自本系统的撤销日志） | Restore the deleted file (pre-state taken from this system's undo journal) |
+| `rollback.inverse.revoke_message` | 登记消息的撤回（外部收件箱不受本系统控制） | Register the message recall (external inboxes are outside this system's control) |
+| `rollback.inverse.undo_config_change` | 撤销配置 / 权限变更 | Undo the configuration / permission change |
+| `rollback.inverse.undo_note` | 撤销笔记写入 | Undo the note write |
+| `rollback.inverse.undo_write` | 记录级补偿：只撤销本系统内的写入事实；已花掉的 token 与已生成 / 已外发的内容不可撤回，界面不得写成已撤回生成结果 | Record-level compensation: only the write inside this system is undone; tokens already spent and content already generated or sent cannot be recalled, and the page never says the generated result was recalled |
 
 ## `secretariat`（165 个）
 
@@ -1086,7 +1351,7 @@
 | `settings.test_llm.probe_only` | 只发了一段自检提示词；正式生成发送的是脱敏后的事实。 | One self-check prompt was sent; real generation sends redacted facts. |
 | `settings.title` | 设置 | Settings |
 
-## `sharing`（70 个）
+## `sharing`（99 个）
 
 | key | zh | en |
 | --- | --- | --- |
@@ -1103,10 +1368,22 @@
 | `sharing.error.share_token_invalid` | 分享令牌无效。 | The share token is not valid. |
 | `sharing.error.share_token_used` | 这条分享令牌已经被使用过了。 | That share token has already been used. |
 | `sharing.error.share_write_failed` | 共享记录写入失败。 | Writing the share record failed. |
+| `sharing.gate.basis` | 判定依据：{reason} | Decision basis: {reason} |
+| `sharing.gate.denied` | 服务端拒绝了这个操作（权限不足）：按钮已收起，可刷新后查看权限。 | The server refused that operation (insufficient permission): the controls are hidden; refresh to re-check. |
+| `sharing.gate.hide.intervene` | 审批与回滚按钮已隐藏：这个任务组你只有查看权限。 | Intervene and rollback hidden: you hold view-only permission in this group. |
+| `sharing.gate.hide.share` | 分享按钮已隐藏：只有组长本人与组内 manage 协作者能发起分享。 | Share hidden: only the group leader or a group manager may start a share. |
+| `sharing.gate.leader` | 你是这个任务组的组长：分享、审批、回滚都可用。 | You lead this group: share, intervene, and rollback are available. |
+| `sharing.gate.level` | 这个任务组你的权限：{level} | Your permission in this group: {level} |
+| `sharing.gate.title` | 这个任务组里你能做什么 | What you may do in this task group |
 | `sharing.group.empty` | 还没有任务组可以共享。 | No task group is available to share yet. |
 | `sharing.group.label` | 选择任务组 | Choose a task group |
 | `sharing.group.none` | 请先选择一个任务组。 | Choose a task group first. |
+| `sharing.group.owner` | 组长 {who} | Owner {who} |
+| `sharing.group.refresh` | 刷新 | Refresh |
+| `sharing.group.share` | 分享这个任务组 | Share this task group |
+| `sharing.group.title` | 任务组与分享入口 | Task groups and sharing |
 | `sharing.intro` | 把任务组共享给其他用户：链接只显示一次；只有查看权限时，本页不会给出审批入口。 | Share a task group with other users: the link is shown once, and a view-only role gets no approval control here. |
+| `sharing.issued.col.action` | 操作 | Actions |
 | `sharing.issued.col.expires` | 到期 | Expires |
 | `sharing.issued.col.group` | 任务组 | Group |
 | `sharing.issued.col.invitee` | 受邀人 | Invitee |
@@ -1114,13 +1391,25 @@
 | `sharing.issued.col.status` | 状态 | State |
 | `sharing.issued.empty` | 还没有发出过分享。 | You have not issued a share yet. |
 | `sharing.issued.revoke` | 撤销 | Revoke |
+| `sharing.issued.revoke.failed` | 撤销被拒绝：只有发起人、组长或组内 manage 协作者可以撤销。 | Revoke refused: only the inviter, the group leader, or a group manager may revoke. |
+| `sharing.issued.revoke.reason` | 撤销原因（可选） | Revoke reason (optional) |
 | `sharing.issued.revoke_confirm` | 确认撤销这条分享？撤销后链接立即失效。 | Revoke this share? The link stops working immediately. |
+| `sharing.issued.revoked` | 已撤销这条分享。 | Share revoked. |
 | `sharing.issued.status.accepted` | 已接受 | accepted |
 | `sharing.issued.status.expired` | 已过期 | expired |
 | `sharing.issued.status.pending` | 待接受 | pending |
 | `sharing.issued.status.revoked` | 已撤销 | revoked |
 | `sharing.issued.title` | 我发出的 | Issued by me |
 | `sharing.offline` | 没有连上服务端：共享列表与权限都来自服务端，页面不会用示例数据顶替。 | No server connection: the share lists and permissions come from the server, so the page shows no substitute data. |
+| `sharing.onbehalf.actor` | 操作人 {actor} | Actor {actor} |
+| `sharing.onbehalf.badge` | 由 {actor} 操作 | Operated by {actor} |
+| `sharing.onbehalf.count` | {count} 条代行记录 | {count} on-behalf records |
+| `sharing.onbehalf.detail` | {actor} 代 {principal} 行使权限；最终责任归 {principal}。 | {actor} acted with {principal}’s permission; final responsibility stays with {principal}. |
+| `sharing.onbehalf.empty` | 这些记录里没有代行操作。 | No on-behalf operations in these records. |
+| `sharing.onbehalf.hint` | 紫色标注来自协作事件账本：谁代谁行使了权限，最终责任归 human_owner。 | Purple marks come from the collaboration event ledger: who acted on whose behalf; final responsibility stays with the human owner. |
+| `sharing.onbehalf.note` | 备注：{note} | Note: {note} |
+| `sharing.onbehalf.principal` | 委托人 {principal} | Principal {principal} |
+| `sharing.onbehalf.title` | 代行标注 | On-behalf notes |
 | `sharing.perms.allowed` | 可以 | allowed |
 | `sharing.perms.approve` | 审批 | Approve |
 | `sharing.perms.denied` | 不可以 | denied |
@@ -1131,8 +1420,13 @@
 | `sharing.perms.via` | 来源 {via} | via {via} |
 | `sharing.perms.view` | 查看 | View |
 | `sharing.perms.view_only` | 当前只有查看权限：本页不会提供审批或管理按钮。 | This role can only view: no approval or manage control is offered on this page. |
+| `sharing.share.close` | 关闭 | Close |
+| `sharing.share.copied` | 已复制到剪贴板。 | Copied to the clipboard. |
+| `sharing.share.copy.failed` | 浏览器不允许自动复制：请手动选中链接复制。 | The browser refused to copy: select the link and copy it manually. |
 | `sharing.share.done` | 分享已创建。 | Share created. |
 | `sharing.share.invitee` | 受邀人 DID（可选） | Invitee DID (optional) |
+| `sharing.share.invitee.hint` | 留空＝任何拿到这条链接的人都能接受。 | Leave empty: anyone holding this link may accept it. |
+| `sharing.share.pending` | 生成中… | Creating… |
 | `sharing.share.permission` | 权限 | Permission |
 | `sharing.share.permission.approve` | 审批 | Approve |
 | `sharing.share.permission.approve.hint` | 可以审批干预请求，不能管理共享。 | Can approve interventions; cannot manage sharing. |
@@ -1176,6 +1470,60 @@
 | `status.skipped` | 已跳过 | Skipped |
 | `status.succeeded` | 已完成 | Done |
 | `status.unknown` | 状态未知 | Unknown status |
+
+## `suggestions`（49 个）
+
+| key | zh | en |
+| --- | --- | --- |
+| `suggestions.action.accept` | 采纳 | Accept |
+| `suggestions.action.busy` | 提交中… | Submitting… |
+| `suggestions.action.denied` | 这个账号没有 intervene.decide：按钮已禁用，建议只能看、不能决定。 | This account has no intervene.decide: the buttons are disabled, suggestions are read-only here. |
+| `suggestions.action.dismiss` | 拒绝 | Dismiss |
+| `suggestions.action.later` | 稍后 | Later |
+| `suggestions.card.occurrences` | 已重复 {count} 次 | repeated {count} times |
+| `suggestions.cooldown.note` | 拒绝之后 7 天内不再为同一组（工具 + 参数）打扰你；到期后趋势还在会再提一次。到期时间由服务端算，界面不自己算。 | After a dismissal the same (tool + param) stays quiet for 7 days; once it expires and the trend is still there, it comes back. The deadline is computed server-side, never in the page. |
+| `suggestions.cooldown.row` | {tool} · {param}：{until} 之前不再提 | {tool} · {param}: silent until {until} |
+| `suggestions.cooldown.title` | 冷却中的建议 | Suggestions in cooldown |
+| `suggestions.cooldown.until` | 冷却至 {until} | Cooling down until {until} |
+| `suggestions.direction.decrease` | 趋势：调低 | Trend: lowering |
+| `suggestions.direction.increase` | 趋势：调高 | Trend: raising |
+| `suggestions.feature.denied` | 这个账号没有 settings.write：开关是服务级的，只读角色不能替所有人关掉建议。 | This account has no settings.write: the switch is service-level, so read-only roles cannot turn suggestions off for everyone. |
+| `suggestions.feature.durable` | 开关是服务级、进程内生效：重启回到默认（开启），本系统不落盘。 | The switch is service-level and in-memory: a restart returns it to the default (on); this build does not persist it. |
+| `suggestions.feature.failed` | 开关没写进去：{code} — {message} | Switch not written: {code} — {message} |
+| `suggestions.feature.note` | 关掉它就停止生成与提示：你的决定照常记录，只是不再提建议。 | Turning it off stops generating and prompting: your decisions are still recorded, you just get no suggestions. |
+| `suggestions.feature.off` | 已关闭 | Off |
+| `suggestions.feature.on` | 已开启 | On |
+| `suggestions.feature.saved` | 已保存：服务端回读 enabled={state} | Saved: server reads back enabled={state} |
+| `suggestions.feature.switch` | 自动化建议开关 | Automation suggestions switch |
+| `suggestions.list.empty` | 现在没有建议：你的决定还没重复到值得提一次的次数。 | No suggestions right now: your decisions have not repeated enough to be worth asking about. |
+| `suggestions.list.title` | 待确认的建议 | Suggestions awaiting your call |
+| `suggestions.poll.note` | 提示不打扰：进入本面板或切换标签时按需查询，最多每 60 秒一次，不阻塞界面。 | Quiet by design: queried on demand when this panel opens or a tab is switched, throttled to once per 60 seconds, never blocking the UI. |
+| `suggestions.poll.timing` | 没有推送通道：这里用的是查询时机（进入面板 / 切换标签 + 60 秒节流），不是服务端推送；刷新页面后「稍后」会重新生效。 | There is no push channel: this uses query moments (panel open / tab switch + 60 s throttle), not server push; after a page refresh “Later” starts counting again. |
+| `suggestions.pref.add.param` | 参数名 | Parameter name |
+| `suggestions.pref.add.submit` | 添加 | Add |
+| `suggestions.pref.add.title` | 手动加一条偏好 | Add a preference manually |
+| `suggestions.pref.add.tool` | 工具名 | Tool name |
+| `suggestions.pref.add.value` | 值 | Value |
+| `suggestions.pref.empty` | 还没有偏好：采纳建议或手动添加之后会出现在这里。 | No preferences yet: accepted suggestions or manual entries show up here. |
+| `suggestions.pref.invalid` | 工具名与参数名不能为空，值要能写成 JSON 标量。 | Tool and parameter names must not be empty, and the value has to be a JSON scalar. |
+| `suggestions.pref.param` | 参数 | Parameter |
+| `suggestions.pref.source` | 来源 | Source |
+| `suggestions.pref.source.manual` | 手动 | Manual |
+| `suggestions.pref.source.suggestion` | 采纳建议 | Accepted suggestion |
+| `suggestions.pref.title` | 已生效的偏好 | Active preferences |
+| `suggestions.pref.tool` | 工具 | Tool |
+| `suggestions.pref.unsupported` | 删除 / 清空偏好：后端未提供该端点（T31 只有读取与同键覆盖写入），界面因此不提供删除按钮。 | Deleting / clearing preferences: the backend does not provide that endpoint (T31 offers read plus same-key upsert only), so the UI offers no delete button. |
+| `suggestions.pref.value` | 值 | Value |
+| `suggestions.subtitle` | 从你自己重复过的决定里长出来的建议；每一条都要你点头，系统不自己改。 | Suggestions grown from decisions you repeated; every one needs your confirmation, the system never changes itself. |
+| `suggestions.tab` | 自动化建议 | Suggestions |
+| `suggestions.title` | 自动化建议 | Automation suggestions |
+| `suggestions.toast.accepted` | 已采纳：偏好已写入，后续同类决定会按它预填。 | Accepted: the preference is stored and will prefill matching decisions. |
+| `suggestions.toast.dismissed` | 已拒绝：{days} 天内不再提这条。 | Dismissed: this one stays quiet for {days} days. |
+| `suggestions.toast.failed` | 建议操作没成功：{code} — {message} | The suggestion action failed: {code} — {message} |
+| `suggestions.toast.later.done` | 本次会话内不再提示这条建议（刷新页面后恢复提示）。 | This suggestion stays quiet for the rest of the page session (prompting resumes after a refresh). |
+| `suggestions.toast.new.many` | 有 {count} 条新建议：到「自动化建议」面板逐条看。 | {count} new suggestions: review them one by one in the Suggestions panel. |
+| `suggestions.toast.new.one` | 有一条新建议：{tool} · {param} | A new suggestion: {tool} · {param} |
+| `suggestions.toast.pref.saved` | 偏好已保存。 | Preference saved. |
 
 ## `time`（5 个）
 
@@ -1237,6 +1585,133 @@
 | `trust.unit.minutes` | {value} 分钟 | {value} min |
 | `trust.unit.ms` | {value} 毫秒 | {value} ms |
 | `trust.unit.seconds` | {value} 秒 | {value} s |
+
+## `update`（44 个）
+
+| key | zh | en |
+| --- | --- | --- |
+| `update.action.check` | 检查更新 | Check for updates |
+| `update.action.install` | 下载并安装 | Download and install |
+| `update.action.restart` | 立即重启生效 | Restart now |
+| `update.action.rollback` | 回滚到上一版 | Roll back to the previous version |
+| `update.action.save` | 保存源 | Save source |
+| `update.current` | 当前界面版本 | Interface version |
+| `update.current.builtin` | 安装包内置（尚未启用更新通道） | Built into the installer (update channel not enabled yet) |
+| `update.hint.browser` | 在浏览器里打开的界面不能自我更新：版本更新只在桌面端可用。这不是故障，是权限边界 —— 网页不该能替换本地程序文件。 | A page served to a browser cannot update itself: version updates only work in the desktop app. That is a permission boundary, not a bug - a web page must not be able to replace local program files. |
+| `update.host` | 桌面端版本 | Desktop version |
+| `update.installed` | 本机已安装版本 | Installed versions |
+| `update.notes` | 更新说明：{value} | Release notes: {value} |
+| `update.progress.aria` | 正在更新 | Updating |
+| `update.progress.busy` | 正在下载并校验。不显示百分比：服务端不提供进度，编一个数字就是假的。 | Downloading and verifying. No percentage is shown: the service publishes no progress, and a made-up number would be a lie. |
+| `update.reason.already_installed` | 这个版本已经装过了（{value}） | That version is already installed ({value}) |
+| `update.reason.bad_index` | 更新源的 index.json 格式不对（{value}） | The index.json at the update source is malformed ({value}) |
+| `update.reason.check_failed` | 检查更新时出错（{value}） | Checking for updates failed ({value}) |
+| `update.reason.downgrade_refused` | 拒绝降级安装（{value}） | Downgrade refused ({value}) |
+| `update.reason.hash_mismatch` | 包内文件校验不一致，已拒绝安装（{value}） | A file inside the package did not match its digest; installation refused ({value}) |
+| `update.reason.host_missing_capability` | 这个包需要更新版本的 TraceLens 本体（{value}） | This package needs a newer TraceLens build ({value}) |
+| `update.reason.host_too_old` | 当前 TraceLens 版本太旧，装不了这个包（{value}） | This TraceLens version is too old for that package ({value}) |
+| `update.reason.http_status` | 更新源返回错误状态（{value}） | The update source returned an error status ({value}) |
+| `update.reason.install_exception` | 安装过程出错（{value}） | Installation failed ({value}) |
+| `update.reason.install_failed` | 安装没有完成（{value}） | Installation did not complete ({value}) |
+| `update.reason.missing_entries` | 更新包内容不完整，已拒绝安装（{value}） | The package is incomplete; installation refused ({value}) |
+| `update.reason.no_previous_version` | 没有可回退的上一版 | There is no previous version to roll back to |
+| `update.reason.no_target` | 没有可回退的版本 | There is no version to roll back to |
+| `update.reason.other` | 更新失败（{value}） | Update failed ({value}) |
+| `update.reason.package_hash_mismatch` | 更新包校验失败，已拒绝安装（{value}） | Package verification failed; installation refused ({value}) |
+| `update.reason.source_not_configured` | 还没有配置更新源，先在上面填写目录或地址 | No update source configured yet - fill in a folder or address above |
+| `update.reason.source_unreachable` | 更新源不可达（{value}） | The update source is unreachable ({value}) |
+| `update.reason.status_failed` | 读不到本机版本信息（{value}） | Could not read local version information ({value}) |
+| `update.reason.timeout` | 连接更新源超时（{value}） | Timed out contacting the update source ({value}) |
+| `update.reason.undeclared_entries` | 更新包里有未申报的文件，已拒绝安装（{value}） | The package contains undeclared files; installation refused ({value}) |
+| `update.reason.unsafe_path` | 更新包里存在不安全的路径，已拒绝安装（{value}） | The package contains an unsafe path; installation refused ({value}) |
+| `update.source.hint` | 支持本地目录（U 盘、共享盘）与内网地址。程序不内置任何更新地址，这里填什么就只用什么。 | A local folder (USB stick, network share) or an intranet address. The app ships with no update address of its own: only what you type here is used. |
+| `update.source.label` | 更新源 | Update source |
+| `update.source.placeholder` | D:\tracelens-updates 或 http://内网地址/updates/ | D:\tracelens-updates or http://intranet-host/updates/ |
+| `update.state.available` | 有新版本 {value}（当前 {current}） | Version {value} is available (current {current}) |
+| `update.state.checking` | 正在检查更新源 | Checking the update source |
+| `update.state.installed` | 已安装 {value}，重启后生效 | {value} installed; it takes effect after a restart |
+| `update.state.installing` | 正在下载并校验更新包 | Downloading and verifying the package |
+| `update.state.loading` | 正在读取本机版本信息 | Reading local version information |
+| `update.state.uptodate` | 已是最新（{value}） | Up to date ({value}) |
+| `update.title` | 版本更新 | Version update |
+
+## `workspaces`（73 个）
+
+| key | zh | en |
+| --- | --- | --- |
+| `workspaces.action.open` | 打开 | Open |
+| `workspaces.action.open_record` | 在原记录中查看 | Show in the original record |
+| `workspaces.action.refresh` | 刷新数据 | Refresh data |
+| `workspaces.back` | 返回总览 | Back to overview |
+| `workspaces.close` | 关闭功能中心 | Close the feature centre |
+| `workspaces.compliance.intro` | 导出与审计面板使用同一条请求路径，因此这里的按钮与那边完全等价。 | This page mounts the audit export panel itself, so these buttons are exactly equivalent to the ones in the audit rail. |
+| `workspaces.compliance.shared` | 下面是审计导出面板本身，不是另做一份。 | Below is the audit export panel itself, not a copy of it. |
+| `workspaces.confidence.empty_filter` | 当前筛选下没有记录。 | No record matches this filter. |
+| `workspaces.confidence.filter.all` | 全部记录 | All records |
+| `workspaces.confidence.filter.label` | 筛选 | Filter |
+| `workspaces.confidence.filter.low` | 仅低置信 | Low confidence only |
+| `workspaces.confidence.filter.missing` | 仅缺值 | Missing values only |
+| `workspaces.confidence.intro` | 置信度来自记录本身的判定结果，本页只做分层与筛选，不重新估算。 | Confidence comes from the record's own verdict. This page only bands and filters it; it never re-estimates. |
+| `workspaces.confidence.samples` | {count} 个样本 | {count} samples |
+| `workspaces.confidence.stats.known` | 有置信度 | With confidence |
+| `workspaces.confidence.stats.low` | 低置信 | Low confidence |
+| `workspaces.confidence.stats.missing` | 缺值 | Missing |
+| `workspaces.confidence.stats.total` | 记录总数 | Records |
+| `workspaces.evidence.existing` | 已有证据与因果解释 | Existing evidence and causal explanation |
+| `workspaces.evidence.intro` | 证据挂在记录上；这里既能补新证据，也能核对已有证据。 | Evidence belongs to a record. You can attach new evidence here and check the existing set. |
+| `workspaces.evidence.upload.after` | 改动后 | After |
+| `workspaces.evidence.upload.before` | 改动前 | Before |
+| `workspaces.evidence.upload.busy` | 正在提交… | Submitting… |
+| `workspaces.evidence.upload.caption` | 说明（可留空） | Note (optional) |
+| `workspaces.evidence.upload.hint` | 以改动前后对比的形式提交，服务端会计算指纹并写入审计链。 | Submit a before/after diff; the server fingerprints it and writes it into the audit chain. |
+| `workspaces.evidence.upload.submit` | 提交证据 | Submit evidence |
+| `workspaces.evidence.upload.title` | 补充证据 | Attach evidence |
+| `workspaces.evidence.uploaded` | 证据已提交 | Evidence submitted |
+| `workspaces.feature.analytics.desc` | 汇总干预、回滚与合规指标，并支持导出。 | Aggregate intervention, rollback and compliance metrics, and export them. |
+| `workspaces.feature.analytics.title` | 队长仪表盘 | Team lead dashboard |
+| `workspaces.feature.collab.desc` | 把记录共享给他人，查看授权与撤销状态。 | Share records and review grants and revocations. |
+| `workspaces.feature.collab.title` | 共享与协作 | Sharing and collaboration |
+| `workspaces.feature.compliance.desc` | 导出可校验的审计包，含哈希链与认定书。 | Export a verifiable audit bundle carrying the hash chain and certificate. |
+| `workspaces.feature.compliance.title` | 合规审计导出 | Compliance audit export |
+| `workspaces.feature.confidence.desc` | 按记录查看置信度分层，筛出低置信与缺值样本。 | Inspect confidence bands per record and filter low or missing values. |
+| `workspaces.feature.confidence.title` | 置信度可视化 | Confidence view |
+| `workspaces.feature.evidence.desc` | 为记录补充证据、查看已有证据与因果解释。 | Attach evidence to a record, and review existing evidence and causal explanations. |
+| `workspaces.feature.evidence.title` | 因果证据链 | Causal evidence chain |
+| `workspaces.feature.groups.desc` | 建立任务组，查看组内成员与聚合结果。 | Create task groups and review members and aggregated results. |
+| `workspaces.feature.groups.title` | 多 Agent 聚合 | Multi-agent aggregation |
+| `workspaces.feature.rollback.desc` | 先读回滚计划，看清依赖与阻断原因，再决定是否执行。 | Read the plan first, see dependencies and blockers, then decide whether to execute. |
+| `workspaces.feature.rollback.title` | 干预回滚 | Intervention rollback |
+| `workspaces.feature.suggestions.desc` | 依据干预历史给出可执行的自动化建议。 | Turn intervention history into actionable automation suggestions. |
+| `workspaces.feature.suggestions.title` | 自动化建议 | Automation suggestions |
+| `workspaces.group.collaboration` | 协作与分析 | Collaboration and analysis |
+| `workspaces.group.output` | 对外产出 | Outbound output |
+| `workspaces.group.records` | 记录与判定 | Records and verdicts |
+| `workspaces.identity.action` | 打开总裁办 | Open the secretariat |
+| `workspaces.identity.desc` | 谁在什么权限下做了什么，由总裁办账本记录并签名。功能页不替代它。 | Who did what under which permission is recorded and signed by the secretariat ledger. These pages do not replace it. |
+| `workspaces.identity.title` | 身份与签名 | Identity and signatures |
+| `workspaces.launcher` | 功能中心 | Features |
+| `workspaces.launcher.aria` | 打开功能中心：八个功能各自独立成页 | Open the feature centre: eight features, eight pages |
+| `workspaces.nav.aria` | 功能导航 | Feature navigation |
+| `workspaces.overview.hint` | 选择一个功能查看它的独立界面。地址栏会记住当前页，可以直接收藏或分享链接。 | Pick a feature to open its own page. The address bar remembers the page, so a link can be bookmarked or shared. |
+| `workspaces.overview.kicker` | 功能导航 | Feature navigation |
+| `workspaces.overview.lead` | 每个功能一个页面，进来就能操作 | One page per feature, ready to use the moment you open it |
+| `workspaces.overview.note` | 这里只负责导航与操作入口，数据、判定与导出口径仍由各自原有的实现负责，没有第二套逻辑。 | This page only routes and hosts controls. Data, verdicts and export provenance stay with their original implementations; there is no second copy of the logic. |
+| `workspaces.overview.short` | 八个功能，八页 | eight features, eight pages |
+| `workspaces.overview.subtitle` | 八个功能各自拥有独立界面，互不挤在同一个面板里。 | Every feature gets its own page instead of sharing one crowded panel. |
+| `workspaces.overview.title` | 功能中心 | Feature centre |
+| `workspaces.record.missing` | 这条记录已不在当前列表中，可能被刷新掉了。 | That record is no longer in the current list; it may have been refreshed away. |
+| `workspaces.record.select` | 选择记录 | Select a record |
+| `workspaces.rollback.intro` | 回滚是不可逆操作，因此要读两次：先读计划，再确认执行。 | Rollback is irreversible, so it is read twice: the plan first, then an explicit confirmation. |
+| `workspaces.rollback.list` | 本机记录 | Records on this machine |
+| `workspaces.rollback.plan` | 读取回滚计划 | Read the rollback plan |
+| `workspaces.rollback.plan.hint` | 计划会列出依赖闭包与阻断原因；确认前不会改动任何记录。 | The plan lists the dependency closure and any blockers; nothing changes until you confirm. |
+| `workspaces.state.denied` | 当前身份没有这项权限。 | This identity does not hold that permission. |
+| `workspaces.state.empty_records` | 还没有任何记录，先让 Agent 跑一次任务。 | No records yet. Run a task through the agent first. |
+| `workspaces.state.error` | 操作失败，请稍后重试。 | The action failed. Please try again. |
+| `workspaces.state.offline` | 当前是离线预览，操作已停用。 | Offline preview: actions are disabled. |
+| `workspaces.state.permission_write` | 当前身份没有写入权限。 | This identity has no write permission. |
+| `workspaces.state.unavailable` | 所需模块未加载。 | A required module is not loaded. |
+| `workspaces.title` | 功能中心 | Feature centre |
 
 ## `zones`（17 个）
 

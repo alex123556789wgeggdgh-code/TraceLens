@@ -1,1 +1,403 @@
-/* TraceLens 5.0 - collab styles (owner replaces this placeholder). */
+/*
+ * TraceLens 5.0 - Collaboration panel styles (web/ext/collab.css)
+ * ---------------------------------------------------------------------------
+ * Scope: `.collab-*` classes plus `#trust-body[data-tab="collab"]`.
+ * Nothing in this file touches an existing selector: the card styles stay in
+ * ext/cards.css, the page chrome in styles.css (task book R5-4 rule 3:
+ * a card-level selector never appears in a rule here, and styles.css stays free
+ * of card rules.
+ *
+ * Colour discipline: every colour is a design token from styles.css
+ * (`--c-*`, which the dark theme re-declares). The purple of the on-behalf mark
+ * is a **mix of two existing tokens** (`--c-danger` × `--c-pending`) through
+ * `color-mix()`, with a plain token as the fallback for a browser without
+ * `color-mix()` — so there is no new palette entry, no literal colour, and the
+ * dark theme follows for free.
+ *
+ * 0.4 display discipline: this file styles the one-time share view
+ * (`.collab-share__link`), which the panel renders exactly once and wipes on
+ * close; the lists never receive the secret, so nothing here styles a
+ * "re-printed" token.
+ */
+
+#trust-body[data-tab="collab"] {
+  display: grid;
+  gap: 14px;
+}
+
+/* -- panel frame ---------------------------------------------------- */
+
+.collab-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--c-text, #15181c);
+}
+
+.collab-head p {
+  margin: 4px 0 0;
+  color: var(--c-text-dim, #5c6672);
+  line-height: 1.6;
+}
+
+.collab-zone {
+  border: var(--line-1, 1px) solid var(--c-border, #dfe3e8);
+  border-radius: 10px;
+  background: var(--c-surface, #ffffff);
+  padding: 12px 14px;
+}
+
+.collab-zone__head h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--c-text, #15181c);
+}
+
+.collab-note {
+  margin: 6px 0;
+  color: var(--c-text-dim, #5c6672);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.collab-muted {
+  color: var(--c-text-dim, #5c6672);
+}
+
+.collab--hidden {
+  display: none;
+}
+
+/* -- buttons / inputs ----------------------------------------------- */
+
+.collab-btn {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: var(--line-1, 1px) solid var(--c-border, #dfe3e8);
+  background: var(--c-surface-2, #fbfcfd);
+  color: var(--c-text, #15181c);
+  cursor: pointer;
+}
+
+.collab-btn:hover:not(:disabled) {
+  border-color: var(--c-pending, #1a6fc4);
+}
+
+.collab-btn--primary {
+  border-color: var(--c-pending-line, #bcd6f0);
+  background: var(--c-pending-soft, #e8f1fb);
+  color: var(--c-pending, #1a6fc4);
+}
+
+.collab-btn--danger {
+  border-color: var(--c-danger-line, #f2c3bd);
+  background: var(--c-danger-soft, #fdecea);
+  color: var(--c-danger, #b3261e);
+}
+
+.collab-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.collab-form {
+  display: grid;
+  gap: 8px;
+}
+
+.collab-field {
+  display: grid;
+  gap: 4px;
+  font-size: 0.86rem;
+  color: var(--c-text-dim, #5c6672);
+}
+
+.collab-input,
+.collab-select {
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: var(--line-1, 1px) solid var(--c-border, #dfe3e8);
+  background: var(--c-surface, #ffffff);
+  color: var(--c-text, #15181c);
+}
+
+.collab-input:focus,
+.collab-select:focus,
+.collab-btn:focus {
+  outline: var(--line-2, 2px) solid var(--c-focus, #1a6fc4);
+  outline-offset: 1px;
+}
+
+/* -- key/value + tables --------------------------------------------- */
+
+.collab-kv {
+  display: grid;
+  grid-template-columns: minmax(0, 8rem) minmax(0, 1fr);
+  gap: 6px;
+  font-size: 0.86rem;
+}
+
+.collab-kv dt {
+  color: var(--c-text-dim, #5c6672);
+}
+
+.collab-kv dd {
+  margin: 0;
+  color: var(--c-text, #15181c);
+  overflow-wrap: anywhere;
+}
+
+.collab-table-wrap {
+  overflow-x: auto;
+}
+
+.collab-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.collab-table th,
+.collab-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: var(--line-1, 1px) solid var(--c-border, #dfe3e8);
+  color: var(--c-text, #15181c);
+}
+
+.collab-table th {
+  color: var(--c-text-dim, #5c6672);
+  font-weight: 600;
+}
+
+/* -- task group cards ----------------------------------------------- */
+
+.collab-groups {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.collab-group {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: var(--line-1, 1px) solid var(--c-border, #dfe3e8);
+  border-left: var(--line-2, 3px) solid var(--c-neutral-line, #d7dbe1);
+  border-radius: 10px;
+  background: var(--c-surface-2, #fbfcfd);
+}
+
+.collab-group--active {
+  border-left-color: var(--c-pending, #1a6fc4);
+  background: var(--c-pending-soft, #e8f1fb);
+}
+
+.collab-group__title {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--c-text, #15181c);
+}
+
+.collab-group__id,
+.collab-group__meta span {
+  color: var(--c-text-dim, #5c6672);
+  font-size: 0.8rem;
+}
+
+.collab-group__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.collab-group__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* -- the one-time share view ---------------------------------------- */
+
+.collab-share__result {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: var(--line-1, 1px) solid var(--c-progress-line, #ecd4a6);
+  border-radius: 10px;
+  background: var(--c-progress-soft, #fdf1dc);
+  display: grid;
+  gap: 6px;
+}
+
+.collab-share__warning,
+.collab-share__result .collab-note {
+  color: var(--c-progress, #a86a00);
+}
+
+.collab-share__link,
+.collab-share__token {
+  margin: 0;
+  padding: 8px;
+  border-radius: 8px;
+  border: var(--line-1, 1px) dashed var(--c-progress-line, #ecd4a6);
+  background: var(--c-surface, #ffffff);
+  color: var(--c-text, #15181c);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.collab-share__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.collab-share__pending {
+  color: var(--c-text-dim, #5c6672);
+  font-size: 0.82rem;
+}
+
+/* -- permissions + visibility gate ---------------------------------- */
+
+.collab-perms {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.collab-perms li {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: var(--line-1, 1px) solid var(--c-neutral-line, #d7dbe1);
+  background: var(--c-neutral-soft, #eef0f3);
+  color: var(--c-text, #15181c);
+  font-size: 0.8rem;
+}
+
+.collab-perms li[data-allowed="true"] {
+  border-color: var(--c-ok-line, #b7d9c1);
+  background: var(--c-ok-soft, #e7f4ea);
+  color: var(--c-ok, #1f7a3d);
+}
+
+.collab-perms__group {
+  margin: 0 0 6px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8rem;
+  color: var(--c-text-dim, #5c6672);
+}
+
+.collab-gate-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.collab-gate-list h4 {
+  margin: 0 0 2px;
+  font-size: 0.9rem;
+  color: var(--c-text, #15181c);
+}
+
+.collab-gate {
+  margin: 4px 0;
+  padding: 6px 8px;
+  border-left: var(--line-2, 3px) solid var(--c-progress, #a86a00);
+  background: var(--c-progress-soft, #fdf1dc);
+  color: var(--c-progress, #a86a00);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.collab-gate--share {
+  border-left-color: var(--c-neutral, #5c6672);
+  background: var(--c-neutral-soft, #eef0f3);
+  color: var(--c-text-dim, #5c6672);
+}
+
+/* -- the purple on-behalf mark (B5-3) -------------------------------- */
+
+.collab-onbehalf {
+  /* the one purple the design tokens do not carry: a mix of the two existing
+   * accents, with a token fallback for a browser without color-mix() */
+  --collab-purple: var(--c-pending, #1a6fc4);
+  --collab-purple: color-mix(in oklab, var(--c-danger, #b3261e) 45%, var(--c-pending, #1a6fc4));
+  --collab-purple-soft: color-mix(in oklab, var(--collab-purple) 14%, var(--c-surface, #ffffff));
+  --collab-purple-line: color-mix(in oklab, var(--collab-purple) 38%, var(--c-border, #dfe3e8));
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: var(--line-1, 1px) solid var(--collab-purple-line);
+  background: var(--collab-purple-soft);
+  color: var(--collab-purple);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.collab-onbehalf-detail {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: var(--line-2, 3px) solid var(--collab-purple, #6b3fa0);
+  background: var(--collab-purple-soft, var(--c-neutral-soft, #eef0f3));
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  font-size: 0.82rem;
+  color: var(--c-text, #15181c);
+}
+
+.collab-onbehalf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.collab-onbehalf__row {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border: var(--line-1, 1px) solid var(--c-border, #dfe3e8);
+  border-left: var(--line-2, 3px) solid var(--collab-purple, #6b3fa0);
+  border-radius: 10px;
+  background: var(--c-surface-2, #fbfcfd);
+  font-size: 0.84rem;
+}
+
+.collab-onbehalf__row p {
+  margin: 0;
+  color: var(--c-text, #15181c);
+}
+
+.collab-onbehalf__id {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.76rem;
+  color: var(--c-text-dim, #5c6672);
+}
+
+@media (max-width: 720px) {
+  .collab-kv {
+    grid-template-columns: 1fr;
+  }
+
+  .collab-group__meta {
+    gap: 6px;
+  }
+}

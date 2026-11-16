@@ -11,6 +11,10 @@
    ``collab_events.jsonl``（:class:`feature_store.Ledger`）追加一条事件：
    ``id / actor_did / action / target / at / detail / signature``，链字段
    ``seq / prev_hash / entry_hash`` 由账本自动算，``verify()`` 能离线复算。
+   协作者**代真人**操作时事件多一个 ``detail.on_behalf_of`` 标注：``actor_did`` 仍是
+   实际操作人（协作者本人），记录的 ``human_owner`` 与 ``delegation_chain`` 一个字都不动。
+   「谁做的 / 替谁做的 / 谁担责」在**事件层**一次说清（REQ-005 B5-3；口径见
+   :meth:`ShareService.record_event`，认定书侧的渲染见 ``secretariat.on_behalf_index``）。
 
 ``signature`` 为什么是 ``None``
 ------------------------------
@@ -31,6 +35,17 @@
 路由层在分享前先 ``group_service.get()``（缺失即 ``GROUP_NOT_FOUND``）。为了让这条
 接缝不需要调用方另写一层判断，构造函数接受可选的 ``group_lookup`` 回调
 （``groups.get`` 即可），给了就会在 :meth:`ShareService.invite` 里先查组是否存在。
+
+``can()`` 只回答"邀请关系给了你什么"，**不回答"你是不是组的所有者"**
+------------------------------------------------------------------
+组归属（谁创建了组、谁有 ``data.write``）由路由层判定，本模块一概不问。R5-3 把这条
+接缝写成可依赖的口径：写路径闸门用 :meth:`ShareService.invites_for_group`（只读）先问
+"这组里有没有邀请"，再用 :meth:`ShareService.can` 问"邀请给了你什么"。
+**没有邀请的组 / 没被邀请的人（队长本人、local 免登录）在闸门里一律原样放行**——
+``can()`` 对这种情况回答 ``reason="no_grant"``，闸门把它当作"不是协作者"，绝不把
+"没有邀请"当成"权限不足"来拒绝（那是把协作层做成全站鉴权，越界且必然打爆 local 模式）。
+同一登录人的两个 id 口径（``username`` / ``user_id``）由调用方作为**身份集**传入
+（:meth:`ShareService.revoke` 的 ``trusted_ids``），本模块按身份集取最强授权。
 
 写作用域：``FeaturePaths.shares``（``shares.jsonl``，实体集合：同 id 最后写入胜出，
 所以"接受/撤销"是覆盖写而不是追加）+ ``FeaturePaths.collab_events``（只能追加的账本）。
@@ -65,6 +80,8 @@ __all__ = [
     "SHARE_STATUSES",
     "SHARE_HTTP_STATUS",
     "SECRET_FIELDS",
+    "ON_BEHALF_KEY",
+    "ON_BEHALF_MAX_LEN",
     "ShareError",
     "permission_level",
     "ShareService",
@@ -99,11 +116,40 @@ SHARE_HTTP_STATUS = {
 #: 绝不进任何响应 / 事件的字段（salt 与哈希都是"能离线爆破明文"的材料）
 SECRET_FIELDS = ("salt", "token_hash", "token")
 
-#: 事件 detail 里命中这些词的键整值打码（与 audit.py 的脱敏纪律同口径）
+#: 事件 detail 里命中这些词的键整值打码（与 audit.py 的脱敏纪律同口径）。
+#: R5-1 扩两个词：``url`` / ``link`` —— 分享链接（``invite_url`` / ``share_link``）里
+#: 装着**明文 token**，它和明文 token 同一条纪律（只在创建那一刻出现一次）。调用方把
+#: 链接塞进事件 detail 是必然会发生的写法（"记一下我发出去的链接"），所以这条路径必须在
+#: 写入侧结构性打码，而不是靠调用方"记得别写"。
 _SENSITIVE_DETAIL_KEYS = (
     "token", "token_hash", "salt", "secret", "password", "passwd",
     "api_key", "apikey", "private_key", "credential",
+    "url", "link",
 )
+
+#: 打码口径的两条 R5-2 定档（PM-VERDICT-R5-1 §3.5 遗留 5 → TASK-R5-2 §2.4，已批 L1）。
+#:
+#: **一、匹配方式：沿用子串匹配 + 显式豁免清单**（任务书给的"二选一"，这里选前半，理由写死）：
+#: 子串匹配是**宁多打码**的方向 —— ``invite_url`` / ``share_link`` / ``landing_url_v2``
+#: 这类"名字里带 url/link 的明文载体"被同一条规则一并盖住；改成整词匹配等于每出现一个新
+#: 写法就得回来补一个词，漏补的那一次就是把明文 token 写进**只追加、撤不回**的事件账本。
+#: 代价是子串会误伤：这份名单将来若加进 ``invite``，``invite_id`` / ``inviter_did`` /
+#: ``invitee_did`` 会一起被打码 —— 那三个字段正是责任认定与审计要读的，打了码责任链就查不下去。
+#: 所以选"名单命中即打码 + **精确键名**点名豁免"：豁免只认精确名字（不是子串），优先级高于打码。
+#: 今天的豁免是**惰性的**（这三个名字都不命中现有敏感词），它钉住的是将来扩词那一刻的行为。
+_SENSITIVE_DETAIL_EXEMPT = frozenset({"invite_id", "inviter_did", "invitee_did"})
+
+#: **二、递归深度封顶**（防深嵌套 DoS）：``detail`` 是协作层自己写的对象，真嵌套到第 8 层
+#: 往下已经不是"审计要读的东西"了。超深的子树整块换成 ``_SCRUB_DEPTH_MARK`` ——
+#: **失败方向选打码**：账本只追加、写进去撤不回，宁可少一层可读性，也不能把明文泄进去。
+_SCRUB_MAX_DEPTH = 8
+_SCRUB_DEPTH_MARK = "<scrubbed:too_deep>"
+
+#: 「代行」标注在事件 ``detail`` 里的键名（PM-PLAN §7.1 冻结口径，``secretariat`` 引用同一份，
+#: 两边不各写一遍字面量 —— 键名漂移等于责任标注静默消失）。
+ON_BEHALF_KEY = "on_behalf_of"
+#: 代行标注的真人 DID 长度上限（``detail`` 进签名与账本，必须有界；``secretariat`` 侧同用此上限）
+ON_BEHALF_MAX_LEN = 256
 
 
 # --------------------------------------------------------------------------- #
@@ -197,18 +243,48 @@ def permission_level(permission: Any) -> int:
     return int(LEVELS.get(_text(permission), 0))
 
 
-def _scrub(detail: Mapping[str, Any]) -> dict[str, Any]:
-    """事件 detail 脱敏：命中敏感键名的值整值替换成 ``<redacted>``（不递归到列表）。"""
+def _is_sensitive_key(name: str) -> bool:
+    """键名要不要打码：先查豁免点名（精确键名，优先级高），再查敏感词子串命中。"""
+    if name in _SENSITIVE_DETAIL_EXEMPT:
+        return False
+    lowered = name.lower()
+    return any(word in lowered for word in _SENSITIVE_DETAIL_KEYS)
+
+
+def _scrub_value(value: Any, depth: int) -> Any:
+    """按值递归打码：字典按键名，列表/元组逐元素；深度到顶就整块打码（见 ``_SCRUB_MAX_DEPTH``）。
+
+    标量原样返回 —— 这是"既有事件形状不漂移"的那一半证据：扁平 detail 的每个值都直接透传。
+    列表与元组各返回同类型（元组不会被悄悄变成列表），其余类型（含集合等 JSON 不认识的形状）
+    原样带上，由落盘层自己决定怎么序列化，本层不裁、不猜。
+    """
+    if depth >= _SCRUB_MAX_DEPTH:
+        return _SCRUB_DEPTH_MARK
+    if isinstance(value, Mapping):
+        return _scrub(value, depth + 1)
+    if isinstance(value, list):
+        return [_scrub_value(item, depth) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_scrub_value(item, depth) for item in value)
+    return value
+
+
+def _scrub(detail: Mapping[str, Any], depth: int = 0) -> dict[str, Any]:
+    """事件 detail 脱敏：命中敏感键名的值整值替换成 ``<redacted>``，并**递归进嵌套字典与列表**。
+
+    R5-2 定档（PM-VERDICT-R5-1 §3.5 遗留 5）：旧口径只递归字典、**不递归列表**，
+    ``detail={"urls": [token…]}`` / ``detail={"payload": [{"token": …}]}`` 这类写法
+    今天照样把明文写进账本。现在列表/元组也下钻，深度封顶 ``_SCRUB_MAX_DEPTH``，
+    豁免清单精确点名（口径与理由见那两个常量处的注释）。
+    非敏感的值原样返回：嵌套里的审计字段一个都不动。
+    """
     scrubbed: dict[str, Any] = {}
     for key, value in detail.items():
         name = str(key)
-        lowered = name.lower()
-        if any(word in lowered for word in _SENSITIVE_DETAIL_KEYS):
+        if _is_sensitive_key(name):
             scrubbed[name] = "<redacted>"
-        elif isinstance(value, Mapping):
-            scrubbed[name] = _scrub(value)
         else:
-            scrubbed[name] = value
+            scrubbed[name] = _scrub_value(value, depth + 1)
     return scrubbed
 
 
@@ -396,11 +472,26 @@ class ShareService:
                                   "permission": record.get("permission")})
         return self._public(updated)
 
-    def revoke(self, invite_id: str, *, actor: str) -> dict[str, Any]:
+    def revoke(self, invite_id: str, *, actor: str,
+               trusted_ids: Iterable[str] = (), reason: str = "") -> dict[str, Any]:
         """撤销邀请（发起人本人，或在该组持有 manage 权限的人）。
 
         已撤销的再撤一次是幂等的（返回当前记录，不报错、不重复追加事件），
         因为"撤销"天然幂等，而重复报错只会让界面弹一个没有意义的气泡。
+
+        ``trusted_ids``（R5-3，TASK-R5-3 §2.3 的路由层装配口径）
+        --------------------------------------------------------
+        同一个登录人在本仓有**两个 id 口径**：决定段与审计用 ``username``
+        （``server.audit_actor``），分享/协作层用会话的 ``user_id``
+        （``server._actor_id_of``）。只拿一个 id 去查授权，就会出现"用 ``user_id``
+        接受的邀请、用 ``username`` 撤销时被当成局外人"这种自相矛盾。
+        所以路由层把**操作者这次请求带来的全部身份**传进来：授权按身份集取最强，
+        事件里的 ``actor_did`` 仍是**主身份** ``actor``（不冒充别人，也不替换事实现场）。
+        默认 ``()`` = 只认 ``actor`` —— 与改动前**逐字同行为**（既有调用零变化）。
+
+        ``reason``：路由层 ``POST /api/shares/<id>/revoke`` 的可选 ``reason`` 原样进事件
+        ``detail``。默认空字符串 → ``detail`` 逐字不变。"撤销"是收权，收完发现只留下
+        "谁撤的"没有"为什么撤"，事后查不动。
         """
         key = _text(invite_id)
         record = self._shares.get(key) if key else None
@@ -411,18 +502,28 @@ class ShareService:
         if not person:
             raise ShareError("SHARE_FORBIDDEN", "缺少 actor：不知道是谁在撤销",
                              field="actor")
+        ids = [person]
+        for item in (trusted_ids or ()):
+            extra = _text(item)
+            if extra and extra not in ids:
+                ids.append(extra)
         if _text(record.get("status")) == "revoked":
             return self._public(record)
         group_text = _text(record.get("group_id"))
-        if person != _text(record.get("inviter_did")):
-            grant = self.can(person, "manage", group_text)
-            if not grant.get("allowed"):
+        if _text(record.get("inviter_did")) not in ids:
+            verdicts = [self.can(identity, "manage", group_text) for identity in ids]
+            if not any(verdict.get("allowed") for verdict in verdicts):
+                detail: dict[str, Any] = {"invite_id": key, "group_id": group_text,
+                                          "reason": verdicts[0].get("reason")}
+                if len(ids) > 1:
+                    # 多身份时把每个人的答案都带上：查的人不必猜是哪个口径没匹配上
+                    detail["reasons"] = {identity: verdict.get("reason")
+                                         for identity, verdict in zip(ids, verdicts)}
                 raise ShareError(
                     "SHARE_FORBIDDEN",
                     "只有发起人本人，或在该任务组持有 manage 权限的人，才能撤销邀请",
                     field="actor",
-                    detail={"invite_id": key, "group_id": group_text,
-                            "reason": grant.get("reason")},
+                    detail=detail,
                 )
         updated = dict(record)
         updated["status"] = "revoked"
@@ -430,9 +531,15 @@ class ShareService:
         updated["revoked_by"] = person
         with self._lock:
             self._shares.put(updated)
+        note = _text(reason)
+        event_detail: dict[str, Any] = {"group_id": group_text,
+                                        "status_before": record.get("status")}
+        if note:
+            event_detail["reason"] = note[:500]
+        if len(ids) > 1:
+            event_detail["actor_ids"] = list(ids)
         self.record_event(actor=person, action="share.revoke", target=key,
-                          detail={"group_id": group_text,
-                                  "status_before": record.get("status")})
+                          detail=event_detail)
         return self._public(updated)
 
     # -- 查询 -------------------------------------------------------------
@@ -443,6 +550,21 @@ class ShareService:
             return None
         record = self._shares.get(key)
         return self._public(record) if record is not None else None
+
+    def invites_for_group(self, group_id: str) -> list[dict[str, Any]]:
+        """某个任务组的**全部**邀请（公开视图，按创建顺序；R5-3 鉴权闸门的只读探针）。
+
+        为什么需要它（TASK-R5-3 §2.1 / PM-PLAN §7.5 最高优先级）：写路径入口要先回答
+        "这个组里到底有没有邀请"，才谈得上"改动只对**带邀请的协作者**生效、
+        无邀请者零行为变化"。这必须是**只读**的：闸门自身不写存储、不写事件账本，
+        拒绝的那一次也不留下任何字节。返回 :meth:`_public` 视图
+        （``salt`` / ``token_hash`` / ``token`` 一律剔掉，与列表同一条纪律）。
+        """
+        key = _text(group_id)
+        if not key:
+            return []
+        return [self._public(record) for record in self._shares.items()
+                if _text(record.get("group_id")) == key]
 
     def list_for(self, actor: str) -> dict[str, Any]:
         """我这个身份能看到的邀请：``{"issued": [...], "shared_with_me": [...]}``。
@@ -557,13 +679,30 @@ class ShareService:
 
     # -- 协作事件 ---------------------------------------------------------
     def record_event(self, *, actor: str, action: str, target: str,
-                     detail: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                     detail: Mapping[str, Any] | None = None,
+                     on_behalf_of: str | None = None) -> dict[str, Any]:
         """追加一条协作事件到账本（append-only，绝不改/删既有事件）。
 
         事件形状按 §3.3：``id / actor_did / action / target / at / detail /
         signature``；账本再补 ``seq / prev_hash / entry_hash``。``detail`` 里的
         敏感键（token / salt / secret / password…）整值打码，token 永不入事件。
         ``signature`` 恒为 ``None``——本模块不持密钥，**不伪造签名**（见模块头）。
+
+        「代行」标注（REQ-005 B5-3 / PM-PLAN §7.1 冻结口径，R5-2）
+        --------------------------------------------------------
+        协作者**代真人**操作时传 ``on_behalf_of=<human_owner 的 DID>``：它作为附加标注写进
+        ``detail``（键名 :data:`ON_BEHALF_KEY`），``actor_did`` **仍是实际操作人**（协作者本人）。
+        三句话把责任说清，谁都不背错锅：
+
+        1. **谁做的** → ``actor_did``（= 协作者 DID）：事件永远记实际操作人，代行是**附加标注**，
+           不是把 actor 替换成老板的名字（替换等于把事实现场抹掉）；
+        2. **替谁做的** → ``detail.on_behalf_of``（= 那位真人）；
+        3. **谁担责** → 记录里的 ``human_owner`` 字段**一个字都不动**，最终责任仍归真人。
+
+        缺省（不传 / 传 ``None``）→ **零变化**：``detail`` 原样落盘，事件形状逐字不变，
+        普通协作操作（队长本人操作）连一个多余键都不多。参数与 ``detail`` 里手写的同名键
+        同时出现时**以本参数为准**（口径只有一个来源：参数入口做校验与长度封顶，
+        手写键不校验，所以别手写字面量）。
         """
         person = _text(actor)
         if not person:
@@ -576,13 +715,40 @@ class ShareService:
         if detail is not None and not isinstance(detail, Mapping):
             raise ShareError("SHARE_FORBIDDEN", "detail 必须是对象",
                              field="detail")
+        payload = dict(detail or {})
+        if on_behalf_of is not None:
+            if not isinstance(on_behalf_of, str):
+                raise ShareError("SHARE_FORBIDDEN",
+                                 "on_behalf_of 必须是字符串（被代演的真人 DID）",
+                                 field="on_behalf_of")
+            principal = _text(on_behalf_of)
+            if not principal:
+                raise ShareError(
+                    "SHARE_FORBIDDEN",
+                    "on_behalf_of 是空串：不传就是「队长本人操作」，传了就得写明替谁做的",
+                    field="on_behalf_of")
+            if len(principal) > ON_BEHALF_MAX_LEN:
+                raise ShareError(
+                    "SHARE_FORBIDDEN",
+                    f"on_behalf_of 超过 {ON_BEHALF_MAX_LEN} 个字符：它进事件与认定书正文，"
+                    "必须有界（真人的 DID 远短于此）",
+                    field="on_behalf_of",
+                    detail={"length": len(principal), "limit": ON_BEHALF_MAX_LEN})
+            if principal == person:
+                raise ShareError(
+                    "SHARE_FORBIDDEN",
+                    "on_behalf_of 不能就是操作人自己：自己代理自己没有权限可代，"
+                    "这种标注只会让责任链多一个说不清的环",
+                    field="on_behalf_of",
+                    detail={"actor": person, "on_behalf_of": principal})
+            payload[ON_BEHALF_KEY] = principal
         entry = {
             "id": new_id("evt"),
             "actor_did": person,
             "action": what,
             "target": _text(target),
             "at": _stamp(self._now_dt()),
-            "detail": _scrub(dict(detail or {})),
+            "detail": _scrub(payload),
             # 签名槽位保留：密钥在 secretariat.keyring，本模块不持有 → 如实留空
             "signature": None,
         }

@@ -35,6 +35,8 @@ from datetime import datetime, timezone
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+if str(ROOT / "tests") not in sys.path:   # 裸 `python -m unittest tests.<模块>` 时也能 import scratch
+    sys.path.insert(0, str(ROOT / "tests"))
 
 from agent_explainer import audit as ad  # noqa: E402
 from agent_explainer import server as sv  # noqa: E402  （只用它算决定后的记录，验证桥接）
@@ -652,6 +654,58 @@ class CsvExportTests(RoomCase):
         header = next(csv.reader(io.StringIO(result.text.lstrip("\ufeff"))))
         self.assertEqual(header, ["ts", "actor_id", "decision"])
         self.assertEqual(result.columns, ("ts", "actor_id", "decision"))
+
+    # -- R8-2（B8-2）钉测：签名/哈希字段全集。旧 20 列逐字不动，四列只追加在尾部 -- #
+
+    LEGACY_CSV_COLUMNS = (
+        "seq", "ts", "actor_id", "actor_role", "task_id", "action_id", "decision",
+        "option_id", "event", "request_id", "original_params", "modified_params",
+        "changed_fields", "reason", "client_info", "record_status_before",
+        "record_status_after", "mode", "prev_hash", "hash",
+    )
+    R8_2_TAIL = ("entry_hash", "record_facts_hash", "source_facts_hash", "sealed_head")
+
+    def test_r8_2_tail_appends_hash_fields_without_touching_legacy(self) -> None:
+        """旧 20 列的名字与顺序一字未动；四列只在尾部追加；表头逐字等于 CSV_COLUMNS。"""
+        self.log.append(sample_event())
+        text = self.log.export_csv().text
+        header = next(csv.reader(io.StringIO(text.lstrip("\ufeff"))))
+        self.assertEqual(ad.CSV_COLUMNS[:20], self.LEGACY_CSV_COLUMNS,
+                         "前 20 列的名字与顺序一字不许动（向后兼容）")
+        self.assertEqual(ad.CSV_COLUMNS[-4:], self.R8_2_TAIL, "新增列只允许出现在尾部")
+        self.assertEqual(header, list(ad.CSV_COLUMNS))
+        self.assertEqual(len(set(header)), len(header), "表头列名不得重复")
+        for name in header:
+            self.assertRegex(name, r"[a-z][a-z0-9_]*", "列名须满足 ELK/Splunk 命名判据")
+
+    def test_r8_2_entry_hash_column_is_the_identity_alias_of_hash(self) -> None:
+        """entry_hash 与 hash 恒等（audit.py:894），按名导出，逐行取值与条目实键一致。"""
+        self.seed(3)
+        rows = list(csv.DictReader(
+            io.StringIO(self.log.export_csv().text.lstrip("\ufeff"), newline="")))
+        self.assertEqual(len(rows), 3)
+        for row, entry in zip(rows, self.log.read()):
+            self.assertEqual(row["entry_hash"], row["hash"], "两列取值恒等")
+            self.assertEqual(row["entry_hash"], entry["entry_hash"], "取值来自条目实键")
+            self.assertTrue(row["entry_hash"].startswith("sha256:"))
+
+    def test_r8_2_facts_and_seal_hash_columns_travel(self) -> None:
+        """事实哈希与封印锚点哈希随导出走；缺字段的行留空（不写 None），行宽恒等于列数。"""
+        facts = self.log.append(sample_event(
+            record_facts_hash="sha256:" + "a" * 64,
+            source_facts_hash="sha256:" + "b" * 64))
+        seal = self.log.seal(note="封印钉测")
+        text = self.log.export_csv().text
+        rows = list(csv.DictReader(io.StringIO(text.lstrip("\ufeff"), newline="")))
+        self.assertEqual(rows[0]["record_facts_hash"], facts["record_facts_hash"])
+        self.assertEqual(rows[0]["source_facts_hash"], facts["source_facts_hash"])
+        self.assertEqual(rows[1]["sealed_head"], seal["sealed_head"])
+        self.assertEqual(rows[0]["sealed_head"], "", "非封印行留空")
+        self.assertNotIn("None", text, "空值写空串，不写 None")
+        table = list(csv.reader(io.StringIO(text.lstrip("\ufeff"), newline="")))
+        self.assertEqual(sorted({len(r) for r in table}), [len(ad.CSV_COLUMNS)],
+                         "表头列数 == 每一行字段数")
+        self.assertTrue(ad.verify_file(self.path)["ok"], "补列不许动链：链仍须可验")
 
     def test_export_of_empty_log_is_header_only(self) -> None:
         result = self.log.export_csv()

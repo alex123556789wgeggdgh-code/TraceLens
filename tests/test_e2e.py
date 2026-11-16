@@ -13,6 +13,11 @@ docs/03 §6.5 已核对）→ `POST /intervene` → `GET /api/audit` → CSV 导
 与"其余参数原样转发"的口径、team 模式必须登录 + CSRF、Electron 壳的接线
 （单实例锁、健康检查后才加载 UI、退出清理、`contextIsolation`）、
 打包产物的 SHA256 逐条重算与签名状态核对、sidecar exe 真跑一次。
+夹具自身的启动韧性也钉住（R1-8）：子进程"起来即死"要当场报退出码、换端口重试、
+把子进程完整输出落进临时目录、一个进程都不泄漏——不许把环境问题烧成一行 10061。
+R1-9 再钉一条（PM-VERDICT-R1-8b §2.2）：子进程**运行期**写失败（`PermissionError` /
+`[Errno 13]` / `[WinError 5]`）时，夹具收干净进程、把整棵数据根切到仓库 `var/` 树、
+补一轮起来；R1-8 的快速失败 / 退出码 / 零泄漏语义一条不让。
 **没有产物就如实 skip 并把原因写进 skip 理由**，绝不假绿。
 
 临时目录一律走 `tests/scratch.py`（系统临时目录优先，绝不落在 `tests/` 下）。
@@ -28,6 +33,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -110,6 +116,7 @@ class Sidecar:
     def __init__(self, name: str, *extra: str, demo: str = "zh",
                  data_dir: pathlib.Path | None = None,
                  env: dict | None = None) -> None:
+        self.name = str(name)
         self.data_dir = (data_dir or scratch_dir(f"e2e-{name}") / "data")
         self.data_dir.mkdir(parents=True, exist_ok=True)
         # F4（QA 0.5.0 验收登记的测试卫生缺陷）：总裁办的账本根目录**不跟随 --data-dir**
@@ -125,17 +132,184 @@ class Sidecar:
                     "--features", str(self.features_dir),
                     "--stream-heartbeat", "0.4", *extra]
         self.proc: subprocess.Popen[str] | None = None
+        self.procs: list[subprocess.Popen[str]] = []
         self.lines: list[str] = []
         self.bootstrap: dict = {}
         self.port = 0
+        # 失败时把子进程的完整输出落到这里（夹具的日志出口：只靠异常里的末 30 行
+        # 排障，等于让下一个人再猜一遍）。落在本用例的临时目录里，跟着目录一起清。
+        self.log_path = self.data_dir.parent / f"sidecar-{self.name}.log"
+        self.attempts: list[str] = []
+
+    # -- R1-8b：spawn 前由夹具预建全部传参目录（exe 因此永不需要 mkdir） ---- #
+    # sidecar 入口从 --data-dir 派生五个文件路径与 auth/、ingest/ 子目录
+    # （agent_explainer/__main__.py build_argv），server.__init__ → audit.open_log
+    # 在父目录不存在时会 mkdir(parents=True)（audit.py:786）。DSH 受限令牌下打包
+    # exe 的 mkdir 撞 PermissionError [WinError 5]——夹具进程写得进 Temp，exe 子
+    # 进程不能（PM 实测 sidecar-exe.log）——起来即死 → /health 10061。
+    _DIR_FLAGS = ("--data-dir", "--features")                        # 值本身就是目录
+    _FILE_FLAGS = ("--records-store", "--audit-log", "--settings",   # 文件参数 → 预建父目录
+                   "--auth-state", "--ingest-tokens")
+
+    def _mkdir_cmd_dirs(self) -> None:
+        """把 cmd 里七类参数要落盘的目录全部 mkdir(parents=True, exist_ok=True)。"""
+        for i, tok in enumerate(self.cmd):
+            if i + 1 >= len(self.cmd):
+                continue
+            if tok in self._DIR_FLAGS:
+                d = pathlib.Path(self.cmd[i + 1])
+                d.mkdir(parents=True, exist_ok=True)
+                if tok == "--data-dir":          # 入口从 data_dir 派生 auth/ 与 ingest/
+                    for sub in ("auth", "ingest"):
+                        (d / sub).mkdir(parents=True, exist_ok=True)
+            elif tok in self._FILE_FLAGS:
+                pathlib.Path(self.cmd[i + 1]).parent.mkdir(parents=True, exist_ok=True)
+
+    def _precreate_cmd_dirs(self) -> None:
+        """spawn 前预建；夹具自己 mkdir 失败 → 按 tests/scratch.py 纪律退回仓库 var/ 树。
+
+        var/ 是 scratch.py 认证的兜底落点（受限沙箱里系统 Temp 写不进时它可写）；
+        预建成功后 exe 端 audit/记录/账本的 mkdir 条件（"目录不存在才建"）不再触发。
+        """
+        try:
+            self._mkdir_cmd_dirs()
+        except OSError as exc:
+            base = REPO / "var" / f"tmp-e2e-{self.name}"             # scratch.py 的退回落点
+            self.attempts.append(f"预建传参目录失败（{type(exc).__name__}: {exc}），"
+                                 f"按 tests/scratch.py 退回 {base}")
+            for i, tok in enumerate(self.cmd):
+                if i + 1 >= len(self.cmd):
+                    continue
+                if tok in self._DIR_FLAGS or tok in self._FILE_FLAGS:
+                    self.cmd[i + 1] = str(base / pathlib.Path(self.cmd[i + 1]).name)
+            self._mkdir_cmd_dirs()                                   # var/ 是兜底，再失败就如实抛
+
+    # -- R1-9（PM-VERDICT-R1-8b §2.2）：运行期写失败 → 整棵数据根切到 var/ 树 -- #
+    # 上面的预建只覆盖"spawn 之前"。真实形态里还有一类失败发生在子进程**跑起来之后**：
+    # 打包 exe 带着受限令牌，在 Temp 里目录建得出来、第二笔写不下（audit 追加、
+    # records 落盘、settings 写回都是运行期）。PM 在 R1-8b 现场的特征签名就是
+    # `PermissionError: [WinError 5]` / `[Errno 13] Permission denied`。
+    # 只预建救不了它：目录在，写不进去。裁决要求：认出这种运行期写失败 → 收干净
+    # 子进程 → 把**整棵数据根**（data-dir / features / 五个文件参数）换到仓库 var/
+    # 树（scratch.py 认证的兜底落点）→ 再试一轮。R1-8 的三条语义一条不动：
+    # 快速失败（不烧窗口）、报出退出码、一个子进程都不泄漏。
+    _WRITE_FAIL_RE = re.compile(
+        r"PermissionError"                      # python 侧的权限失败
+        r"|\[Errno 13\]"                        # EACCES（POSIX 口径）
+        r"|WinError 5\]"                        # ERROR_ACCESS_DENIED（Windows 口径）
+        r"|WinError 32\]"                       # ERROR_SHARING_VIOLATION：文件被占
+        r"|Access is denied"                    # 英文系统文案
+        r"|拒绝访问",                            # 中文系统文案
+        re.IGNORECASE)
+
+    def _runtime_write_failure(self) -> str:
+        """子进程输出里的运行期写失败特征行；没有则返回空串。"""
+        for line in list(self.lines):
+            if self._WRITE_FAIL_RE.search(line):
+                return line.strip()
+        return ""
+
+    def _relocate_to_var_tree(self, reason: str) -> pathlib.Path:
+        """把整棵数据根搬到 `REPO/var/tmp-e2e-<name>`，并重跑预建。
+
+        只搬**传参指向的落点**：--data-dir（含入口派生的 auth/ 与 ingest/）、
+        --features、以及任何显式文件参数。搬之前清掉旧落点，避免上一轮写坏的
+        半截文件被当成"数据还在"。夹具自己写不进 var/ 时如实抛错，不静默降级。
+        """
+        base = REPO / "var" / f"tmp-e2e-{self.name}"
+        self.attempts.append(f"运行期写失败（{reason}），整棵数据根切到 {base}")
+        for i, tok in enumerate(self.cmd):
+            if i + 1 >= len(self.cmd):
+                continue
+            if tok in self._DIR_FLAGS:
+                self.cmd[i + 1] = str(base / pathlib.Path(self.cmd[i + 1]).name)
+                if tok == "--data-dir":
+                    self.data_dir = pathlib.Path(self.cmd[i + 1])
+            elif tok in self._FILE_FLAGS:
+                self.cmd[i + 1] = str(base / pathlib.Path(self.cmd[i + 1]).name)
+        self.features_dir = base / "features"
+        self.log_path = base / f"sidecar-{self.name}.log"
+        shutil.rmtree(base, ignore_errors=True)
+        self._mkdir_cmd_dirs()
+        return base
 
     # -- 生命周期 ---------------------------------------------------------- #
-    def start(self, timeout: float = 60.0) -> "Sidecar":
+    def start(self, timeout: float = 60.0, attempts: int = 3) -> "Sidecar":
+        """拉起子进程 → 读 bootstrap 行 → 等 ``/health`` 就绪（R1-8 韧性版）。
+
+        为什么要加这一版（2026-11-14 R1-8 取证，见 `_pm-dispatch/REPORT-R1-8.md`）：
+        ``--port 0`` 的端口是**子进程自己在 bind 之前**打印的
+        （`agent_explainer/__main__.py` 先 print bootstrap 再 `server.main`），
+        而 `TraceLensServer.allow_reuse_address = True` 在 Windows 上的语义是
+        "端口被占也 bind 得成功"（实测：占住 51550 再起打包 exe，exe 照打完整启动
+        横幅、进程活着、sha256 与 BUILD-INFO 一致，`/health` 却永远连不上）。
+        所以"bootstrap 打印了端口"从来不等于"有人在听那个端口"。环境一抖
+        （杀软首扫把首启拖过窗口、沙箱回收子进程、端口被抢），旧实现就在
+        `/health` 上干等满 45s/120s，只留一行 `[WinError 10061] 拒绝连接`，
+        还把子进程泄漏在机器上（PM 12:53 那轮跑完留下一个监听 :8899 的孤儿 python）。
+
+        现在做五件事，全部只在夹具里，不改产品语义：
+
+        1. 健康等待期间盯子进程存活——死了立刻失败，带退出码与全部输出；
+        2. 起不来就换端口重试（命令里是 `--port 0`，重试 = 让系统重挑空闲端口），
+           每轮分到的时间是剩余预算除以剩余轮数，整次启动的上限仍约等于传进来的
+           `timeout`——不放宽用例的时间上限，也不让重试把套件拖成三倍；
+        3. 每一轮失败都先把子进程收干净（terminate/kill），绝不泄漏；
+        4. 失败时把子进程完整输出写进 `self.log_path`，异常里给出路径。
+        5. R1-9（PM-VERDICT-R1-8b §2.2）：这一轮的输出里有**运行期写失败**的特征签名
+           （`PermissionError` / `[Errno 13]` / `[WinError 5]` / `[WinError 32]` /
+           拒绝访问）时，把整棵数据根（--data-dir 与其派生目录、--features、五个文件
+           参数）切到仓库 `var/` 树（`tests/scratch.py` 认证的兜底落点）再补一轮。
+           判据是"换树后这一轮真起来了"，不是"重试次数变多"：补的那一轮由
+           `total += 1` 明确记账，时间预算与失败语义都不放宽。
+        """
+        total = max(1, int(attempts))
+        self.attempts = []
+        deadline = time.monotonic() + float(timeout)
+        relocated = False
+        attempt = 0
+        while attempt < total:
+            attempt += 1
+            left = max(1, total - attempt + 1)
+            share = max(5.0, (deadline - time.monotonic()) / left)
+            try:
+                return self._start_once(share)
+            except (RuntimeError, AssertionError) as exc:
+                head = (str(exc).splitlines() or [""])[0]
+                self.attempts.append(f"第 {attempt} 次：{head}")
+                self.stop()                                   # 绝不泄漏子进程
+                self._dump_log()
+                if not relocated:
+                    hit = self._runtime_write_failure()
+                    if hit:
+                        # R1-9（PM-VERDICT-R1-8b §2.2）：运行期写在同一片 Temp 上
+                        # 没有意义，换树再试；补的这一轮是兜底的证据，不是放宽预算。
+                        self._relocate_to_var_tree(hit)
+                        relocated = True
+                        total += 1
+                        continue
+                if attempt >= total:
+                    raise RuntimeError(
+                        "\n".join(self.attempts)
+                        + f"\n重试 {len(self.attempts)} 次仍起不来；"
+                          f"命令：{' '.join(self.cmd)}\n"
+                          f"完整输出：{self.log_path}\n"
+                          + "\n".join(self.lines[-30:])) from exc
+                time.sleep(0.5)
+        raise AssertionError("unreachable")                   # pragma: no cover
+
+    def _start_once(self, timeout: float) -> "Sidecar":
+        """一轮尝试：起进程、读 bootstrap、等健康。失败只抛错，收尾交给 start()。"""
+        self.lines = []
+        self.bootstrap = {}
+        self.port = 0
+        self._precreate_cmd_dirs()      # R1-8b：spawn 前预建全部传参目录，exe 永不需要 mkdir
         self.proc = subprocess.Popen(self.cmd, cwd=str(REPO), env=self.env,
                                      stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT,
                                      text=True, encoding="utf-8",
                                      errors="replace", bufsize=1)
+        self.procs.append(self.proc)
         # 后台线程持续排水：Windows 上管道缓冲区写满会把子进程卡住，
         # 而 team 首启的初始口令只打印这一次，漏读等于把口令丢了。
         threading.Thread(target=self._drain, name="e2e-drain", daemon=True).start()
@@ -145,7 +319,7 @@ class Sidecar:
                 if line.startswith("{") and entry.BOOTSTRAP_KEY in line:
                     self.bootstrap = json.loads(line)[entry.BOOTSTRAP_KEY]
                     self.port = int(self.bootstrap["port"])
-                    self.wait_health()
+                    self.wait_health(timeout=max(5.0, deadline - time.monotonic()))
                     return self
             if self.proc.poll() is not None:
                 raise RuntimeError(
@@ -153,6 +327,13 @@ class Sidecar:
                     + "\n".join(self.lines[-30:]))
             time.sleep(0.05)
         raise RuntimeError("没读到 bootstrap 行：\n" + "\n".join(self.lines[-30:]))
+
+    def _dump_log(self) -> pathlib.Path:
+        """把子进程到此刻的全部输出落盘（写不出去也不许把排障路径吹掉）。"""
+        with contextlib.suppress(OSError):
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            self.log_path.write_text("\n".join(self.lines) + "\n", encoding="utf-8")
+        return self.log_path
 
     def _drain(self) -> None:
         stream = self.proc.stdout if self.proc else None
@@ -175,15 +356,26 @@ class Sidecar:
                              + "\n".join(self.lines[-30:]))
 
     def wait_health(self, timeout: float = 45.0) -> dict:
+        """等 ``GET /health`` 给 200 + JSON。子进程中途死了就**立刻**失败（R1-8）。
+
+        旧实现只看 HTTP，进程"起来即死"时会把整段窗口烧成一行
+        ``[WinError 10061] 拒绝连接``——那行字既不含退出码也不含子进程输出，
+        等于把根因藏起来。现在死了直接报退出码，剩下的人力不用再猜。
+        """
         deadline = time.monotonic() + timeout
         last: object = None
         while time.monotonic() < deadline:
+            if self.proc is not None and self.proc.poll() is not None:
+                raise RuntimeError(
+                    f"sidecar 在 /health 就绪前就退出了，退出码 {self.proc.returncode}"
+                    f"（bootstrap 报的端口 {self.port}）：\n"
+                    + "\n".join(self.lines[-30:]))
             try:
                 status, _heads, body = self.http("GET", sv.API_PATH_HEALTH)
                 if status == 200 and isinstance(body, dict):
                     return body
                 last = (status, body)
-            except OSError as exc:
+            except (OSError, http.client.HTTPException) as exc:
                 last = str(exc)
             time.sleep(0.15)
         raise RuntimeError(f"/health 一直没就绪：{last}\n" + "\n".join(self.lines[-30:]))
@@ -774,7 +966,53 @@ class DesktopShellTests(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
-# D. 打包产物：有就真验，没有就如实 skip（原因写进 skip 理由）
+# D. 夹具自身的启动韧性（R1-8）：子进程"起来即死"要当场报退出码，不烧窗口、不泄漏进程
+# --------------------------------------------------------------------------- #
+@unittest.skipUnless(SPAWN_OK, f"沙箱不允许拉起子进程：{SPAWN_REASON}")
+class SidecarFixtureTests(unittest.TestCase):
+    """`Sidecar.start` 的韧性钉子（不碰产品代码，只钉夹具）。
+
+    R1-8 的现场签名就是这条：bootstrap 打了端口，`/health` 全程
+    `[WinError 10061] 拒绝连接`。旧夹具在这种情况下把 45s/120s 全烧在
+    `/health` 上，只留一行拒绝连接（不含退出码、不含子进程输出），
+    还把子进程留在机器上。这里造一个"打印 bootstrap 行后立刻 `exit 7`"的
+    假 sidecar，钉住修好的行为：立刻失败、报出退出码、给出日志出口、
+    每轮都换端口重试、子进程一个都不留。
+    """
+
+    def _dying_sidecar(self, name: str) -> Sidecar:
+        """一个"打过 bootstrap 行就自杀"的假 sidecar（真进程，不是 mock）。"""
+        app = Sidecar(name)
+        src = ("import json, sys\n"
+               "print(json.dumps({'%s': {'port': 0}}), flush=True)\n"
+               % entry.BOOTSTRAP_KEY + "sys.exit(7)\n")
+        app.cmd = [sys.executable, "-X", "utf8", "-c", src]
+        return app
+
+    def test_dead_child_fails_fast_with_exit_code_and_no_leak(self) -> None:
+        app = self._dying_sidecar("fixture-dying")
+        started = time.monotonic()
+        with self.assertRaises(RuntimeError) as ctx:
+            app.start(timeout=60.0, attempts=2)
+        spent = time.monotonic() - started
+        text = str(ctx.exception)
+        self.assertLess(spent, 30.0,
+                        f"死了的子进程不该把启动窗口烧满：{spent:.1f}s\n{text}")
+        self.assertIn("退出码 7", text, f"失败信息要报出退出码，不再只留 10061：\n{text}")
+        self.assertEqual(2, len(app.attempts), f"应换端口重试一轮：{app.attempts}")
+        self.assertIn(str(app.log_path), text, "失败信息要给出日志出口路径")
+        self.assertTrue(app.log_path.exists(), f"日志没落盘：{app.log_path}")
+        self.assertIn(entry.BOOTSTRAP_KEY,
+                      app.log_path.read_text(encoding="utf-8"),
+                      "日志要有子进程的完整输出")
+        self.assertIsNone(app.proc, "收尾后夹具不该还握着进程")
+        for proc in app.procs:
+            self.assertIsNotNone(proc.poll(),
+                                 f"失败的启动泄漏了子进程（pid={proc.pid}）")
+
+
+# --------------------------------------------------------------------------- #
+# E. 打包产物：有就真验，没有就如实 skip（原因写进 skip 理由）
 # --------------------------------------------------------------------------- #
 @unittest.skipUnless(SPAWN_OK, f"沙箱不允许拉起子进程：{SPAWN_REASON}")
 class ArtifactTests(unittest.TestCase):
@@ -818,7 +1056,16 @@ class ArtifactTests(unittest.TestCase):
             self.assertEqual(bool(not signed), bool(doc.get("unsigned")),
                              "有签名产物却记 unsigned=true（或反之）= 报告不可信")
 
-    def test_sidecar_exe_runs(self) -> None:
+    def test_sidecar_exe_records_survive_restart_in_the_final_data_root(self) -> None:
+        """真实用户重启不丢数据：记录落在**最终生效的数据根**（R1-9b）。
+
+        口径跟着夹具走，不盯夹具最初配置的目录：受限令牌下打包 exe 在系统 Temp 里
+        目录建得出来、第二笔写不下（`PermissionError` / `[WinError 5]`），夹具就把
+        **整棵数据根**切到仓库 `var/` 树再补一轮（`Sidecar._relocate_to_var_tree`）——
+        记录随之落进那棵新树。所以这里读 `app.cmd` 里 `--data-dir` **此刻**指向的落点；
+        真搬过家就额外钉 `attempts` 里的「运行期写失败…整棵数据根切到 <落点>」记账，
+        证明走的是兜底，不是静默换树。
+        """
         if not SIDECAR_EXE.exists():
             self.skipTest(f"未产出 sidecar exe（{SIDECAR_EXE}）：PyInstaller 构建未成功，"
                           f"原因见 tools/build_sidecar.py --check 的输出")
@@ -844,12 +1091,121 @@ class ArtifactTests(unittest.TestCase):
         for asset in ("/", "/app.js", "/styles.css"):
             self.assertEqual(200, app.http("GET", asset)[0],
                              f"打包产物里缺界面资源：{asset}")
-        self.assertTrue(fresh.is_dir(), "exe 没能创建 --data-dir 指定的数据目录")
-        self.assertTrue((fresh / "records.jsonl").exists(),
-                        "exe 创建的数据目录里没有落下记录日志（真实用户重启会丢数据）")
+        final_root = pathlib.Path(app.cmd[app.cmd.index("--data-dir") + 1])
+        self.assertTrue(final_root.is_dir(), "exe 没能创建 --data-dir 指定的数据目录")
+        self.assertTrue((final_root / "records.jsonl").exists(),
+                        "最终生效的数据根里没有落下记录日志（真实用户重启会丢数据）")
+        if final_root != fresh:                    # 兜底真搬过家：不许静默换树
+            joined = "\n".join(app.attempts)
+            self.assertIn("运行期写失败", joined,
+                          f"数据根换了却没记运行期写失败＝静默兜底：{app.attempts}")
+            self.assertIn(f"整棵数据根切到 {final_root.parent}", joined,
+                          f"attempts 没写明切到哪个落点（排障要看得见）：{app.attempts}")
+            self.assertEqual(app.data_dir, final_root,
+                             "搬完家夹具的 data_dir 记账没跟着切（清场/日志会指错地方）")
         app.stop()
         self.assertEqual(repo_ledger, _ledger_fingerprint(REPO / "var" / "features"),
                          "打包 exe 把总裁办账本写进了仓库 var/features：--features 没生效")
+
+    def test_sidecar_exe_starts_after_fixture_premakes_dirs(self) -> None:
+        """R1-8b 钉住用例：夹具预建七类传参目录后，exe 启动成功、/health 就绪。
+
+        预建覆盖 --data-dir、其派生的 auth/ 与 ingest/、--features（以及任何显式
+        文件参数的父目录），exe 端不再有任何 mkdir 的触发条件。本用例只钉"起得来
+        + 目录在位"，不改 test_sidecar_exe_runs 的既有断言与 exe 参数语义。
+        """
+        if not SIDECAR_EXE.exists():
+            self.skipTest(f"未产出 sidecar exe（{SIDECAR_EXE}）")
+        app = Sidecar("exe-premade")
+        fresh = app.data_dir / "product-created"
+        feats = app.data_dir.parent / "features-exe"
+        app.cmd = [str(SIDECAR_EXE), "--sidecar", "--port", "0", "--demo", "zh",
+                   "--data-dir", str(fresh), "--features", str(feats)]
+        app.start(timeout=120.0)
+        self.sidecars = [app]
+        try:
+            self.assertEqual(200, app.http("GET", sv.API_PATH_HEALTH)[0])
+            for d in (fresh, fresh / "auth", fresh / "ingest", feats):
+                self.assertTrue(d.is_dir(), f"夹具预建未生效：{d}")
+        finally:
+            app.stop()
+            self.sidecars = []
+
+    def test_sidecar_retries_on_the_var_tree_after_a_runtime_write_failure(self) -> None:
+        """R1-9 钉桩（PM-VERDICT-R1-8b §2.2）：运行期写失败 → 整棵数据根切到仓库 var/ 树 → 补一轮真起来。
+
+        注入的是**必然**的运行期写失败，不依赖本机 ACL（PM-VERDICT §3：这台机器的
+        WinError 5 不复现，所以只能靠机制 + 注入证据钉住）：桩子进程读自己的
+        `--data-dir` 落在哪里——不在 `REPO/var/tmp-e2e-<name>` 下就打印与打包 exe
+        一字不差的 `PermissionError: [Errno 13] Permission denied: '<path>'` 并
+        `exit 1`（这正是 R1-8b 现场的特征签名）；落在那下面就正常写记录、监听
+        `/health` 并打印 bootstrap 行。夹具的兜底必须把这一轮救回来，且：
+        数据根整棵（--data-dir 与 --features）都在 var/ 树里、记录真的写进了新树、
+        失败轮的死进程一个都不留、本用例自己把 var/ 目录清干净。
+        """
+        name = "runtime-write-fail"
+        base = REPO / "var" / f"tmp-e2e-{name}"
+        app = Sidecar(name)
+        src = (
+            "import json, sys, http.server\n"
+            "var_root, api, boot = sys.argv[-3], sys.argv[-2], sys.argv[-1]\n"
+            "argv = sys.argv[1:-3]\n"
+            "d = argv[argv.index('--data-dir') + 1]\n"
+            "norm = lambda p: str(p).replace('\\\\', '/').lower().rstrip('/')\n"
+            "if not norm(d).startswith(norm(var_root)):\n"
+            "    print('PermissionError: [Errno 13] Permission denied: %r' % d, flush=True)\n"
+            "    sys.exit(1)\n"
+            "with open(d + '/records.jsonl', 'a', encoding='utf-8') as fh:\n"
+            "    fh.write(json.dumps({'probe': 'written-in-var-tree'}) + '\\n')\n"
+            "class H(http.server.BaseHTTPRequestHandler):\n"
+            "    def do_GET(self):\n"
+            "        ok = self.path.rstrip('/') == api\n"
+            "        body = json.dumps({'ok': ok, 'audit': {'ok': True}}).encode('utf-8')\n"
+            "        self.send_response(200 if ok else 404)\n"
+            "        self.send_header('Content-Type', 'application/json; charset=utf-8')\n"
+            "        self.send_header('Content-Length', str(len(body)))\n"
+            "        self.end_headers()\n"
+            "        self.wfile.write(body)\n"
+            "    def log_message(self, *a):\n"
+            "        pass\n"
+            "srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), H)\n"
+            "print(json.dumps({boot: {'port': srv.server_address[1]}}), flush=True)\n"
+            "srv.serve_forever()\n"
+        )
+        app.cmd = [sys.executable, "-X", "utf8", "-c", src,
+                   "--sidecar", "--port", "0", "--demo", "zh",
+                   "--data-dir", str(app.data_dir), "--features", str(app.features_dir),
+                   str(base), sv.API_PATH_HEALTH, entry.BOOTSTRAP_KEY]
+        self.assertFalse(str(app.data_dir).startswith(str(base)),
+                         "起点必须不在 var/ 树里，否则这条钉子测不到兜底")
+        try:
+            app.start(timeout=30.0, attempts=2)          # 2 次预算 + 兜底明确补的一轮
+            self.assertEqual(200, app.http("GET", sv.API_PATH_HEALTH)[0],
+                             "换树之后这一轮必须真的把 /health 起来")
+            joined = "\n".join(app.attempts)
+            self.assertIn("运行期写失败", joined,
+                          f"夹具没认出运行期写失败的签名：{app.attempts}")
+            self.assertIn(str(base), joined,
+                          f"没把兜底落点写进记录（排障要看得见切到了哪里）：{app.attempts}")
+            for flag in ("--data-dir", "--features"):
+                value = pathlib.Path(app.cmd[app.cmd.index(flag) + 1])
+                self.assertTrue(str(value).startswith(str(base)),
+                                f"{flag} 没跟着搬到 var/ 树：{app.cmd}")
+            self.assertEqual(app.data_dir, pathlib.Path(app.cmd[app.cmd.index("--data-dir") + 1]),
+                             "夹具自己的 data_dir 记账没跟着切（日志/清场会指错地方）")
+            self.assertEqual(app.features_dir, pathlib.Path(app.cmd[app.cmd.index("--features") + 1]))
+            self.assertTrue((app.data_dir / "records.jsonl").exists(),
+                            "换树后记录要真写进去，不是绕过去不写")
+            self.assertIn("written-in-var-tree",
+                          (app.data_dir / "records.jsonl").read_text(encoding="utf-8"))
+            self.assertIsNone(app.proc.poll(), "成功这一轮的进程应在运行")
+            for dead in app.procs[:-1]:
+                self.assertIsNotNone(dead.poll(),
+                                     f"失败轮泄漏了子进程（pid={dead.pid}）")
+        finally:
+            app.stop()
+            shutil.rmtree(base, ignore_errors=True)
+            self.assertFalse(base.exists(), f"用例没清掉 var/ 落点：{base}")
 
     def test_builder_check_reports_the_real_reason(self) -> None:
         """`tools/build_sidecar.py --check` 必须能跑，并如实说明能不能构建。"""

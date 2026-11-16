@@ -9,17 +9,20 @@ from __future__ import annotations
 import copy
 import json
 import pathlib
+import shutil
 import sys
-import tempfile
 import unittest
 from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+for _p in (str(ROOT), str(ROOT / "tests")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 TOOLS = ROOT / "tools"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
+
+from scratch import scratch_dir  # noqa: E402  临时目录一律走 scratch（见 tests/scratch.py）
 
 from agent_explainer import crypto_sig as cs  # noqa: E402
 from agent_explainer.feature_store import FeaturePaths  # noqa: E402
@@ -48,9 +51,9 @@ class _Clock:
 
 class ContractBase(unittest.TestCase):
     def setUp(self) -> None:
-        self._temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._temp.cleanup)
-        self.paths = FeaturePaths(self._temp.name)
+        self.base = scratch_dir("secretariat-contract")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.paths = FeaturePaths(self.base)
         self.sec = Secretariat(self.paths, now=_Clock())
         self.agent_id = "agent-contract"
         self.identity = self.sec.register_identity(agent_id=self.agent_id, owner_did=OWNER)
@@ -267,9 +270,9 @@ class ContractBase(unittest.TestCase):
         self.assertEqual(first["entry_hash"], second["prev_hash"])
         self.assertEqual("continuous", self.sec.verify_record(second)["checks"]["prev_hash"])
         # 换一台机器（没有链头状态）：记录自证签名仍有效，连续性如实标"无法判定"
-        other = tempfile.TemporaryDirectory()
-        self.addCleanup(other.cleanup)
-        stranger = Secretariat(FeaturePaths(other.name))
+        other = scratch_dir("secretariat-contract-other")
+        self.addCleanup(shutil.rmtree, other, ignore_errors=True)
+        stranger = Secretariat(FeaturePaths(other))
         report = stranger.verify_record(second)
         self.assertEqual("valid", report["checks"]["signature"])
         self.assertEqual("unregistered", report["checks"]["identity"])

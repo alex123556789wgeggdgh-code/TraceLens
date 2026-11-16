@@ -28,7 +28,7 @@
 
 ```powershell
 # 手机视图（悬浮球 + 底部面板）：直接双击 index.html，或
-start msedge --new-window "file:///E:/DEEPSEEK 黑奴/agent-explainer/agent_explainer/web/index.html"
+start msedge --new-window "file:///C:/TraceLens/agent-explainer/agent_explainer/web/index.html"
 ```
 
 查询参数（给走查、录屏和自动化用）：

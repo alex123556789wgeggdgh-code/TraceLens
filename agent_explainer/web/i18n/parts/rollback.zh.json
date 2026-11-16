@@ -1,0 +1,25 @@
+{
+  "rollback": {
+    "inverse.restore_file": "还原被删除的文件（前态取自本系统的撤销日志）",
+    "inverse.revoke_message": "登记消息的撤回（外部收件箱不受本系统控制）",
+    "inverse.undo_config_change": "撤销配置 / 权限变更",
+    "inverse.cancel_booking": "取消预约 / 订单（取消本身是一条新的补偿记录）",
+    "inverse.undo_note": "撤销笔记写入",
+    "inverse.delete_generated": "删除生成产物",
+    "inverse.undo_write": "记录级补偿：只撤销本系统内的写入事实；已花掉的 token 与已生成 / 已外发的内容不可撤回，界面不得写成已撤回生成结果",
+    "inverse.noop_read": "只读动作：没有外部副作用，无需撤销",
+    "inverse.irreversible_financial": "资金转移不可逆：钱已离开本系统管辖的账户边界，本系统没有单方面撤销通道；请走支付 / 银行通道的人工冲正，再追加一条补偿记录留证（不得宣称这一步已撤销）",
+    "inverse.irreversible_contract": "签署不可逆：签名后的合同文本已进入合同相对方与存证系统，本系统无法单方面撤回签署；请走解约 / 作废 / 补充协议流程，并追加一条补偿记录（不得宣称签署已撤销）",
+    "inverse.escalate_financial_reversal": "升级人工冲正流程（资金）：本系统不撤销这笔资金转移，只登记升级请求与补偿记录",
+    "inverse.escalate_contract_rescission": "升级解约 / 作废流程（合同）：本系统不撤回签署，只登记升级请求与补偿记录",
+    "error.rollback_not_found": "没有记录的 action_id 对得上（ROLLBACK_NOT_FOUND）。",
+    "error.rollback_not_reversible": "这一步没有登记逆向操作，不能回滚（ROLLBACK_NOT_REVERSIBLE）。",
+    "error.rollback_dependents_pending": "后续步骤依赖这一步：一起确认（confirm_all=true）或先把它们回滚（ROLLBACK_DEPENDENTS_PENDING）。",
+    "error.rollback_already_rolled_back": "这一步已经回滚过（ROLLBACK_ALREADY_ROLLED_BACK）。",
+    "error.rollback_inverse_failed": "逆向操作失败；撤销日志记录了尝试过什么（ROLLBACK_INVERSE_FAILED）。",
+    "error.rollback_field_invalid": "回滚请求的字段缺失或类型不对（ROLLBACK_FIELD_INVALID）。",
+    "error.rollback_dependents_irreversible": "依赖闭包里的成员没有逆向操作，只有可逆成员能回滚（confirm_all=true 只滚这些）（ROLLBACK_DEPENDENTS_IRREVERSIBLE）。",
+    "error.rollback_journal_unreadable": "撤销日志读不动，回滚状态未知；本次没有计划也没有执行任何撤销（ROLLBACK_JOURNAL_UNREADABLE）。",
+    "error.rollback_idempotency_mismatch": "这个幂等键已用于另一个 action_id（ROLLBACK_IDEMPOTENCY_MISMATCH）。"
+  }
+}

@@ -226,6 +226,8 @@ class FeaturePaths:
             files/<id>.<ext>      证据文件本体
           rollback/
             journal.jsonl         可逆操作的撤销日志
+          analytics/
+            agg_daily.jsonl       仪表盘预聚合账本（追加式哈希链，R6-1）
           anchors.jsonl           区块链存证锚点
     """
 
@@ -313,6 +315,19 @@ class FeaturePaths:
     @property
     def rollback_journal(self) -> pathlib.Path:
         return self.rollback_dir / "journal.jsonl"
+
+    @property
+    def analytics_dir(self) -> pathlib.Path:
+        return self.root / "analytics"
+
+    @property
+    def agg_ledger(self) -> pathlib.Path:
+        """仪表盘预聚合账本（R6-1）：追加式哈希链 JSONL，口径见 docs/07 §11.15。
+
+        刻意不进 :meth:`ensure`：账本在**首次追加**时才建目录与文件——读侧命中判定
+        以「文件存在」为准，GET 仪表盘不该留下空目录这种副作用。
+        """
+        return self.analytics_dir / "agg_daily.jsonl"
 
     def letter_path(self, letter_id: str) -> pathlib.Path:
         return self.letters_dir / f"{letter_id}.json"

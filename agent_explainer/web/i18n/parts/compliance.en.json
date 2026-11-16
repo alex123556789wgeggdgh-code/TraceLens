@@ -1,0 +1,24 @@
+{
+  "export": {
+    "anchor.state": "Evidence anchoring is degraded: anchor_state = unavailable (no anchor backend, awaiting integration)",
+    "anchor.cid": "The offline CID is recomputable from the exported bytes but is not anchored (no anchor): no IPFS pinning, no on-chain transaction",
+    "anchor.tx": "eth_tx_hash is always None: the value does not exist, it is not a field left to fill in",
+    "anchor.deferred": "B8-3 on-chain within 2 minutes is deferred, not deleted: it stays an acceptance item once an RPC and keys are provided",
+    "format.current": "Export formats: csv / pdf / printable html (the button you click picks the format)",
+    "range.label": "This export covers: {value}",
+    "range.all_time": "All time",
+    "range.limit": "Row cap {value}",
+    "range.note": "The range follows the audit filters; this panel only reads them and never rewrites them",
+    "progress.busy": "Exporting, please wait",
+    "progress.aria": "Export in progress",
+    "result.title": "Export result",
+    "result.format": "Format {value}",
+    "result.rows": "Rows {value}",
+    "result.sha": "Content fingerprint sha256: {value}",
+    "result.file": "File name {value}",
+    "result.fallback": "PDF was unavailable and fell back to printable HTML ({value})",
+    "result.verify": "Offline check: python tools/verify_export.py <exported file> recomputes the chain and the column face byte by byte",
+    "result.anchored": "This file is not anchored (no anchor) / awaiting integration: eth_tx_hash does not exist and no on-chain transaction exists on this machine",
+    "result.empty": "No export result in this session yet"
+  }
+}

@@ -57,7 +57,7 @@ npm run selfcheck    # 无人值守验收：起窗口→读页面→打印一行
 # 例：从桌面 Shell 拉起无人值守验收（stdout 抓不到，靠文件取结果）
 node_modules\electron\dist\electron.exe . --selfcheck ^
   --selfcheck-out "%TEMP%\tracelens-selfcheck.jsonl" ^
-  --data-dir "%TEMP%\tracelens-desktop-data" --python D:\python\python.exe
+  --data-dir "%TEMP%\tracelens-desktop-data" --python <python>
 ```
 
 ## 打包

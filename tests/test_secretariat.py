@@ -17,13 +17,17 @@ from __future__ import annotations
 import copy
 import json
 import pathlib
+import shutil
 import sys
-import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+if str(ROOT / "tests") not in sys.path:
+    sys.path.insert(0, str(ROOT / "tests"))
+
+from scratch import scratch_dir  # noqa: E402  临时目录一律走 scratch（见 tests/scratch.py）
 
 from agent_explainer import crypto_sig as cs  # noqa: E402
 from agent_explainer import secretariat as sec_mod  # noqa: E402
@@ -83,9 +87,9 @@ class _Clock:
 
 class SecretariatTest(unittest.TestCase):
     def setUp(self) -> None:
-        self._temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._temp.cleanup)
-        self.paths = FeaturePaths(self._temp.name)
+        self.base = scratch_dir("secretariat")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.paths = FeaturePaths(self.base)
         self.clock = _Clock()
         self.sec = Secretariat(self.paths, now=self.clock)
 
@@ -499,9 +503,9 @@ class SecretariatR2BoundaryTest(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self._temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._temp.cleanup)
-        self.paths = FeaturePaths(self._temp.name)
+        self.base = scratch_dir("secretariat")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.paths = FeaturePaths(self.base)
         self.clock = _Clock()
         self.sec = Secretariat(self.paths, now=self.clock)
         self.identity = self.sec.register_identity(agent_id=AGENT, owner_did=OWNER)

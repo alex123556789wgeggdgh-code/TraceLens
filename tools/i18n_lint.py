@@ -71,8 +71,14 @@ STRING_LITERAL_RE = re.compile(r"'((?:\\.|[^'\\])*)'|\"((?:\\.|[^\"\\])*)\"")
 COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*|<!--.*?-->", re.S)
 
 # 错误码所属的界面域：与 app.js 的 <域>.error.<code> 命名一致（docs/03 §6.4）
+# M2-PRE 2（PM-VERDICT-R1-6 遗留④）：`rollback` 域纳入强制清单。撤销码族 = 服务端
+# EXPANSION_ERROR_TABLE 里的 9 个 ROLLBACK_*（含 `rollback_blocked` 视图原样带出的
+# 双 code：ROLLBACK_DEPENDENTS_IRREVERSIBLE / ROLLBACK_ALREADY_ROLLED_BACK），
+# 从此"缺键只报 INFO"变成"必须存在 <域>.error.<code> 键，缺则 NG"。
+# 卡面上的文案仍走 cards.rollback.error.<code>（R1-2b 已建，DOM 自测钉着它），
+# 两套键一一对应；这里新增的是契约侧文案，改文案要同步改两处。
 ERROR_DOMAINS: tuple[str, ...] = ("intervene", "auth", "settings", "ingest", "stream",
-                                  "audit", "export", "desk", "llm")
+                                  "audit", "export", "desk", "llm", "rollback")
 CODE_CARRYING_SUFFIX = ("_CODE", "_CODES", "_ERROR", "_ERRORS", "_STATUS", "_STATUSES")
 # 扫描过的服务端模块（agent_explainer 顶层）
 CODED_MODULES: tuple[str, ...] = ("server.py", "settings.py", "auth.py", "ingest.py",

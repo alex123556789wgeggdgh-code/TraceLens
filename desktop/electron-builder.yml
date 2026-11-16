@@ -22,8 +22,12 @@ files:
   - main.js
   - preload.js
   - sidecar.js
+  - updater.js
+  - lib/**/*
   - package.json
   - "!node_modules/**"
+  # 更新引擎的测试脚本不进产物（它只为开发和 CI 存在）
+  - "!lib/selftest.mjs"
 
 extraResources:
   # PyInstaller 单文件 sidecar（tools/build_sidecar.py 产出）。

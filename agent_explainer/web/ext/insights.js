@@ -16,9 +16,24 @@
  *   - no innerHTML: server text is written through textContent / setAttribute,
  *     which the DOM escapes; ctx.esc is therefore not re-applied to already
  *     escaped output. Nothing built here is ever parsed as markup;
- *   - all requests go through ctx.get / ctx.post / ctx.download, and every
- *     failure ends in ctx.renderError(host, ctx.panelError(res, retry)). An
- *     offline page says it needs the server instead of inventing data.
+ *   - all requests go through ctx.get / ctx.post / ctx.call / ctx.download, and
+ *     every failure ends in ctx.renderError(host, ctx.panelError(res, retry)).
+ *     An offline page says it needs the server instead of inventing data.
+ *
+ * R6-4 closed the dashboard face (task §2.1/§2.2, 展示纪律 0.4):
+ *   - the analytics tab reads the dashboard's metadata trio
+ *     (`pre_aggregated` / `scanned` / `agg.reason`) out loud: a pre-aggregated
+ *     read says so, a streaming read says 「未预聚合，加载较慢」 and names the
+ *     reason code as data. The "≤3s" promise is only ever shown when
+ *     `pre_aggregated` is true;
+ *   - the export buttons name a file from the response headers
+ *     (`X-TraceLens-Export-Format` for the bytes served,
+ *     `-Fallback` for a degradation, `-Sha256` for the fingerprint of those
+ *     bytes). A degradation is written as a degradation, never as a success;
+ *     `X-TraceLens-Export-Fallback` shows its reason code next to the words
+ *     "这不是坏掉，也不算成功". A fingerprint row says 这份文件的指纹 and, when a
+ *     browser download follows, that the fingerprint belongs to the response
+ *     the panel just read.
  */
 (function (global) {
   'use strict';
@@ -31,6 +46,28 @@
   var DAY_MS = 86400000;
   var POLL_MS = 60000;
   var SUG_ENABLED_KEY = 'tracelens.ext.suggestions.enabled';
+  var TOAST_MS = 12000;
+  /* R6-4 (dashboard frontend face):
+   *   - SLOW_MS  : the honest "未预聚合，加载较慢" label fires on a measured load
+   *                over one second, not on a guess about the server's internals;
+   *   - EXPORT_ACCEPT / EXPORT_FORMATS: the frozen format enum is `csv|pdf`,
+   *                so the panel ships exactly two buttons. `format=html` is 400
+   *                on the server and therefore gets no button here;
+   *   - PLANE_REASON: one dictionary key per documented fallback reason code.
+   *                An unknown code is shown as the code it is, never as a
+   *                translated guess. */
+  var SLOW_MS = 1000;
+  var EXPORT_ACCEPT = 'text/csv,text/html,application/pdf,application/json';
+  var EXPORT_FORMATS = ['csv', 'pdf'];
+  var PLANE_REASON = {
+    no_ledger_wired: 'analytics.plane.reason.no_ledger_wired',
+    agent_filter: 'analytics.plane.reason.agent_filter',
+    custom_salt: 'analytics.plane.reason.custom_salt',
+    input_not_rerunnable: 'analytics.plane.reason.input_not_rerunnable',
+    ledger_missing_no_records: 'analytics.plane.reason.ledger_missing_no_records',
+    ledger_unreadable: 'analytics.plane.reason.ledger_unreadable',
+    chain_tampered: 'analytics.plane.reason.chain_tampered'
+  };
 
   /* ---------------------------------------------------------------- *
    * 1. small helpers (no copy, no DOM text)
@@ -267,8 +304,18 @@
     loading: false,
     seq: 0,
     body: null,
-    paintedLang: ''
+    paintedLang: '',
+    /* R6-4: measured load time (the honest label eats a real number, not a
+     * claim) and the last export answer as the headers described it. */
+    startedAt: 0,
+    elapsedMs: 0,
+    exportHost: null,
+    export: { busy: '', last: null, seq: 0 }
   };
+
+  function exportReset() {
+    ana.export = { busy: '', last: null, seq: ana.export.seq || 0 };
+  }
 
   function anaDefaults() {
     if (!ana.from) ana.from = dateOffset(-6);
@@ -293,6 +340,296 @@
     return parts.join('&');
   }
 
+  /* ---------------------------------------------------------------- *
+   * 2b. the data plane and the export face (R6-4): honest by construction
+   * ---------------------------------------------------------------- */
+
+  function noteRow(ctx, parent, key, params, extraClass) {
+    var node = ctx.textNode(parent, key, params || null, 'p');
+    node.className = 'ext-note' + (extraClass ? ' ' + extraClass : '');
+    return node;
+  }
+
+  /* The three metadata items the dashboard ships with its numbers
+   * (docs/07 §11.16 / §11.17): where the numbers came from, how many records
+   * this read walked, and the reason code when it had to walk them. Missing
+   * values stay `null` — the panel then says it has no information instead of
+   * painting the fast story. */
+  function metaTrio(data) {
+    var source = isObj(data) ? data : {};
+    var agg = isObj(source.agg) ? source.agg : {};
+    var pre = null;
+    if (Object.prototype.hasOwnProperty.call(source, 'pre_aggregated')) {
+      pre = source.pre_aggregated === true;
+    }
+    return {
+      pre: pre,
+      scanned: numOf(pick(source, ['scanned', 'meta.scanned'])),
+      reason: str(pick(agg, ['reason'])),
+      durable: agg.durable === false ? false : true,
+      head: str(pick(agg, ['head'])),
+      problems: numOf(pick(agg, ['problems_count'])),
+      generatedAt: str(pick(source, ['generated_at', 'meta.generated_at']))
+    };
+  }
+
+  function paintDataPlane(ctx, host, data) {
+    var trio = metaTrio(data);
+    var box = ctx.add(host, ctx.el('section', {
+      class: 'ext-panel__section ext-ana__plane',
+      attrs: { 'aria-label': ctx.t('analytics.plane.title') }
+    }));
+    box.setAttribute('data-pre-aggregated',
+                     trio.pre === null ? 'unknown' : (trio.pre ? 'true' : 'false'));
+    box.setAttribute('data-elapsed-ms', String(ana.elapsedMs));
+    sectionTitle(ctx, box, 'analytics.plane.title', 'h4');
+
+    /* 1. 来源如实：命中 / 回退 / 不知道，三句里没有第四句 */
+    noteRow(ctx, box, trio.pre === true ? 'analytics.plane.pre'
+                : (trio.pre === false ? 'analytics.plane.stream' : 'analytics.plane.unknown'),
+            null, 'ext-ana__plane-source');
+
+    /* 2. 「未预聚合，加载较慢」：回退必标；命中但实测超一秒也标（数字是自己的尺子） */
+    if (trio.pre === false) {
+      noteRow(ctx, box, 'analytics.plane.slow', { ms: ana.elapsedMs }, 'ext-note--warn');
+      var reasonKey = PLANE_REASON[trio.reason];
+      if (reasonKey) noteRow(ctx, box, reasonKey, null, 'ext-ana__plane-reason');
+      else noteRow(ctx, box, 'analytics.plane.reason', { code: trio.reason || 'unknown' },
+                   'ext-ana__plane-reason');
+    } else if (trio.pre === true && ana.elapsedMs > SLOW_MS) {
+      noteRow(ctx, box, 'analytics.plane.slow_hit', { ms: ana.elapsedMs }, 'ext-note--warn');
+    }
+
+    /* 3. ≤3s 的承诺只在命中时成立（任务 §2.5 的诚实口径） */
+    noteRow(ctx, box, trio.pre === true ? 'analytics.plane.timing.pre'
+                : 'analytics.plane.timing.stream');
+
+    /* 4. 扫了多少条 / 账本走到哪 / 写没写进去 / 有没有读不动的行 */
+    if (trio.scanned !== null) noteRow(ctx, box, 'analytics.plane.scanned', { count: trio.scanned });
+    if (trio.pre === true && !trio.durable) {
+      noteRow(ctx, box, 'analytics.plane.not_durable', null, 'ext-note--warn');
+    }
+    if (trio.problems !== null && trio.problems > 0) {
+      noteRow(ctx, box, 'analytics.plane.problems', { count: trio.problems }, 'ext-note--warn');
+    }
+    if (trio.head) noteRow(ctx, box, 'analytics.plane.head', { head: trio.head });
+    if (trio.generatedAt) {
+      noteRow(ctx, box, 'analytics.plane.generated', { at: ctx.fmtTime(trio.generatedAt) });
+    }
+    /* 5. 没有推送通道：刷新＝查询时机，不把「重新查询」画成服务端推送 */
+    noteRow(ctx, box, 'analytics.plane.refresh');
+    return box;
+  }
+
+  /* The server writes the served filename into Content-Disposition; the panel
+   * reads it and never invents a name. No header → no name → no file: a name
+   * made up here is one more claim the page cannot back up. */
+  function filenameFromDisposition(value) {
+    var text = str(value);
+    if (!text) return '';
+    var extended = /filename\*\s*=\s*[^'";]*'[^'";]*'([^;]+)/i.exec(text);
+    if (extended && str(extended[1]).trim()) return str(extended[1]).trim();
+    var plain = /filename\s*=\s*"?([^";]+?)"?\s*(?:;|$)/i.exec(text);
+    return plain ? str(plain[1]).trim() : '';
+  }
+
+  /* A browser navigation (download anchor / printable tab) reads the server's
+   * own bytes; the panel never re-encodes them. */
+  function exportUrl(format) {
+    return '/api/analytics/export?format=' + enc(format) + '&' + anaQueryString();
+  }
+
+  function saveArtifact(ctx, record) {
+    try {
+      if (typeof global.Blob !== 'function' || typeof global.URL !== 'function'
+          || typeof global.URL.createObjectURL !== 'function') return false;
+      if (!record.filename) return false;
+      /* The served CSV bytes carry a UTF-8 BOM (docs/07 §11.16); decoding to
+       * text drops it, so the panel puts that BOM back: the saved bytes then
+       * equal the served bytes and `-Sha256` really describes this file. */
+      var payload = record.served === 'csv' ? '\ufeff' + record.text : record.text;
+      var blob = new global.Blob([payload],
+                                 { type: record.contentType || 'text/plain;charset=utf-8' });
+      var url = global.URL.createObjectURL(blob);
+      var saved = ctx.download(url, record.filename);
+      if (typeof global.setTimeout === 'function') {
+        global.setTimeout(function () {
+          try { global.URL.revokeObjectURL(url); } catch (e) { /* already gone */ }
+        }, 2000);
+      }
+      return !!saved;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function requestExport(ctx, format) {
+    if (ana.export.busy) return;
+    if (offlineNow()) {
+      ana.export.last = { offline: true, requested: format };
+      paintExportRow(ctx, ana.exportHost);
+      return;
+    }
+    ana.export.busy = format;
+    ana.export.seq += 1;
+    var seq = ana.export.seq;
+    paintExportRow(ctx, ana.exportHost);
+    var query = anaQuery();
+    query.format = format;
+    ctx.call('api/analytics/export', null, {
+      method: 'GET', query: query, response: 'text', accept: EXPORT_ACCEPT
+    }).then(function (res) {
+      if (seq !== ana.export.seq) return;
+      ana.export.busy = '';
+      var head = res && res.headers ? res.headers : null;
+      var served = ctx.header(head, 'x-tracelens-export-format');
+      var record = {
+        requested: format,
+        offline: false,
+        ok: !!(res && res.ok),
+        status: res && typeof res.status === 'number' ? res.status : 0,
+        code: res && res.code ? String(res.code) : '',
+        message: res && res.message ? String(res.message) : '',
+        served: served,
+        fallback: ctx.header(head, 'x-tracelens-export-fallback'),
+        sha: ctx.header(head, 'x-tracelens-export-sha256'),
+        note: ctx.header(head, 'x-tracelens-export-note'),
+        preAggregated: ctx.header(head, 'x-tracelens-export-pre-aggregated'),
+        scanned: ctx.header(head, 'x-tracelens-export-scanned'),
+        filename: filenameFromDisposition(ctx.header(head, 'content-disposition')),
+        contentType: ctx.header(head, 'content-type'),
+        bytes: res && typeof res.text === 'string' ? res.text.length : 0,
+        text: res && typeof res.text === 'string' ? res.text : '',
+        saved: false,
+        opened: null
+      };
+      if (record.ok) {
+        /* A real PDF is bytes the text channel cannot survive: the panel hands
+         * the browser the server URL and says so. CSV / printable HTML ship as
+         * text, so the panel saves exactly those served characters. */
+        if (record.served === 'pdf') record.saved = ctx.download(exportUrl(format), record.filename);
+        else record.saved = saveArtifact(ctx, record);
+      }
+      ana.export.last = record;
+      paintExportRow(ctx, ana.exportHost);
+      if (!record.ok) {
+        ctx.toast('analytics.export.failed',
+                  { code: record.code || 'HTTP_STATUS',
+                    message: record.message || String(record.status || '') }, 'warn');
+      } else if (record.fallback) {
+        ctx.toast('analytics.export.toast_fallback',
+                  { requested: format.toUpperCase(), format: (record.served || '—').toUpperCase() },
+                  'warn');
+      } else {
+        ctx.toast('analytics.export.toast',
+                  { format: (record.served || '—').toUpperCase() }, 'info');
+      }
+    });
+  }
+
+  function openPrintView(ctx, record) {
+    var url = exportUrl(record.requested);
+    var opened = null;
+    try {
+      if (typeof global.open === 'function') opened = global.open(url, '_blank', 'noopener');
+    } catch (e) { opened = null; }
+    record.opened = !!opened;
+    paintExportRow(ctx, ana.exportHost);
+  }
+
+  function paintExportRow(ctx, host) {
+    if (!host) return;
+    ctx.clear(host);
+    if (offlineNow()) {
+      noteRow(ctx, host, 'analytics.export.offline', null, 'ext-note--warn');
+      return;
+    }
+    if (!ctx.can('audit.export')) {
+      noteRow(ctx, host, 'analytics.export.denied', null, 'ext-note--warn');
+      return;
+    }
+    var buttons = ctx.add(host, ctx.el('div', { class: 'ext-ana__export-buttons' }));
+    /* exactly two buttons: the frozen format enum is csv|pdf, `format=html`
+     * answers 400 ANALYTICS_FORMAT_INVALID, so no HTML option is offered. */
+    EXPORT_FORMATS.forEach(function (format) {
+      var button = ctx.add(buttons, ctx.el('button', {
+        class: 'trust-btn',
+        attrs: { type: 'button', 'data-export-format': format }
+      }));
+      ctx.textNode(button, 'analytics.export.' + format);
+      button.addEventListener('click', function () { requestExport(ctx, format); });
+      if (ana.export.busy) button.setAttribute('disabled', 'true');
+    });
+    if (ana.export.busy) {
+      noteRow(ctx, host, 'analytics.export.busy', { format: ana.export.busy.toUpperCase() });
+    }
+    paintExportResult(ctx, host);
+  }
+
+  function paintExportResult(ctx, host) {
+    var record = ana.export.last;
+    if (!record) return;
+    var box = ctx.add(host, ctx.el('div', { class: 'ext-ana__export-result' }));
+    box.setAttribute('data-export-format', record.served || 'unknown');
+    box.setAttribute('data-export-fallback', record.fallback || '');
+    box.setAttribute('data-export-sha', record.sha || '');
+    box.setAttribute('data-export-saved', record.saved ? 'true' : 'false');
+    box.setAttribute('data-export-requested', record.requested || '');
+
+    if (record.offline) {
+      noteRow(ctx, box, 'analytics.export.offline', null, 'ext-note--warn');
+      return;
+    }
+    if (!record.ok) {
+      /* 403 is the permission story, everything else is the code + the server's
+       * own sentence: the unified error body is what the page shows. */
+      if (record.status === 403) {
+        noteRow(ctx, box, 'analytics.export.denied', null, 'ext-note--warn');
+      } else {
+        noteRow(ctx, box, 'analytics.export.failed',
+                { code: record.code || 'HTTP_STATUS',
+                  message: record.message || String(record.status || '') }, 'ext-note--warn');
+      }
+      return;
+    }
+    if (!record.served) {
+      noteRow(ctx, box, 'analytics.export.format_missing', null, 'ext-note--warn');
+    }
+    noteRow(ctx, box, 'analytics.export.result',
+            { filename: record.filename || '\u2014', format: (record.served || '\u2014').toUpperCase() });
+    /* 降级不是成功：原因码原样写在句子边上（PM-VERDICT-R6-3 §2 口径） */
+    if (record.fallback) {
+      noteRow(ctx, box, 'analytics.export.fallback',
+              { requested: (record.requested || '').toUpperCase(),
+                format: (record.served || '\u2014').toUpperCase(),
+                reason: record.fallback }, 'ext-note--warn');
+    }
+    if (record.sha) noteRow(ctx, box, 'analytics.export.sha', { sha: record.sha });
+    else noteRow(ctx, box, 'analytics.export.sha_missing', null, 'ext-note--warn');
+    if (record.served === 'csv' && record.saved) noteRow(ctx, box, 'analytics.export.bytes');
+    if (record.served === 'pdf' && record.saved) {
+      noteRow(ctx, box, 'analytics.export.pdf_direct', null, 'ext-note--warn');
+    }
+    if (record.served === 'html') {
+      noteRow(ctx, box, 'analytics.export.print');
+      var print = ctx.add(box, ctx.el('button', {
+        class: 'trust-btn', attrs: { type: 'button', 'data-export-print': 'true' }
+      }));
+      ctx.textNode(print, 'analytics.export.print_open');
+      print.addEventListener('click', function () { openPrintView(ctx, record); });
+      if (record.opened === true) noteRow(ctx, box, 'analytics.export.printed');
+      if (record.opened === false) {
+        noteRow(ctx, box, 'analytics.export.print_unavailable', null, 'ext-note--warn');
+      }
+    }
+    if (record.note) noteRow(ctx, box, 'analytics.export.server_note', { note: record.note });
+    if (record.preAggregated) {
+      noteRow(ctx, box, 'analytics.export.plane_echo',
+              { value: record.preAggregated, scanned: record.scanned || '\u2014' });
+    }
+    if (!record.saved) noteRow(ctx, box, 'analytics.export.not_saved', null, 'ext-note--warn');
+  }
+
   function anaRead(ctx) {
     anaDefaults();
     var host = ana.body;
@@ -305,10 +642,16 @@
     var seq = ana.seq + 1;
     ana.seq = seq;
     ana.loading = true;
+    /* R6-4: the slow label eats a measured number, so the clock starts here and
+     * stops when this one read comes back. */
+    ana.startedAt = typeof Date.now === 'function' ? Date.now() : 0;
+    ana.elapsedMs = 0;
     ctx.renderLoading(host);
     ctx.get('api/analytics/dashboard', anaQuery()).then(function (res) {
       if (seq !== ana.seq) return;
       ana.loading = false;
+      var now = typeof Date.now === 'function' ? Date.now() : 0;
+      ana.elapsedMs = ana.startedAt && now >= ana.startedAt ? now - ana.startedAt : 0;
       if (!res.ok) {
         ana.data = null;
         ctx.renderError(host, ctx.panelError(res, function () { anaRead(ctx); }));
@@ -363,23 +706,12 @@
     sectionTitle(ctx, exportRow, 'analytics.export.title', 'h4');
     var exportNote = ctx.textNode(exportRow, 'analytics.export.note', null, 'p');
     exportNote.className = 'ext-note';
-
-    if (ctx.can('audit.export')) {
-      var exportButtons = ctx.add(exportRow, ctx.el('div', { class: 'ext-ana__export-buttons' }));
-      ['csv', 'pdf'].forEach(function (format) {
-        var key = 'analytics.export.' + format;
-        var button = ctx.add(exportButtons, ctx.el('button', { class: 'trust-btn', attrs: { type: 'button' } }));
-        ctx.textNode(button, key);
-        button.addEventListener('click', function () {
-          var url = '/api/analytics/export?format=' + enc(format) + '&' + anaQueryString();
-          ctx.download(url);
-          ctx.toast('analytics.export.toast', { format: format.toUpperCase() }, 'info');
-        });
-      });
-    } else {
-      var denied = ctx.textNode(exportRow, 'analytics.export.denied', null, 'p');
-      denied.className = 'ext-note ext-note--warn';
-    }
+    /* R6-4: the buttons and their honest answer are painted together, so a
+     * degradation shows up next to the button that caused it. */
+    var exportHost = ctx.add(exportRow, ctx.el('div', { class: 'ext-ana__export-body' }));
+    ana.exportHost = exportHost;
+    exportReset();
+    paintExportRow(ctx, exportHost);
 
     var body = ctx.add(panel, ctx.el('div', { class: 'ext-ana__body' }));
     ana.body = body;
@@ -434,6 +766,9 @@
       return;
     }
 
+    /* R6-4: the numbers are read only after the page has said where they came
+     * from, so the data plane strip is painted first, above the cards. */
+    paintDataPlane(ctx, host, data);
     paintMetrics(ctx, host, data);
     paintTrend(ctx, host, data);
     paintHeatmap(ctx, host, data);
@@ -755,7 +1090,18 @@
     baselineDone: false,
     polledAt: 0,
     polling: false,
-    paintedLang: ''
+    paintedLang: '',
+    /* R7-2：服务端回读的真值 + 写侧挂载的界面状态 */
+    threshold: null,
+    cooldownDays: null,
+    durable: true,
+    featureBusy: false,
+    featureMsg: null,
+    featureMsgHost: null,
+    featureButton: null,
+    snoozed: {},
+    toastNode: null,
+    toastTimer: 0
   };
 
   function readEnabled() {
@@ -802,6 +1148,107 @@
     ctx.textNode(node, sug.enabled ? 'suggestions.feature.on' : 'suggestions.feature.off');
   }
 
+  /* ---------------------------------------------------------------- *
+   * 5b. R7-2：开关走写侧挂载（POST api/suggestions），界面不自己编状态
+   * ---------------------------------------------------------------- */
+
+  function resProblem(res) {
+    var data = isObj(res) && isObj(res.data) ? res.data : {};
+    var code = str(data.code) || String((res && res.status) || 'UNKNOWN');
+    var message = str(data.message) || '';
+    return { code: code, message: message };
+  }
+
+  function paintSwitch(ctx) {
+    var button = sug.featureButton;
+    if (!button) return;
+    button.setAttribute('aria-checked', sug.enabled ? 'true' : 'false');
+    if (button.classList) {
+      if (sug.enabled) button.classList.add('is-on');
+      else button.classList.remove('is-on');
+    }
+    // 开关是服务级：只有 settings.write 能拨（viewer/editor 看到禁用 + 说明，不是假装可点）
+    if (ctx.can('settings.write')) button.removeAttribute('disabled');
+    else button.setAttribute('disabled', 'disabled');
+    button.setAttribute('aria-busy', sug.featureBusy ? 'true' : 'false');
+  }
+
+  function paintFeatureMessage(ctx) {
+    var host = sug.featureMsgHost;
+    if (!host) return;
+    ctx.clear(host);
+    var msg = sug.featureMsg;
+    if (!msg) {
+      // 没有操作反馈时，这里显示诚实说明：开关不落盘（服务端 durable=false 时）
+      if (sug.durable === false) {
+        var note = ctx.textNode(host, 'suggestions.feature.durable', null, 'p');
+        note.className = 'ext-note';
+      }
+      return;
+    }
+    var box = ctx.add(host, ctx.el('p', { class: 'ext-note' }));
+    if (msg.kind === 'warn') box.className = 'ext-note ext-note--warn';
+    box.textContent = ctx.t(msg.key, msg.params || null);
+    ctx.stamp(box, msg.key);
+  }
+
+  function saveFeatureSwitch(ctx, next) {
+    if (!ctx.can('settings.write')) {
+      sug.featureMsg = { kind: 'warn', key: 'suggestions.feature.denied' };
+      paintFeatureMessage(ctx);
+      paintSwitch(ctx);
+      return;
+    }
+    if (sug.featureBusy) return;
+    if (offlineNow()) {
+      offlineState(ctx, sug.featureMsgHost, function () { saveFeatureSwitch(ctx, next); });
+      return;
+    }
+    sug.featureBusy = true;
+    paintSwitch(ctx);
+    ctx.post('api/suggestions', { enabled: next }).then(function (res) {
+      sug.featureBusy = false;
+      var payload = isObj(res) && isObj(res.data) ? res.data : {};
+      if (res.ok && typeof payload.enabled === 'boolean') {
+        sug.enabled = payload.enabled;                    // 服务端回读，不用点下去的值
+        sug.durable = payload.durable !== false;
+        saveEnabled(sug.enabled);                         // 只做本地镜像，不当真值
+        sug.featureMsg = {
+          kind: 'ok',
+          key: 'suggestions.feature.saved',
+          params: { state: sug.enabled ? 'true' : 'false' }
+        };
+        paintFeatureState(ctx);
+        paintSwitch(ctx);
+        paintFeatureMessage(ctx);
+        if (sug.enabled) loadSuggestions(ctx);
+        else {
+          sug.items = null;
+          if (sug.itemsHost) ctx.renderEmpty(sug.itemsHost, 'suggestions.feature.off');
+        }
+        return;
+      }
+      var problem = resProblem(res);
+      sug.featureMsg = {
+        kind: 'warn',
+        key: 'suggestions.feature.failed',
+        params: { code: problem.code, message: problem.message || '\u2014' }
+      };
+      paintSwitch(ctx);
+      paintFeatureMessage(ctx);
+      loadSuggestions(ctx);                               // 写失败就回读服务端，界面不猜
+    }, function () {
+      sug.featureBusy = false;
+      sug.featureMsg = {
+        kind: 'warn',
+        key: 'suggestions.feature.failed',
+        params: { code: 'NETWORK', message: '\u2014' }
+      };
+      paintSwitch(ctx);
+      paintFeatureMessage(ctx);
+    });
+  }
+
   function loadSuggestions(ctx) {
     var host = sug.itemsHost;
     if (!host) return;
@@ -827,6 +1274,17 @@
         ctx.renderError(host, ctx.panelError(res, function () { loadSuggestions(ctx); }));
         return;
       }
+      // 开关真值以服务端回读为准（T28 的 enabled 字段就是那个服务级开关的对外视图）；
+      // localStorage 只是首帧的本地镜像，绝不让它替服务端说话。
+      var payload = isObj(res.data) ? res.data : {};
+      if (typeof payload.enabled === 'boolean') {
+        sug.enabled = payload.enabled;
+        saveEnabled(sug.enabled);
+        paintFeatureState(ctx);
+        paintSwitch(ctx);
+      }
+      if (typeof payload.threshold === 'number') sug.threshold = payload.threshold;
+      if (typeof payload.cooldown_days === 'number') sug.cooldownDays = payload.cooldown_days;
       sug.items = suggestionRows(res.data);
       paintSuggestions(ctx);
     });
@@ -963,8 +1421,10 @@
         return;
       }
       if (sug.feedbackHost) ctx.clear(sug.feedbackHost);
+      // 冷却天数以服务端回读为准（T28 payload 的 cooldown_days），界面不写死 7
+      var coolingDays = typeof sug.cooldownDays === 'number' ? sug.cooldownDays : 7;
       if (verb === 'accept') ctx.toast('suggestions.toast.accepted', null, 'info');
-      else ctx.toast('suggestions.toast.dismissed', { days: 7 }, 'info');
+      else ctx.toast('suggestions.toast.dismissed', { days: coolingDays }, 'info');
       loadSuggestions(ctx);
       loadPreferences(ctx);
     });
@@ -1108,6 +1568,7 @@
     var switchButton = ctx.add(feature, ctx.el('button', {
       class: 'ext-switch', attrs: { type: 'button', role: 'switch', 'aria-checked': sug.enabled ? 'true' : 'false' }
     }));
+    sug.featureButton = switchButton;
     var knob = ctx.add(switchButton, ctx.el('span', { class: 'ext-switch__knob', attrs: { 'aria-hidden': 'true' } }));
     knob.textContent = '';
     var switchLabel = ctx.add(feature, ctx.el('span', { class: 'ext-switch__label', text: ctx.t('suggestions.feature.switch') }));
@@ -1117,6 +1578,9 @@
     paintFeatureState(ctx);
     var featureNote = ctx.textNode(feature, 'suggestions.feature.note', null, 'p');
     featureNote.className = 'ext-note';
+    var featureMsgHost = ctx.add(feature, ctx.el('div', { class: 'ext-sug__feature-msg' }));
+    sug.featureMsgHost = featureMsgHost;
+    paintFeatureMessage(ctx);
 
     var feedbackHost = ctx.add(panel, ctx.el('div', { class: 'ext-sug__feedback' }));
     sug.feedbackHost = feedbackHost;
@@ -1125,6 +1589,8 @@
     sectionTitle(ctx, listSection, 'suggestions.list.title', 'h4');
     var pollNote = ctx.textNode(listSection, 'suggestions.poll.note', null, 'p');
     pollNote.className = 'ext-note';
+    var timingNote = ctx.textNode(listSection, 'suggestions.poll.timing', null, 'p');
+    timingNote.className = 'ext-note';
     if (!ctx.can('intervene.decide')) {
       var denied = ctx.textNode(listSection, 'suggestions.action.denied', null, 'p');
       denied.className = 'ext-note ext-note--warn';
@@ -1136,22 +1602,16 @@
     sectionTitle(ctx, prefSection, 'suggestions.pref.title', 'h4');
     var prefsHost = ctx.add(prefSection, ctx.el('div', { class: 'ext-sug__prefs-host' }));
     sug.prefsHost = prefsHost;
+    // 删除 / 清空：后端未提供端点，界面如实标注「未提供」，不摆假按钮（任务 §2.2 的诚实口径）
+    var unsupported = ctx.textNode(prefSection, 'suggestions.pref.unsupported', null, 'p');
+    unsupported.className = 'ext-note ext-note--warn';
     sectionTitle(ctx, prefSection, 'suggestions.pref.add.title', 'h5');
     suggestionForm(ctx, prefSection);
 
     switchButton.addEventListener('click', function () {
-      sug.enabled = !sug.enabled;
-      saveEnabled(sug.enabled);
-      switchButton.setAttribute('aria-checked', sug.enabled ? 'true' : 'false');
-      switchButton.classList.toggle('is-on', sug.enabled);
-      paintFeatureState(ctx);
-      if (sug.enabled) loadSuggestions(ctx);
-      else {
-        sug.items = null;
-        ctx.renderEmpty(itemsHost, 'suggestions.feature.off');
-      }
+      saveFeatureSwitch(ctx, !sug.enabled);
     });
-    switchButton.classList.toggle('is-on', sug.enabled);
+    paintSwitch(ctx);
 
     if (isArr(sug.items)) paintSuggestions(ctx);
     else loadSuggestions(ctx);
@@ -1162,6 +1622,125 @@
   function repaintSuggestions(host, ctx) {
     if (ctx.lang() === sug.paintedLang) return;
     renderSuggestions(host, ctx);
+  }
+
+  /* ---------------------------------------------------------------- *
+   * 6b. R7-2：三键提示卡（采纳 / 拒绝 / 稍后）——非模态、不抢焦点、不阻塞
+   *
+   * 为什么不用 ``ctx.toast``：core.js 那个是纯文本、单实例、5.2 秒自动收起的
+   * 通知条，没有按钮位；任务 §2.1 要的是「采纳 / 拒绝 / 稍后」三个动作。
+   * 这里在本模块内自建一个节点（自己的定时器、自己的类名前缀 ext-sug-toast*），
+   * 不碰 core.js / core.css，也不加遮罩：页面其余部分照常可点（无模态阻塞）。
+   * ---------------------------------------------------------------- */
+
+  function closeDecisionToast() {
+    if (sug.toastTimer) {
+      clearTimeout(sug.toastTimer);
+      sug.toastTimer = 0;
+    }
+    if (sug.toastNode && sug.toastNode.parentNode) {
+      sug.toastNode.parentNode.removeChild(sug.toastNode);
+    }
+    sug.toastNode = null;
+  }
+
+  function toastNote(ctx, node, key, params) {
+    var line = node.querySelector ? node.querySelector('.ext-sug-toast__note') : null;
+    if (!line) return;
+    ctx.clear(line);
+    line.textContent = ctx.t(key, params || null);
+    ctx.stamp(line, key);
+  }
+
+  function decideFromToast(ctx, id, verb, node) {
+    var row = node.querySelector ? node.querySelector('.ext-sug-toast__row') : null;
+    var buttons = [];
+    if (row && row.children) {
+      for (var i = 0; i < row.children.length; i += 1) buttons.push(row.children[i]);
+    }
+    if (offlineNow()) {
+      toastNote(ctx, node, 'suggestions.toast.failed', {
+        code: 'OFFLINE', message: '\u2014'
+      });
+      return;
+    }
+    buttons.forEach(function (b) { if (b && b.setAttribute) b.setAttribute('disabled', 'disabled'); });
+    ctx.post('api/suggestions/' + enc(id) + '/' + verb, {}).then(function (res) {
+      if (!res.ok) {
+        // 如实反馈：把服务端的码与人话原因显示出来，按钮恢复，绝不假装成功
+        var problem = resProblem(res);
+        toastNote(ctx, node, 'suggestions.toast.failed', {
+          code: problem.code, message: problem.message || '\u2014'
+        });
+        buttons.forEach(function (b) {
+          if (b && b.removeAttribute && b.getAttribute('data-locked') !== 'true') {
+            b.removeAttribute('disabled');
+          }
+        });
+        return;
+      }
+      var days = typeof sug.cooldownDays === 'number' ? sug.cooldownDays : 7;
+      sug.shown[id] = true;
+      delete sug.snoozed[id];
+      ctx.toast(verb === 'accept' ? 'suggestions.toast.accepted' : 'suggestions.toast.dismissed',
+                verb === 'accept' ? null : { days: days }, 'info');
+      closeDecisionToast();
+      loadSuggestions(ctx);
+      loadPreferences(ctx);
+    }, function () {
+      toastNote(ctx, node, 'suggestions.toast.failed', { code: 'NETWORK', message: '\u2014' });
+      buttons.forEach(function (b) {
+        if (b && b.removeAttribute && b.getAttribute('data-locked') !== 'true') {
+          b.removeAttribute('disabled');
+        }
+      });
+    });
+  }
+
+  function decisionToast(ctx, item) {
+    var doc = typeof document !== 'undefined' ? document : null;
+    if (!doc || !doc.body) return;
+    var id = str(pick(item, ['id', 'suggestion_id']));
+    if (!id) return;
+    closeDecisionToast();
+    var node = ctx.el('div', {
+      class: 'ext-sug-toast',
+      attrs: { role: 'status', 'aria-live': 'polite', 'aria-modal': 'false' }
+    });
+    var head = ctx.add(node, ctx.el('p', { class: 'ext-sug-toast__text' }));
+    head.textContent = ctx.t('suggestions.toast.new.one', {
+      tool: str(pick(item, ['tool'])) || '\u2014',
+      param: str(pick(item, ['param', 'parameter'])) || '\u2014'
+    });
+    ctx.stamp(head, 'suggestions.toast.new.one');
+    var row = ctx.add(node, ctx.el('div', { class: 'ext-sug-toast__row' }));
+    var accept = ctx.add(row, ctx.el('button', {
+      class: 'trust-btn trust-btn--primary', attrs: { type: 'button' }
+    }));
+    ctx.textNode(accept, 'suggestions.action.accept');
+    var dismiss = ctx.add(row, ctx.el('button', { class: 'trust-btn', attrs: { type: 'button' } }));
+    ctx.textNode(dismiss, 'suggestions.action.dismiss');
+    var later = ctx.add(row, ctx.el('button', { class: 'trust-btn', attrs: { type: 'button' } }));
+    ctx.textNode(later, 'suggestions.action.later');
+    ctx.add(node, ctx.el('p', { class: 'ext-sug-toast__note' }));
+    var canDecide = ctx.can('intervene.decide');
+    if (!canDecide) {
+      // 如实：这一格缺权限就禁用两个写侧按钮，不摆出可点的样子
+      accept.setAttribute('disabled', 'disabled');
+      dismiss.setAttribute('disabled', 'disabled');
+      toastNote(ctx, node, 'suggestions.action.denied');
+    }
+    accept.addEventListener('click', function () { decideFromToast(ctx, id, 'accept', node); });
+    dismiss.addEventListener('click', function () { decideFromToast(ctx, id, 'dismiss', node); });
+    later.addEventListener('click', function () {
+      // [稍后] = 本次页面会话不再弹同一条（刷新后恢复提示：如实写在 i18n 文案里）
+      sug.snoozed[id] = true;
+      closeDecisionToast();
+      ctx.toast('suggestions.toast.later.done', null, 'info');
+    });
+    doc.body.appendChild(node);
+    sug.toastNode = node;
+    sug.toastTimer = setTimeout(closeDecisionToast, TOAST_MS);
   }
 
   /* ---------------------------------------------------------------- *
@@ -1180,22 +1759,28 @@
     ctx.get('api/suggestions', { status: 'open' }).then(function (res) {
       sug.polling = false;
       if (!res.ok) return;
+      var payload = isObj(res.data) ? res.data : {};
+      if (typeof payload.enabled === 'boolean' && payload.enabled !== sug.enabled) {
+        sug.enabled = payload.enabled;
+        saveEnabled(sug.enabled);
+        paintFeatureState(ctx);
+        paintSwitch(ctx);
+      }
       var list = suggestionRows(res.data);
       var fresh = [];
       list.forEach(function (item) {
         var id = str(pick(item, ['id', 'suggestion_id']));
-        if (!id || sug.shown[id]) return;
+        if (!id || sug.shown[id] || sug.snoozed[id]) return;
         sug.shown[id] = true;
         if (sug.baselineDone) fresh.push(item);
       });
       sug.baselineDone = true;
       if (!fresh.length) return;
       if (fresh.length === 1) {
-        ctx.toast('suggestions.toast.new.one', {
-          tool: str(pick(fresh[0], ['tool'])) || '\u2014',
-          param: str(pick(fresh[0], ['param', 'parameter'])) || '\u2014'
-        }, 'info');
+        // 一条：给能直接决定的三键提示卡（采纳 / 拒绝 / 稍后）
+        decisionToast(ctx, fresh[0]);
       } else {
+        // 多条：不堆提示卡，只给一条文本通知，逐条决定留在面板里（不阻塞界面）
         ctx.toast('suggestions.toast.new.many', { count: fresh.length }, 'info');
       }
     }, function () {

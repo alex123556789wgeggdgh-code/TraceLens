@@ -51,7 +51,36 @@ const FILES = {
   /* 5.0 R4: the secretariat panel is a classic script in web/ext/; the
    *  extension sources are scanned for i18n references and panel shape. */
   extSecretariat: path.join(HERE, 'ext', 'secretariat.js'),
-  extSecretariatCss: path.join(HERE, 'ext', 'secretariat.css')
+  extSecretariatCss: path.join(HERE, 'ext', 'secretariat.css'),
+  /* R1-9: the cold-start integration test runs the real shell + the real card
+   * plugin over the real app.js card builder, so both files are artifacts. */
+  extCore: path.join(HERE, 'ext', 'core.js'),
+  extCards: path.join(HERE, 'ext', 'cards.js'),
+  /* R3-4: the evidence / causal face owns its styles in ext/cards.css; the
+   * copy keys it reaches for live in the cards domain of both dictionaries, so
+   * both files are artifacts of this round (checks 105-106). */
+  extCardsCss: path.join(HERE, 'ext', 'cards.css'),
+  /* R5-4: the collaboration panel and the invitee's landing page. share.html is
+   * a standalone document, so it is an artifact of its own: the one-time-token
+   * rules (hash-only, no storage, no re-echo) are asserted against the file. */
+  extCollab: path.join(HERE, 'ext', 'collab.js'),
+  extCollabCss: path.join(HERE, 'ext', 'collab.css'),
+  /* R7-2: the suggestions surface is ext/insights.js + ext/insights.css (both
+   * already mounted in index.html since R6-3). The write-side mount it talks to
+   * (T29 /accept, T30 /dismiss, T31 POST /api/preferences, plus the service-level
+   * switch on POST /api/suggestions) is asserted over these two sources. */
+  extInsights: path.join(HERE, 'ext', 'insights.js'),
+  extInsightsCss: path.join(HERE, 'ext', 'insights.css'),
+  /* R4-2 (REQ-004 B4-1/B4-2): the merged multi-agent view. The panel is the
+   * consumer of the groups read face (T18/T19) and of the R4-1 response-layer
+   * aliases, so the JS, its scoped CSS and the i18n parts file are artifacts
+   * of this round; the colour table it copies from groups.py is pinned here. */
+  extGroups: path.join(HERE, 'ext', 'groups.js'),
+  extGroupsCss: path.join(HERE, 'ext', 'groups.css'),
+  groupsPy: path.join(HERE, '..', 'groups.py'),
+  i18nGroupsParts: path.join(HERE, 'i18n', 'parts', 'groups.zh.json'),
+  i18nGroupsPartsEn: path.join(HERE, 'i18n', 'parts', 'groups.en.json'),
+  shareHtml: path.join(HERE, 'share.html')
 };
 
 const CJK = /[\u3400-\u4DBF\u4E00-\u9FFF\u3000-\u303F\uFF00-\uFFEF]/;
@@ -402,6 +431,78 @@ class ClassList {
 
 let DOC = null;
 
+/* R1-9 (D-1): the trust layer follows the card tree with a MutationObserver
+ * (web/ext/core.js), and the card badge is inserted with insertBefore - two
+ * surfaces the earlier checks never touched. Delivery is a microtask, as in a
+ * browser. Both are inert while nobody subscribes: recordMutation returns at
+ * its first line when no observer exists, so the older checks see no change. */
+const mutationHub = { observers: [], scheduled: false };
+
+function isSelfOrDescendant(node, root) {
+  let n = node;
+  while (n) {
+    if (n === root) return true;
+    n = n.parentNode;
+  }
+  return false;
+}
+
+function flushMutations() {
+  mutationHub.scheduled = false;
+  mutationHub.observers.slice().forEach((obs) => {
+    if (!obs.connected || !obs.records.length) return;
+    const records = obs.records;
+    obs.records = [];
+    try {
+      obs.callback(records, obs);
+    } catch (e) {
+      /* a broken observer must never break the page it watches */
+    }
+  });
+}
+
+function recordMutation(target, added, removed) {
+  if (!mutationHub.observers.length) return;
+  mutationHub.observers.forEach((obs) => {
+    if (!obs.connected) return;
+    const covered = obs.opts && obs.opts.subtree
+      ? isSelfOrDescendant(target, obs.target)
+      : target === obs.target;
+    if (!covered) return;
+    obs.records.push({ type: 'childList', target, addedNodes: added, removedNodes: removed });
+  });
+  if (mutationHub.scheduled) return;
+  mutationHub.scheduled = true;
+  Promise.resolve().then(flushMutations);
+}
+
+class MutationObserverShim {
+  constructor(callback) {
+    this.callback = callback;
+    this.records = [];
+    this.target = null;
+    this.opts = {};
+    this.connected = false;
+  }
+  observe(target, opts) {
+    this.target = target;
+    this.opts = opts || {};
+    this.connected = true;
+    mutationHub.observers.push(this);
+  }
+  disconnect() {
+    this.connected = false;
+    this.records = [];
+    const i = mutationHub.observers.indexOf(this);
+    if (i >= 0) mutationHub.observers.splice(i, 1);
+  }
+  takeRecords() {
+    const out = this.records;
+    this.records = [];
+    return out;
+  }
+}
+
 class Element {
   constructor(tag, owner) {
     this.tagName = String(tag).toUpperCase();
@@ -457,12 +558,32 @@ class Element {
     if (child.parentNode) child.parentNode.removeChild(child);
     child.parentNode = this;
     this.childNodes.push(child);
+    recordMutation(this, [child], []);
     return child;
+  }
+  insertBefore(child, ref) {
+    if (child.parentNode) child.parentNode.removeChild(child);
+    const i = this.childNodes.indexOf(ref);
+    child.parentNode = this;
+    if (i < 0) this.childNodes.push(child); else this.childNodes.splice(i, 0, child);
+    recordMutation(this, [child], []);
+    return child;
+  }
+  replaceChild(newChild, oldChild) {
+    const i = this.childNodes.indexOf(oldChild);
+    if (i < 0) return oldChild;
+    if (newChild.parentNode) newChild.parentNode.removeChild(newChild);
+    this.childNodes[i] = newChild;
+    newChild.parentNode = this;
+    oldChild.parentNode = null;
+    recordMutation(this, [newChild], [oldChild]);
+    return oldChild;
   }
   removeChild(child) {
     const i = this.childNodes.indexOf(child);
     if (i >= 0) this.childNodes.splice(i, 1);
     child.parentNode = null;
+    recordMutation(this, [], [child]);
     return child;
   }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
@@ -713,6 +834,10 @@ function makeSandbox(html, options) {
     __listeners: Object.create(null),
     setTimeout,
     clearTimeout,
+    /* R1-9 (D-1): web/ext/core.js follows the card tree with a
+     * MutationObserver; the shim delivers on a microtask like a browser. */
+    MutationObserver: MutationObserverShim,
+    queueMicrotask: (fn) => Promise.resolve().then(fn),
     console: { log() {}, warn() {}, error() {} },
     Intl,
     JSON,
@@ -778,6 +903,37 @@ function boot(options) {
   /* no explicit init(): the sandbox document is readyState=complete, so
    * app.js boots itself exactly like the static file:// page does */
   return { sandbox, ui, document: sandbox.document };
+}
+
+/* R1-9 (D-1): the same page, plus the trust layer, in index.html's own script
+ * order (dictionaries, demo set, compare set, app.js, ext/core.js,
+ * ext/cards.js). app.js boots itself while it is being evaluated, so the DOM
+ * handed back is the page's FIRST paint - the shell's onRender listener did
+ * not exist yet, which is exactly the shape R1-7 measured on a real machine
+ * (REPORT-R1-7 §5 A4 / §9 D-1). The caller boots the shell itself
+ * (ext.boot(), what the page does on its DOMContentLoaded timeout), so the
+ * DOM can be read at each step with no timing guesswork. */
+function bootExtLayer(options) {
+  const opts = Object.assign({ search: '', innerWidth: 1400, innerHeight: 900, protocol: 'https:' }, options || {});
+  const sandbox = makeSandbox(read(FILES.index), opts);
+  const zh = readJson(FILES.zh);
+  const en = readJson(FILES.en);
+  sandbox.TraceLensDicts = { zh, en };
+  loadPageScripts(sandbox);
+  const ui = sandbox.TraceLensUI;
+  if (!ui) throw new Error('app.js did not expose TraceLensUI');
+  const doc = sandbox.document;
+  const firstPaint = {
+    cards: doc.querySelectorAll('article.card').length,
+    details: doc.querySelectorAll('.card__detail').length,
+    rollbackRows: doc.querySelectorAll('.cards__rollback').length,
+    rollbackButtons: doc.querySelectorAll('.cards__rollback-btn').length
+  };
+  loadScript(sandbox, FILES.extCore, 'ext/core.js');
+  loadScript(sandbox, FILES.extCards, 'ext/cards.js');
+  const ext = sandbox.TraceLensExt;
+  if (!ext) throw new Error('ext/core.js did not expose TraceLensExt');
+  return { sandbox, ui, ext, document: doc, firstPaint };
 }
 
 /* ---------------------------------------------------------------- *
@@ -927,6 +1083,11 @@ function buildChecks() {
   const keysMd = exists(FILES.keys) ? read(FILES.keys) : '';
   const extSecretariatSource = read(FILES.extSecretariat);
   const extSecretariatCss = read(FILES.extSecretariatCss);
+  const extCollabSource = read(FILES.extCollab);
+  const extCollabCssSource = read(FILES.extCollabCss);
+  const extInsightsSource = read(FILES.extInsights);
+  const extInsightsCssSource = read(FILES.extInsightsCss);
+  const shareHtmlSource = read(FILES.shareHtml);
 
   const zhKeys = dictKeys(zh);
   const enKeys = dictKeys(en);
@@ -1057,10 +1218,17 @@ function buildChecks() {
   });
 
   check('no orphan dictionary copy: every dictionary key is referenced', () => {
-    /* Forward-looking dictionaries for the not-yet-shipped collab panels
-     * (groups/sharing) are the one documented exception: they ship before the
-     * panels so translators work once. Remove this filter when collab.js lands. */
-    const FUTURE_DOMAINS = /^(groups|sharing)\./;
+    /* Forward-looking dictionaries for a not-yet-shipped panel are the one
+     * documented exception: they ship before the panel so translators work once.
+     * R5-4 (task §2.1) shipped `ext/collab.js`, so `sharing.` is no longer an
+     * exception: every sharing key must be referenced by real code, and the
+     * panel builds no bare prefix that would fake it.
+     * R4-2 (task §2.7) shipped `ext/groups.js`, so the `groups.` exception is
+     * **removed**: the domain is a real asserted domain from this round on.
+     * The dedicated R4-2 check below pins that every `groups.` key is
+     * referenced by a quoted literal in the panel, and that the panel builds no
+     * bare `groups.` prefix - so a future panel cannot re-open the exception by
+     * shipping copy again. */
     /* Pre-existing trust/cards copy-deck keys that no shipped code renders yet.
      * Explicit list (not a domain wildcard) so a new orphan still fails. */
     const LEGACY_ORPHANS = new Set([
@@ -1070,10 +1238,21 @@ function buildChecks() {
       'trust.unit.minutes', 'trust.copy', 'trust.signature.valid', 'trust.signature.invalid',
       'trust.signature.absent', 'trust.chain.ok', 'trust.chain.broken',
       'cards.evidence.aria', 'cards.evidence.diff.summary', 'cards.evidence.vote.like',
-      'cards.evidence.vote.dislike', 'cards.causal.empty'
+      'cards.evidence.vote.dislike', 'cards.causal.empty',
+      /* M2-PRE 2 (PM-VERDICT-R1-6 carry-over 4): the rollback family's
+       * contract-side copy, one key per server code, added so
+       * tools/i18n_lint.py's ERROR_DOMAINS gate can enforce
+       * `<域>.error.<code>` for ROLLBACK_*. The card itself renders the
+       * parallel `cards.rollback.error.<code>` deck (R1-2b, pinned by the DOM
+       * self-test), so these nine keys are read by the gate, not by the page.
+       * zh and en carry the same server message, code named in the copy. */
+      'rollback.error.rollback_not_found', 'rollback.error.rollback_not_reversible',
+      'rollback.error.rollback_dependents_pending', 'rollback.error.rollback_already_rolled_back',
+      'rollback.error.rollback_inverse_failed', 'rollback.error.rollback_field_invalid',
+      'rollback.error.rollback_dependents_irreversible', 'rollback.error.rollback_journal_unreadable',
+      'rollback.error.rollback_idempotency_mismatch'
     ]);
-    const unused = zhKeys.filter((k) => !coverage.has(k) && !FUTURE_DOMAINS.test(k)
-      && !LEGACY_ORPHANS.has(k));
+    const unused = zhKeys.filter((k) => !coverage.has(k) && !LEGACY_ORPHANS.has(k));
     if (unused.length) throw new Error('dictionary keys never rendered: ' + unused.join(', '));
     return 'unreferenced keys=0 (' + zhKeys.length + ' keys covered by literals + enum/prefix expansion)';
   });
@@ -5231,6 +5410,2132 @@ function buildChecks() {
       + p.rendered.cardHints + ' hint rows / ' + p.rendered.cardToggles + ' card heads in the DOM';
   });
 
+  /* R1-9 (D-1): the cold-start integration test over the REAL card path.
+   * `.scratch/r16/dom-selftest.mjs` built its cards by hand, so the whole
+   * first-paint class of bugs was invisible to it (R1-7 §9 D-1). Here the
+   * cards come from app.js's own renderCard, the layer comes from the shipped
+   * ext/core.js + ext/cards.js, and the script order is index.html's. */
+  check('R1-9 D-1 cold start: the first screen carries the rollback entry (real renderCard path)', async () => {
+    const layer = bootExtLayer({ search: '?view=desktop' });
+    const doc = layer.document;
+    const ui = layer.ui;
+    const ext = layer.ext;
+    const paint = layer.firstPaint;
+    const rows = () => doc.querySelectorAll('.cards__rollback');
+    const buttons = () => doc.querySelectorAll('.cards__rollback-btn');
+    const marks = () => doc.querySelectorAll('[data-trust-decorated]');
+
+    /* 1. the page's own first paint (app.js boots itself, before this layer is
+     * parsed): real cards, and no trust decoration at all. That is the D-1
+     * surface, recorded as data rather than argued about. */
+    if (paint.cards < 1) throw new Error('the first paint built no card: app.js did not boot');
+    if (paint.details !== paint.cards) throw new Error('a card has no detail host: ' + paint.details + '/' + paint.cards);
+    if (paint.rollbackRows !== 0 || paint.rollbackButtons !== 0) {
+      throw new Error('the trust layer painted before it existed: rows=' + paint.rollbackRows
+        + ' buttons=' + paint.rollbackButtons);
+    }
+
+    /* 2. the shell boots (what index.html does on its DOMContentLoaded
+     * timeout). R1-9 forces one decorate pass there, so the first screen -
+     * with no repaint, no SSE frame and no dictionary refresh - has its entry. */
+    ext.boot();
+    /* the data side of the same gate: a row offers a button exactly where the
+     * registry facts and the server's read-time view allow one (R1-6 G-21).
+     * The point of pinning it here is that the cold-start repair must not have
+     * moved that line: the entry shows on the first screen, and nowhere else. */
+    const view = (() => {
+      const meta = ui.metaInfo() || {};
+      return meta.rollback_view && typeof meta.rollback_view === 'object' ? meta.rollback_view : {};
+    })();
+    const setId = (list, pick) => new Set((Array.isArray(list) ? list : [])
+      .map((item) => (pick ? String(pick(item)) : String(item))).filter((v) => v !== ''));
+    const rolled = setId(view.rolled_back);
+    const kept = setId(view.kept_declared);
+    const blocked = setId(view.blocked, (e) => (e && typeof e === 'object' ? e.action_id : e));
+    const journalBad = !!(view.journal && typeof view.journal === 'object' && view.journal.ok === false);
+    const expected = (loadDemoPayload().records || []).filter((rec) => {
+      const tool = rec.tool_used && typeof rec.tool_used === 'object' ? String(rec.tool_used.name || '') : '';
+      const scope = rec.impact_scope && typeof rec.impact_scope === 'object' ? rec.impact_scope : null;
+      const id = String(rec.id || '');
+      return !!tool
+        && String(rec.action_type || '') !== 'rollback'
+        && !rolled.has(id) && !blocked.has(id) && !kept.has(id)
+        && !journalBad
+        && !(scope && scope.reversible === false);
+    }).length;
+    const gate = 'journal-unreadable=' + journalBad + ', rolled=' + rolled.size
+      + ', blocked=' + blocked.size + ', kept=' + kept.size
+      + ', irreversible=' + (loadDemoPayload().records || [])
+        .filter((rec) => rec.impact_scope && rec.impact_scope.reversible === false).length;
+    const afterBoot = { rows: rows().length, buttons: buttons().length, marks: marks().length };
+    if (afterBoot.rows !== paint.cards) {
+      throw new Error('the first screen has ' + afterBoot.rows + ' rollback rows for ' + paint.cards
+        + ' cards: the boot pass did not decorate every card');
+    }
+    if (afterBoot.buttons !== expected) {
+      throw new Error('the first screen has ' + afterBoot.buttons + ' rollback entries, the gate allows '
+        + expected + ' (' + gate + ')');
+    }
+    buttons().forEach((btn) => {
+      const row = btn.closest('.cards__rollback');
+      if (!row) throw new Error('a rollback button lives outside its detail row');
+      if (!row.closest('article.card')) throw new Error('a rollback row lives outside a card');
+      const label = String(btn.textContent || '').trim();
+      if (!label) throw new Error('the first-screen rollback button has no copy');
+      if (label.indexOf('cards.rollback.button') === 0 || label.indexOf('{op}') >= 0) {
+        throw new Error('the first-screen rollback button is unresolved copy: ' + label);
+      }
+    });
+    /* D-4 honesty on the first screen: a card with nothing to undo says so in
+     * its own row instead of showing a dead button. */
+    rows().forEach((row) => {
+      if (row.querySelectorAll('.cards__rollback-btn').length) return;
+      if (!row.querySelectorAll('.cards__note').length) {
+        throw new Error('a card with no rollback entry has no explanation in its row: '
+          + (row.closest('article.card') ? row.closest('article.card').getAttribute('data-id') : '?'));
+      }
+    });
+    const stateAfterBoot = ext.state();
+    if (stateAfterBoot.decorated < 1) throw new Error('boot forced no decoration pass: ' + stateAfterBoot.decorated);
+    if (stateAfterBoot.watcher !== 'mutation') throw new Error('the card-tree watcher is not installed: ' + stateAfterBoot.watcher);
+
+    /* 3. the second D-1 path: expanding a card calls app.js renderZones()
+     * alone - no renderAll, no repaint. Since M2-PRE 1 (PM-VERDICT-R1-9
+     * ruling 3) that rebuild ends with notify(), so the shell's listener pass
+     * is the main path: the rebuilt cards are decorated inside the same click,
+     * with no repaint and no timer in between. Let the page settle first so the
+     * app has no pass left in its own chain: from then on a decorated list can
+     * only come from the notify that renderZones fires itself. */
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    if (rows().length !== paint.cards) {
+      throw new Error('the settled page lost its decoration: rows=' + rows().length + ' of ' + paint.cards);
+    }
+    const settled = ext.state();
+    const settledMarks = marks().length;
+    const rendersBefore = ui.probe().stats.renders;
+    const card = doc.querySelectorAll('article.card')[0];
+    const id = card.getAttribute('data-id');
+    const toggle = doc.querySelectorAll('article.card#card-' + id + ' button.card__toggle')[0]
+      || card.querySelectorAll('button.card__toggle')[0];
+    if (!toggle) throw new Error('the real card has no expand button');
+    toggle.dispatchEvent({ type: 'click' });
+    const rendersAfterToggle = ui.probe().stats.renders;
+    if (rendersAfterToggle !== rendersBefore) {
+      throw new Error('the expand path is no longer the rebuild-without-repaint D-1 measured: renders '
+        + rendersBefore + ' -> ' + rendersAfterToggle);
+    }
+    /* Reading the DOM right after the click, with no timer run in between, is
+     * the shape of the main path: the notify is synchronous, so anything the
+     * watcher could only add later must still be missing here. */
+    const rightAfterToggle = { rows: rows().length, buttons: buttons().length, marks: marks().length };
+    if (rightAfterToggle.rows !== paint.cards) {
+      throw new Error('renderZones no longer notifies on its own: rows right after the click='
+        + rightAfterToggle.rows + ' of ' + paint.cards);
+    }
+    if (rightAfterToggle.buttons !== expected) {
+      throw new Error('the same-click restore has ' + rightAfterToggle.buttons
+        + ' rollback entries, the gate allows ' + expected + ' (' + gate + ')');
+    }
+    if (rightAfterToggle.marks !== settledMarks) {
+      throw new Error('the decoration is not idempotent across a rebuild: marks ' + settledMarks
+        + ' -> ' + rightAfterToggle.marks);
+    }
+    const stateAfterToggle = ext.state();
+    /* The shell's own counters tell the two paths apart: `renders` counts the
+     * notifies it heard (the main path), `decorated` the debounced/forced passes
+     * it ran on its own. One expand click must reach the shell exactly once. */
+    if (stateAfterToggle.renders !== settled.renders + 1) {
+      throw new Error('the zones rebuild notified the shell ' + (stateAfterToggle.renders - settled.renders)
+        + ' times, expected exactly 1 (renders ' + settled.renders + ' -> ' + stateAfterToggle.renders + ')');
+    }
+    /* The window is generous on purpose: the claim is "the restore needs no
+     * repaint", not "the restore is under N milliseconds". A loaded Node event
+     * loop can delay a 16ms timer by an order of magnitude - and the passes
+     * that follow a decorated list (renderAll's own trailing notify, the
+     * debounced watcher) must add nothing to it. */
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const restored = { rows: rows().length, buttons: buttons().length, marks: marks().length };
+    const rendersAfterRestore = ui.probe().stats.renders;
+    if (restored.rows !== paint.cards) {
+      throw new Error('after a zones rebuild the settled list has ' + restored.rows
+        + ' rollback rows for ' + paint.cards + ' cards (immediately after the click: '
+        + rightAfterToggle.rows + ', repaints ' + rendersBefore + ' -> ' + rendersAfterRestore + ')');
+    }
+    if (restored.marks !== settledMarks) {
+      throw new Error('a later pass duplicated a decorated surface: marks ' + settledMarks
+        + ' -> ' + restored.marks);
+    }
+    if (rendersAfterRestore !== rendersBefore) {
+      throw new Error('the restore rode on a repaint, not on the shell: renders ' + rendersBefore
+        + ' -> ' + rendersAfterRestore);
+    }
+    if (restored.buttons !== expected) {
+      throw new Error('after the zones rebuild the list has ' + restored.buttons
+        + ' rollback entries, the gate allows ' + expected + ' (' + gate + ')');
+    }
+    const opened = doc.querySelectorAll('article.card.is-expanded');
+    if (opened.length < 1) throw new Error('the expand click did not expand a card');
+    const openDetail = opened[0].querySelectorAll('.card__detail')[0];
+    if (!openDetail || openDetail.hidden) throw new Error('the expanded card has no visible detail host');
+    if (!openDetail.querySelectorAll('.cards__rollback').length) {
+      throw new Error('the opened card has no rollback entry inside its detail');
+    }
+    /* 3b. the fallback, kept on purpose: a card tree that changes with no
+     * notify at all is still decorated by the installed watcher. The card is
+     * hand-built - a real record id and a detail host, no app.js call - so this
+     * is the only path left that proves the watcher is more than installed. It
+     * goes into the tree the rebuild left behind, not the captured card's own
+     * (the click detached that subtree). */
+    const beforeFallback = ext.state();
+    const liveCard = doc.querySelectorAll('article.card')[0];
+    if (!liveCard || !liveCard.parentNode) throw new Error('no live card tree to append to');
+    const extra = doc.createElement('article');
+    extra.setAttribute('class', 'card');
+    extra.setAttribute('data-id', id);
+    const extraDetail = doc.createElement('div');
+    extraDetail.setAttribute('class', 'card__detail');
+    extra.appendChild(extraDetail);
+    liveCard.parentNode.appendChild(extra);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const stateAfterWatch = ext.state();
+    const extraRows = extraDetail.querySelectorAll('.cards__rollback').length;
+    const rendersAfterFallback = ui.probe().stats.renders;
+    extra.remove();
+    if (extraRows !== 1) {
+      throw new Error('the card-tree watcher decorated no row on a card that arrived with no notify: rows='
+        + extraRows);
+    }
+    if (stateAfterWatch.decorated <= beforeFallback.decorated) {
+      throw new Error('the card-tree watcher ran no pass: decorated=' + stateAfterWatch.decorated);
+    }
+    if (stateAfterWatch.renders !== beforeFallback.renders) {
+      throw new Error('the fallback card reached the shell through a notify, not through the watcher: renders '
+        + beforeFallback.renders + ' -> ' + stateAfterWatch.renders);
+    }
+    if (rendersAfterFallback !== rendersBefore) {
+      throw new Error('the fallback pass rode on a repaint: renders ' + rendersBefore
+        + ' -> ' + rendersAfterFallback);
+    }
+    return 'first paint (real renderCard): ' + paint.cards + ' cards, ' + paint.details + ' details, '
+      + paint.rollbackRows + ' rollback rows (layer not parsed yet); after the shell boots: '
+      + afterBoot.rows + ' rows + ' + afterBoot.buttons + ' entries = the gate (' + gate + '), '
+      + afterBoot.marks + ' decorated nodes, passes=' + stateAfterBoot.decorated
+      + '; expand click on a settled page = renderZones with its own notify (app repaints ' + rendersBefore
+      + ' -> ' + rendersAfterToggle + ', shell notifies ' + settled.renders + ' -> '
+      + stateAfterToggle.renders + '): rows restored to ' + rightAfterToggle.rows + ' + '
+      + rightAfterToggle.buttons + ' entries in the same click, marks ' + settledMarks + ' -> '
+      + rightAfterToggle.marks + ' (idempotent); settled ' + restored.rows + ' rows / ' + restored.marks
+      + ' marks with app repaints unchanged (' + rendersBefore + ' -> ' + rendersAfterRestore
+      + '); a hand-built card with no notify gets its row from the card-tree watcher, passes '
+      + beforeFallback.decorated + ' -> ' + stateAfterWatch.decorated;
+  });
+
+  /* R2-3 (REQ-002 B2-2 / B2-1): the confidence ring. Three checks:
+   * 94 the two band tables are the same numbers and the colours are tokens;
+   * 95 every card wears a ring, the band is exact on all four boundaries, and
+   *    "no source to judge from" stays neutral with no number at all;
+   * 96 the hover carries value + source + the few-sample hint, the honest
+   *    "default" wording, and the pass writes its own milliseconds (B2-2).
+   * The records come from the shipped demo set with the confidence fields
+   * overwritten, so the real renderCard path paints every card under test. */
+  const CONF_CASES = [
+    ['act-demo-0001', 0.95, 'logprobs', 40, 'green'],
+    ['act-demo-0002', 0.9, 'template', 12, 'green'],
+    ['act-demo-0003', 0.89, 'hybrid', 9, 'light_green'],
+    ['act-demo-0004', 0.7, 'tool_success_rate', 7, 'light_green'],
+    ['act-demo-0005', 0.69, 'template', 6, 'yellow'],
+    ['act-demo-0006', 0.5, 'default', 5, 'yellow'],
+    ['act-demo-0007', 0.4999, 'logprobs', 3, 'red'],
+    ['act-demo-0008', 0.42, 'logprobs', 3, 'red'],
+    ['act-demo-0009', null, 'template', 20, 'neutral'],
+    ['act-demo-0010', 1.7, 'hybrid', 8, 'neutral'],
+    ['act-demo-0011', '0.8', 'template', 8, 'neutral'],
+    ['act-demo-0012', 0.95, null, null, 'green']
+  ];
+
+  function confLayer() {
+    const layer = bootExtLayer({ search: '?view=desktop' });
+    const records = JSON.parse(JSON.stringify(loadDemoPayload().records || []));
+    CONF_CASES.forEach(([id, value, method, samples, band], index) => {
+      const rec = records.find((r) => String(r.id) === id) || records[index % records.length];
+      rec.confidence = value;
+      if (method === null) delete rec.confidence_source;
+      else rec.confidence_source = { method: method, samples: samples };
+    });
+    layer.ui.setApiTransport((endpoint) => {
+      if (endpoint === 'health') {
+        return { status: 200, data: { name: 'TraceLens', status: 'ok', mode: 'local', schema_version: '1.1' } };
+      }
+      if (endpoint !== 'records') return { status: 404, data: { code: 'ROUTE_NOT_FOUND' } };
+      return { status: 200, data: { records: records, meta: { count: records.length, synthetic: true } } };
+    });
+    return layer;
+  }
+
+  async function confPainted() {
+    const layer = confLayer();
+    await layer.ui.probeApi();
+    const synced = await layer.ui.syncRecordsFromApi();
+    if (!synced) throw new Error('the fixture records never reached the page');
+    layer.ext.boot();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const rings = [];
+    CONF_CASES.forEach(([id, value, method, samples, band]) => {
+      const card = cardById(layer.document.body, id);
+      if (!card) throw new Error('no card for the fixture id ' + id);
+      const toggle = card.querySelectorAll('button.card__toggle')[0];
+      if (!toggle) throw new Error('the fixture card has no card head: ' + id);
+      const ring = card.querySelectorAll('.cards__conf')[0];
+      if (!ring) throw new Error('the card wears no confidence ring: ' + id);
+      rings.push({ id: id, card: card, toggle: toggle, ring: ring, band: band, value: value, method: method });
+    });
+    return { layer: layer, rings: rings };
+  }
+
+  check('R2-3 confidence bands: one contract with confidence.py, colours are tokens only', () => {
+    const py = read(path.join(HERE, '..', 'confidence.py'));
+    const js = read(FILES.extCards);
+    const css = read(path.join(HERE, 'ext', 'cards.css'));
+    const styles = read(FILES.styles);
+    const pyBlock = /THRESHOLDS:\s*dict\[str,\s*float\]\s*=\s*\{([^}]*)\}/.exec(py);
+    const jsBlock = /var CONF_THRESHOLDS = \{([^}]*)\}/.exec(js);
+    if (!pyBlock) throw new Error('confidence.py no longer exposes a readable THRESHOLDS table');
+    if (!jsBlock) throw new Error('ext/cards.js carries no CONF_THRESHOLDS table (the JS side of the contract)');
+    const pick = (text, name) => {
+      const m = new RegExp('["\']?' + name + '["\']?\\s*:\\s*([0-9.]+)').exec(text);
+      if (!m) throw new Error('no ' + name + ' threshold in ' + text.trim());
+      return Number(m[1]);
+    };
+    const drift = [];
+    ['green', 'light_green', 'yellow', 'red'].forEach((name) => {
+      const a = pick(pyBlock[1], name);
+      const b = pick(jsBlock[1], name);
+      if (a !== b) drift.push(name + ': python=' + a + ' js=' + b);
+    });
+    if (drift.length) throw new Error('the band tables drifted apart (change both sides): ' + drift.join(', '));
+    const pyPrec = /PRECISION\s*=\s*([0-9]+)/.exec(py);
+    const jsPrec = /var CONF_PRECISION = ([0-9]+)/.exec(js);
+    if (!pyPrec || !jsPrec || pyPrec[1] !== jsPrec[1]) {
+      throw new Error('the 4-decimal precision drifted: python=' + (pyPrec && pyPrec[1]) + ' js=' + (jsPrec && jsPrec[1]));
+    }
+    /* the strategy layer's own band→token table (confidence.COLOR_BY_BAND),
+     * mirrored as CSS rules: a colour is a token, never a literal, never here.
+     * green -> ok (line ok, background ok-soft), light_green -> the ok_soft
+     * step (pale ok-line border on the ok-soft ground), yellow -> progress,
+     * red -> danger, unknown -> the neutral grey. */
+    const tokenByBand = {
+      green: ['--c-ok', '--c-ok-soft'],
+      light_green: ['--c-ok-line', '--c-ok-soft'],
+      yellow: ['--c-progress', '--c-progress-soft'],
+      red: ['--c-danger', '--c-danger-soft']
+    };
+    Object.keys(tokenByBand).forEach((band) => {
+      const rule = new RegExp('\\[data-band="' + band + '"\\]\\s*\\{([^}]*)\\}').exec(css);
+      if (!rule) throw new Error('cards.css has no rule for band ' + band);
+      tokenByBand[band].forEach((token) => {
+        if (rule[1].indexOf('var(' + token + ')') < 0) {
+          throw new Error('cards.css band ' + band + ' does not use ' + token);
+        }
+      });
+    });
+    if (!/\[data-band="neutral"\][^{]*\{[^}]*border-style: dashed/.test(css)) {
+      throw new Error('"no source to judge from" is not a hollow neutral ring in CSS');
+    }
+    if (/#[0-9a-fA-F]{6}/.test(css)) throw new Error('cards.css carries a literal colour');
+    if (!/article\.card\[data-trust-attention="low"\][^{]*\{[^}]*border-left-color: var\(--c-danger\)/.test(css)) {
+      throw new Error('the red-band card border is not the orange-red token rule R2-3 asked for');
+    }
+    if (!/animation: cards-attention-pulse var\(--conf-pulse\)/.test(css)) {
+      throw new Error('the low-confidence card has no tokenised pulse animation');
+    }
+    if (!/@media \(prefers-reduced-motion: reduce\)[^{]*\{[^}]*article\.card\[data-trust-attention="low"\]\s*\{\s*animation: none/.test(css)) {
+      throw new Error('the pulse does not honour prefers-reduced-motion in this layer');
+    }
+    /* the badge family stays in styles.css; the card layer never leaks into it */
+    if (!/\.badge--low-confidence\s*\{[^}]*--conf-pulse: 1600ms/.test(styles)) {
+      throw new Error('.badge--low-confidence did not gain the tokenised pulse (styles.css badge section)');
+    }
+    if (!/@keyframes badge-low-confidence-pulse/.test(styles)) {
+      throw new Error('the badge pulse has no keyframes in styles.css');
+    }
+    if (styles.indexOf('cards__') >= 0) throw new Error('the cards__ boundary leaked into styles.css');
+    return 'bands green/light_green/yellow/red = '
+      + ['green', 'light_green', 'yellow', 'red'].map((n) => n + ' ' + pick(jsBlock[1], n)).join(', ')
+      + ' (identical to confidence.py), PRECISION=' + jsPrec[1]
+      + '; 4 band→token rules + neutral dashed ring, 0 literal colours; red-band card: --c-danger border + pulse,'
+      + ' reduced-motion honoured; styles.css keeps 0 cards__ selectors';
+  });
+
+  check('R2-3 ring on every card: four bands exact on 0.9/0.7/0.5, null stays neutral with no number', async () => {
+    const painted = await confPainted();
+    const zh = readJson(FILES.zh);
+    const unknown = zh.cards['confidence.unknown'];
+    const bad = [];
+    const bands = {};
+    painted.rings.forEach((entry) => {
+      const ring = entry.ring;
+      const band = String(ring.getAttribute('data-band') || '');
+      bands[entry.id] = band;
+      if (band !== entry.band) bad.push(entry.id + ': band=' + band + ' expected ' + entry.band
+        + ' (confidence=' + JSON.stringify(entry.value) + ')');
+      const text = String(ring.textContent || '');
+      if (entry.band === 'neutral') {
+        if (text !== '') bad.push(entry.id + ': a neutral ring shows a number: "' + text + '"');
+        if (String(ring.getAttribute('data-confidence') || '') !== '') {
+          bad.push(entry.id + ': a neutral ring carries data-confidence');
+        }
+        const label = String(ring.getAttribute('aria-label') || '') + ' ' + String(ring.getAttribute('title') || '');
+        if (label.indexOf(unknown) < 0) bad.push(entry.id + ': the neutral ring says nothing about "no source"');
+      } else {
+        if (!/^\d+%$/.test(text)) bad.push(entry.id + ': the ring label is not a percentage: "' + text + '"');
+        const shown = String(ring.getAttribute('data-confidence') || '');
+        if (!/^[0-9.]+$/.test(shown)) bad.push(entry.id + ': data-confidence is not the number: "' + shown + '"');
+        if (shown.split('.').length === 2 && shown.split('.')[1].length !== 4) {
+          bad.push(entry.id + ': data-confidence is not 4 decimals: ' + shown);
+        }
+      }
+      /* placement: the ring is the first child of the card head, and the head
+       * keeps the dot / title / expand label the 4.12 checks pin */
+      if (entry.toggle.firstChild !== ring) bad.push(entry.id + ': the ring is not at the left edge of the head');
+      if (!entry.toggle.querySelectorAll('.card__dot').length) bad.push(entry.id + ': the status dot is gone');
+      if (!entry.toggle.querySelectorAll('.card__l1').length) bad.push(entry.id + ': the title moved out of the head');
+      /* attention: exactly the red band, never a neutral one, never 0.5 itself */
+      const attention = entry.card.getAttribute('data-trust-attention');
+      if (entry.band === 'red' && attention !== 'low') bad.push(entry.id + ': a red-band card has no attention hook');
+      if (entry.band !== 'red' && attention !== null) bad.push(entry.id + ': ' + entry.band + ' band asks for attention');
+      const ms = Number(ring.getAttribute('data-conf-ms'));
+      if (!(ms >= 0) || ms >= 200) bad.push(entry.id + ': data-conf-ms=' + ring.getAttribute('data-conf-ms'));
+    });
+    if (bad.length) throw new Error(bad.join(' | '));
+    const counts = {};
+    Object.keys(bands).forEach((id) => { counts[bands[id]] = (counts[bands[id]] || 0) + 1; });
+    const worst = Math.max.apply(null, painted.rings.map((e) => Number(e.ring.getAttribute('data-conf-ms'))));
+    return '12 rings: ' + Object.keys(counts).sort().map((b) => b + '=' + counts[b]).join(' ')
+      + ' (0.9→green, 0.89→light_green, 0.7→light_green, 0.69→yellow, 0.5→yellow, 0.4999→red,'
+      + ' null/1.7/"0.8"→neutral with no number); attention only on the 2 red cards; '
+      + 'ring is the first child of every head, dot + title intact; max data-conf-ms=' + worst + 'ms (<200)';
+  });
+
+  check('R2-3 hover + source: value, zh source copy, few-sample hint, no fake certainty, 200ms budget', async () => {
+    const painted = await confPainted();
+    const ui = painted.layer.ui;
+    const t = (key, params) => String(ui.t(key, params || null));
+    const ringOf = (id) => painted.rings.find((e) => e.id === id).ring;
+    const tip = (id) => String(ringOf(id).getAttribute('title') || '');
+    const openDetail = (id) => detailOf(painted.layer.document.body, id);
+    const sourceText = (id) => {
+      const detail = openDetail(id);
+      const line = detail ? detail.querySelectorAll('.cards__source')[0] : null;
+      if (!line) throw new Error(id + ': the detail area has no source line (B2-1 wants it visible)');
+      return { line: line, text: String(line.textContent || '') };
+    };
+    const problems = [];
+
+    /* 0.42, logprobs, 3 samples: number + source + the few-sample warning */
+    const rich = tip('act-demo-0008');
+    if (rich.indexOf('0.4200') < 0) problems.push('the hover does not carry the 4-decimal value: ' + rich);
+    if (rich.indexOf(t('cards.confidence.method.logprobs', null)) < 0) problems.push('no logprobs source copy: ' + rich);
+    if (rich.indexOf(t('cards.confidence.few_samples', { samples: 3 })) < 0) problems.push('no few-sample hint: ' + rich);
+    if (String(ringOf('act-demo-0008').getAttribute('data-few') || '') !== 'true') problems.push('data-few is not true');
+
+    /* 0.95, 40 samples: no hint, and the sample count is honest data */
+    const warm = tip('act-demo-0001');
+    if (warm.indexOf('0.9500') < 0) problems.push('the hover lost the value on a green card: ' + warm);
+    if (warm.indexOf(t('cards.confidence.few_samples', { samples: 3 })) >= 0) problems.push('the few-sample hint fired at 40 samples');
+    if (String(ringOf('act-demo-0001').getAttribute('data-samples') || '') !== '40') problems.push('data-samples lost the 40');
+
+    /* method=default must never read as a guarantee (展示纪律 0.4) */
+    const BANNED = ['已确认', '已担保', '保证没问题', '一定正确'];
+    const def = tip('act-demo-0006');
+    if (def.indexOf(t('cards.confidence.method.default', null)) < 0) problems.push('the default method is not named: ' + def);
+    if (BANNED.some((w) => def.indexOf(w) >= 0)) problems.push('the default-method hover claims certainty: ' + def);
+    if (String(ringOf('act-demo-0006').getAttribute('data-method') || '') !== 'default') problems.push('data-method lost "default"');
+
+    /* no source object at all: the ring is green from its number, the source
+     * line says "none to judge from" instead of inventing a method */
+    const bare = sourceText('act-demo-0012');
+    if (bare.text.indexOf(t('cards.confidence.source.none', null)) < 0) problems.push('a record without confidence_source fakes a source: ' + bare.text);
+    if (String(bare.line.getAttribute('data-method') || '') !== 'unknown') problems.push('an absent source is not marked unknown');
+
+    /* the source line carries the translated copy, not the bare enum */
+    const zhLine = sourceText('act-demo-0004');
+    if (zhLine.text.indexOf(t('cards.confidence.method.tool_success_rate', null)) < 0) problems.push('the source line shows the raw enum: ' + zhLine.text);
+    if (/tool_success_rate/.test(zhLine.text)) problems.push('the source line shows the raw enum: ' + zhLine.text);
+
+    /* B2-2: a pure display pass over the imported records - no network on the
+     * ring path, and the whole set stays well under the 200ms reaction budget */
+    const requestsBefore = painted.layer.ui.probe().stats;
+    const times = painted.rings.map((e) => Number(e.ring.getAttribute('data-conf-ms')));
+    const total = times.reduce((a, b) => a + b, 0);
+    if (times.some((v) => !(v >= 0))) problems.push('a ring carries no timing mark');
+    if (total >= 200) problems.push('the 12-ring pass cost ' + total + 'ms, over the 200ms budget');
+    const layer = painted.layer;
+    /* the warm pass: one full repaint of the whole set, timed synchronously
+     * (the notify path decorates inside it, no network on the ring path) */
+    const hotStart = Date.now();
+    layer.ui.renderAll();
+    const hotMs = Date.now() - hotStart;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    if (hotMs >= 200) problems.push('a warm repaint of the ring set took ' + hotMs + 'ms, over 200ms');
+    if (problems.length) throw new Error(problems.join(' | '));
+    return 'hover: "0.4200" + logprobs copy + few-sample hint (3<5) | default method named honestly, 0 banned words | '
+      + 'source line: tool_success_rate rendered as zh copy, an absent source says "none to judge from" | '
+      + '12 rings cost ' + total.toFixed(3) + 'ms in the decoration pass (max ' + Math.max.apply(null, times).toFixed(3)
+      + 'ms), warm repaint ' + hotMs + 'ms, 0 requests on the ring path (renders=' + requestsBefore.renders + ')';
+  });
+
+  /* ---------------------------------------------------------------- *
+   * R5-4 (REQ-005): the collaboration panel + the invitee's landing page
+   * ---------------------------------------------------------------- */
+
+  /* a literal colour is only allowed as a var() fallback: measure it by
+   * checking that a `var(` is open on the same line before every #hex.
+   * Comments are stripped first: a comment may *name* a rule (this file
+   * documents the boundary), a rule may not use it. */
+  const stripComments = (source) => String(source)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+  const stripJsComments = (source) => String(source)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const strayHex = (css) => {
+    const out = [];
+    String(css).split('\n').forEach((line, index) => {
+      const pattern = /#[0-9a-fA-F]{3,8}\b/g;
+      let m;
+      while ((m = pattern.exec(line))) {
+        const before = line.slice(0, m.index);
+        const open = before.lastIndexOf('var(');
+        const close = before.lastIndexOf(')');
+        if (!(open > close)) out.push('line ' + (index + 1) + ': ' + m[0]);
+      }
+    });
+    return out;
+  };
+
+  check('R5-4 collab panel: one tab, six zones, the single request gate, zero CJK', () => {
+    const js = extCollabSource;
+    const css = extCollabCssSource;
+    const problems = [];
+    if (!/\.register\(\{/.test(js)) problems.push('panel never registers with the extension shell');
+    if (!/id:\s*'collab'/.test(js)) problems.push('panel id is not collab');
+    if (!/permission:\s*'records\.read'/.test(js)) problems.push('tab permission is not records.read');
+    ['group', 'perms', 'issued', 'shared', 'accept', 'onbehalf'].forEach((zone) => {
+      if (js.indexOf("section(host, '" + zone + "', 'sharing." + zone + ".title')") < 0) {
+        problems.push('missing zone: ' + zone);
+      }
+    });
+    ['ctx.get(GROUPS)', 'ctx.get(SHARES)', 'ctx.get(LETTERS)', 'ctx.post(GROUPS +', 'ctx.post(SHARES +']
+      .forEach((call) => { if (js.indexOf(call) < 0) problems.push('no guarded call: ' + call); });
+    if (/[^.\w]fetch\s*\(/.test(js)) problems.push('the panel builds its own fetch instead of the gate');
+    if (/\bXMLHttpRequest\b/.test(js)) problems.push('the panel uses XMLHttpRequest');
+    if (/localStorage|sessionStorage|indexedDB|document\.cookie/.test(js)) {
+      problems.push('the panel persists something: the share secret must stay in memory');
+    }
+    const targets = [...js.matchAll(/'(api\/[a-z_/]+)'/g)].map((m) => m[1]);
+    const allowed = ['api/groups', 'api/shares', 'api/secretariat/letters'];
+    const outside = targets.filter((x) => !allowed.some((a) => x === a || x.indexOf(a + '/') === 0));
+    if (outside.length) problems.push('request target outside the allowlist: ' + outside.join(','));
+    if (!/data-tab="collab"/.test(css)) problems.push('CSS is not scoped to #trust-body[data-tab="collab"]');
+    if (stripComments(css).indexOf('cards__') >= 0) problems.push('collab.css reaches into a cards__ selector');
+    if (/collab/.test(styleSource)) problems.push('styles.css gained collab rules (the panel owns its own CSS)');
+    const hex = strayHex(stripComments(css));
+    if (hex.length) problems.push('literal colour outside a var() fallback: ' + hex.join(', '));
+    if (cjkCount(js) !== 0 || cjkCount(css) !== 0) problems.push('CJK literals in the panel source');
+    if (problems.length) throw new Error(problems.join(' | '));
+    return 'panel ' + js.length + 'B / css ' + css.length + 'B, zones=6, targets=' +
+      targets.length + ' on 3 allowlisted bases, literal colours outside var()=0, CJK=0';
+  });
+
+  check('R7-2 suggestions panel: write-side verbs, both permission gates, the three-button toast stays non-modal', () => {
+    const js = stripJsComments(extInsightsSource);
+    const problems = [];
+    if (!/id:\s*'suggestions'/.test(js)) problems.push('panel id is not suggestions');
+    if (!/permission:\s*'records\.read'/.test(js)) problems.push('tab permission is not records.read');
+    /* the write side: T29 /accept, T30 /dismiss, T31 POST /api/preferences,
+     * plus the service-level switch on POST /api/suggestions (set_enabled entry) */
+    if (!/ctx\.post\('api\/suggestions\/' \+ enc\(id\) \+ '\/' \+ verb/.test(js)) {
+      problems.push('the panel does not POST api/suggestions/<id>/<verb>');
+    }
+    if (!/decideSuggestion\(ctx, id, 'accept'/.test(js) || !/decideSuggestion\(ctx, id, 'dismiss'/.test(js)) {
+      problems.push('only accept and dismiss may be posted (no invented verb)');
+    }
+    if (/ctx\.post\('api\/suggestions\/' \+ enc\(id\) \+ '\/' \+ (?!verb)/.test(js)) {
+      problems.push('a hardcoded sub-verb appeared next to the accept/dismiss pair');
+    }
+    if (!/ctx\.post\('api\/preferences', \{ tool: tool, param: param, value: value/.test(js)) {
+      problems.push('the preference form does not POST api/preferences (T31 write side)');
+    }
+    if (!/ctx\.post\('api\/suggestions', \{ enabled: next \}\)/.test(js)) {
+      problems.push('the switch does not POST api/suggestions {"enabled": bool}');
+    }
+    if (!/ctx\.post\(/.test(js)) problems.push('the panel never posts');
+    if (/[^.\w]fetch\s*\(/.test(js)) problems.push('the panel builds its own fetch instead of the gate');
+    if (/\bXMLHttpRequest\b/.test(js)) problems.push('the panel uses XMLHttpRequest');
+    /* the two permission gates are separate: deciding needs intervene.decide,
+     * the service-level switch needs settings.write (a read-only role must not
+     * be able to turn suggestions off for everybody) */
+    if (!/ctx\.can\('intervene\.decide'\)/.test(js)) problems.push('deciding is not gated on intervene.decide');
+    if (!/ctx\.can\('settings\.write'\)/.test(js)) problems.push('the switch is not gated on settings.write');
+    if (!/payload\.enabled/.test(js) || !/payload\.durable/.test(js)) {
+      problems.push('the switch state is not read back from the server payload (enabled / durable)');
+    }
+    if (!/suggestions\.feature\.denied/.test(js) || !/suggestions\.feature\.failed/.test(js)) {
+      problems.push('a refused switch is not reported to the user');
+    }
+    /* the three-button toast: accept / dismiss / later, and 稍后 snoozes that one
+     * suggestion for the page session */
+    ['suggestions.action.accept', 'suggestions.action.dismiss', 'suggestions.action.later']
+      .forEach((key) => { if (js.indexOf("'" + key + "'") < 0) problems.push('toast lacks the action key ' + key); });
+    if (!/sug\.snoozed\[id\] = true/.test(js)) problems.push('[稍后] does not snooze that suggestion id');
+    if (!/sug\.snoozed\[id\]/.test(js) || !/sug\.shown\[id\]/.test(js)) {
+      problems.push('the poll does not dedup shown / snoozed ids');
+    }
+    if (!/suggestions\.toast\.failed/.test(js)) problems.push('a failed write is not reported in the toast');
+    /* non-blocking: no modal, no backdrop, no confirm dialog */
+    if (!/aria-modal': 'false'/.test(js)) problems.push('the decision toast does not declare aria-modal=false');
+    if (/trust-modal|confirmDialog|__backdrop/.test(js)) problems.push('the toast path reaches a modal / backdrop');
+    if (!/setTimeout\(closeDecisionToast, TOAST_MS\)/.test(js)) {
+      problems.push('the toast does not auto-dismiss on its own timer (it must never hold the page)');
+    }
+    const targets = [...js.matchAll(/'(api\/[a-z_/]+)'/g)].map((m) => m[1]);
+    /* R6-4 added `api/analytics/export`: the two export buttons read the
+     * honest header family, so the artifact must come back through this same
+     * door (CSRF header, timeout, error envelope, request-id). The server
+     * still ships exactly the two analytics routes. */
+    const allowed = ['api/analytics/dashboard', 'api/analytics/export',
+                     'api/preferences', 'api/suggestions'];
+    const outside = targets.filter((x) => !allowed.some((a) => x === a || x.indexOf(a + '/') === 0));
+    if (outside.length) problems.push('request target outside the allowlist: ' + outside.join(','));
+    if (!/ext\/insights\.js/.test(indexSource)) problems.push('index.html does not mount ext/insights.js');
+    if (problems.length) throw new Error(problems.join(' | '));
+    return 'tabs=2 (analytics 40 / suggestions 50), posts on 3 allowlisted bases (accept/dismiss + switch + preference), '
+      + 'gates=intervene.decide+settings.write, read-back=enabled/durable, toast actions=accept/dismiss/later, '
+      + 'modal=0, auto-dismiss=' + (js.indexOf('TOAST_MS') >= 0 ? 'own timer' : 'missing')
+      + ', read bases=analytics/dashboard+analytics/export';
+  });
+
+  check('R6-4 analytics data plane: the trio drives the label, the slow note is measured, the ≤3s promise is conditional', () => {
+    const js = stripJsComments(extInsightsSource);
+    const css = stripComments(extInsightsCssSource);
+    const problems = [];
+    /* the panel paints the strip, and paints it above the cards */
+    if (!/function paintDataPlane\(ctx, host, data\)/.test(js)) problems.push('no data-plane strip');
+    if (js.indexOf('paintDataPlane(ctx, host, data);') > js.indexOf('paintMetrics(ctx, host, data);')) {
+      problems.push('the data-plane strip is not painted above the metric cards');
+    }
+    /* it reads the trio the server sends: nothing is inferred from a clock */
+    if (!/hasOwnProperty\.call\(source, 'pre_aggregated'\)/.test(js)) problems.push('pre_aggregated is not read as a real field');
+    if (!/\['scanned', 'meta\.scanned'\]/.test(js)) problems.push('scanned is not read');
+    if (!/pick\(agg, \['reason'\]\)/.test(js)) problems.push('agg.reason is not read');
+    /* the honest degradation label: a streaming read always says so, and the
+     * measured number (not a guess) decides the >1s half */
+    if (!/var SLOW_MS = 1000;/.test(js)) problems.push('the one-second threshold is not pinned');
+    if (!/noteRow\(ctx, box, 'analytics\.plane\.slow', \{ ms: ana\.elapsedMs \}, 'ext-note--warn'\)/.test(js)) {
+      problems.push('the 未预聚合，加载较慢 note is not painted with the measured ms');
+    }
+    if (!/ana\.elapsedMs = ana\.startedAt && now >= ana\.startedAt \? now - ana\.startedAt : 0;/.test(js)) {
+      problems.push('the load time is not measured around the one dashboard read');
+    }
+    /* the ≤3s register: the promise may only appear on a pre-aggregated read */
+    if (!/trio\.pre === true \? 'analytics\.plane\.timing\.pre'/.test(js)) problems.push('the ≤3s claim is not gated on pre_aggregated=true');
+    if (/analytics\.plane\.timing\.pre'/.test(js) && js.indexOf("'analytics.plane.timing.pre'") < 0) problems.push('the ≤3s key is not a literal');
+    /* every documented fallback code gets its own sentence; an unknown code is
+     * shown as a code, never translated into a guess */
+    ['no_ledger_wired', 'agent_filter', 'custom_salt', 'input_not_rerunnable',
+     'ledger_missing_no_records', 'ledger_unreadable', 'chain_tampered'].forEach((code) => {
+      if (js.indexOf(code + ": 'analytics.plane.reason." + code + "'") < 0) {
+        problems.push('no dictionary key wired for the fallback code ' + code);
+      }
+    });
+    if (!/noteRow\(ctx, box, 'analytics\.plane\.reason', \{ code: trio\.reason/.test(js)) {
+      problems.push('an unknown fallback code is not shown as data');
+    }
+    /* the durable=false register (the ledger did not take the write) */
+    if (!/analytics\.plane\.not_durable/.test(js)) problems.push('a ledger write failure is not reported');
+    /* §2.5 honesty: no push channel exists, so the page says the refresh is a
+     * query, and the source proves it builds none */
+    if (!/noteRow\(ctx, box, 'analytics\.plane\.refresh'\)/.test(js)) problems.push('the refresh note does not say 刷新＝查询');
+    if (/\bEventSource\b|\bWebSocket\b/.test(js)) problems.push('the panel invented a push channel');
+    /* every key the strip renders exists in both dictionaries */
+    const zhDomain = (zh['analytics'] || {});
+    const enDomain = (en['analytics'] || {});
+    const referenced = [...new Set([...js.matchAll(/'(analytics\.[A-Za-z0-9_.]+)'/g)].map((m) => m[1]))]
+      .filter((key) => key.indexOf('.') > 0 && !/\.$/.test(key));
+    if (referenced.length < 80) problems.push('only ' + referenced.length + ' analytics keys referenced');
+    /* the two button labels are built as 'analytics.export.' + format, so the
+     * literal is only a prefix: both served formats must exist in the dictionary */
+    ['csv', 'pdf'].forEach((format) => {
+      if (typeof zhDomain['export.' + format] !== 'string') problems.push('zh key missing: analytics.export.' + format);
+      if (typeof enDomain['export.' + format] !== 'string') problems.push('en key missing: analytics.export.' + format);
+    });
+    referenced.forEach((key) => {
+      const leaf = key.slice('analytics.'.length);
+      if (typeof zhDomain[leaf] !== 'string' || !zhDomain[leaf]) problems.push('zh key missing: ' + key);
+      if (typeof enDomain[leaf] !== 'string' || !enDomain[leaf]) problems.push('en key missing: ' + key);
+    });
+    const zhLeaves = Object.keys(zhDomain);
+    const enLeaves = Object.keys(enDomain);
+    if (zhLeaves.length !== enLeaves.length) problems.push('analytics domain is not symmetric: zh '
+      + zhLeaves.length + ' / en ' + enLeaves.length);
+    /* the strip owns scoped styles and no palette of its own */
+    if (!/data-tab="analytics"\] \.ext-ana__plane/.test(css)) problems.push('the data-plane strip has no scoped style');
+    if (css.indexOf('cards__') >= 0) problems.push('insights.css reaches into a cards__ selector');
+    if (cjkCount(css) !== 0) problems.push('CJK literals in insights.css');
+    const hex = strayHex(css);
+    if (hex.length) problems.push('literal colour outside a var() fallback: ' + hex.join(', '));
+    if (problems.length) throw new Error(problems.join(' | '));
+    return 'strip reads pre_aggregated/scanned/agg.reason, slow label=measured ms (threshold 1000), '
+      + '≤3s copy gated on pre_aggregated=true, fallback codes wired=7, push channel=0, '
+      + 'analytics keys referenced=' + referenced.length + ' (zh/en ' + zhLeaves.length + '/'
+      + enLeaves.length + ' symmetric), css scoped to data-tab="analytics"';
+  });
+
+  check('R6-4 export face: two buttons, names from the served headers, a degradation is never a success, sha = fingerprint', () => {
+    const js = stripJsComments(extInsightsSource);
+    const problems = [];
+    /* the frozen format enum is csv|pdf: two buttons, and `format=html` is a
+     * server-side 400, so no HTML option may appear here */
+    if (!/var EXPORT_FORMATS = \['csv', 'pdf'\];/.test(js)) problems.push('the format enum is not the frozen csv|pdf');
+    if (/analytics\.export\.html/.test(js)) problems.push('an HTML export option was invented (format=html is 400)');
+    if (/['"]csv['"],\s*['"]pdf['"],\s*['"]html['"]/.test(js)) problems.push('html joined the button list');
+    /* the artifact comes back through the single door, as text, with an Accept
+     * that covers the served formats; the panel never builds a fetch */
+    if (!/ctx\.call\('api\/analytics\/export', null, \{/.test(js)) problems.push('the export does not go through the ctx door');
+    if (!/method: 'GET', query: query, response: 'text', accept: EXPORT_ACCEPT/.test(js)) problems.push('the export request is not the honest text read');
+    if (/[^.\w]fetch\s*\(/.test(js)) problems.push('the panel builds its own fetch');
+    /* the naming follows the bytes actually served, not the button pressed */
+    ['x-tracelens-export-format', 'x-tracelens-export-fallback', 'x-tracelens-export-sha256',
+     'content-disposition', 'x-tracelens-export-note', 'x-tracelens-export-pre-aggregated'].forEach((name) => {
+      if (js.indexOf("'" + name + "'") < 0) problems.push('header not read: ' + name);
+    });
+    if (!/filenameFromDisposition\(ctx\.header\(head, 'content-disposition'\)\)/.test(js)) {
+      problems.push('the filename is not taken from the server (it is not invented)');
+    }
+    /* a degradation is a degradation: the reason code sits next to the words,
+     * the copy owns the "this is not broken, and it is not a success" register,
+     * and the toast has its own fallback key */
+    if (!/noteRow\(ctx, box, 'analytics\.export\.fallback',/.test(js)) problems.push('the fallback row is missing');
+    if (!/reason: record\.fallback \}, 'ext-note--warn'\)/.test(js)) problems.push('the fallback reason is not shown as data next to the warning style');
+    if (!/ctx\.toast\('analytics\.export\.toast_fallback'/.test(js)) problems.push('a degraded export does not get the fallback toast');
+    if (js.indexOf("'analytics.export.toast'") < 0) problems.push('the plain toast key disappeared');
+    /* sha is presented as the fingerprint of that file, and its absence is a
+     * stated missing header, not silence */
+    if (!/noteRow\(ctx, box, 'analytics\.export\.sha', \{ sha: record\.sha \}\)/.test(js)) problems.push('the fingerprint row is missing');
+    if (!/noteRow\(ctx, box, 'analytics\.export\.sha_missing', null, 'ext-note--warn'\)/.test(js)) problems.push('a missing fingerprint header is not reported');
+    /* bytes honesty: CSV keeps the served UTF-8 BOM so the file and the sha
+     * agree; a real PDF is handed to the browser instead of being decoded */
+    if (!/record\.served === 'csv' \? '\\ufeff' \+ record\.text : record\.text/.test(js)) problems.push('the served CSV BOM is not restored');
+    if (!/record\.served === 'pdf'\) record\.saved = ctx\.download\(exportUrl\(format\), record\.filename\)/.test(js)) {
+      problems.push('a served PDF is not handed to the browser (the text channel cannot carry it)');
+    }
+    if (!/if \(!record\.saved\) noteRow\(ctx, box, 'analytics\.export\.not_saved'/.test(js)) problems.push('a file the panel could not ship is not reported');
+    /* printable HTML: the Ctrl+P path exists and says who opens it (PM-VERDICT-R6-3 §6 第 5 条) */
+    if (!/noteRow\(ctx, box, 'analytics\.export\.print'\)/.test(js)) problems.push('the printable-HTML hint is missing');
+    if (!/global\.open\(url, '_blank', 'noopener'\)/.test(js)) problems.push('the printable view is not opened from the server bytes');
+    if (!/'analytics\.export\.print_unavailable'/.test(js)) problems.push('a blocked popup is not admitted');
+    /* refusals stay visible: 403 is the permission story, 400 shows the code and
+     * the server's own sentence, offline ships nothing */
+    if (!/record\.status === 403/.test(js) || !/'analytics\.export\.denied'/.test(js)) problems.push('a 403 is not shown as a permission denial');
+    if (!/noteRow\(ctx, box, 'analytics\.export\.failed',/.test(js)) problems.push('a 400 is not shown with its code');
+    if (!/if \(offlineNow\(\)\)[\s\S]{0,120}'analytics\.export\.offline'/.test(js)) problems.push('offline is not stated before any export request');
+    if (problems.length) throw new Error(problems.join(' | '));
+    return 'buttons=2 (csv|pdf, no html option), headers read=6, filename=server disposition, '
+      + 'fallback row+toast=warn not success, sha row + sha_missing row, csv BOM restored, '
+      + 'pdf handed to browser, printable Ctrl+P path, 403/400/offline all stated';
+  });
+
+  check('R7-2 suggestions copy + CSS: every key exists in zh and en, scoped styles, zero literal colours', () => {
+    const js = stripJsComments(extInsightsSource);
+    const css = stripComments(extInsightsCssSource);
+    const problems = [];
+    const zhDomain = (zh['suggestions'] || {});
+    const enDomain = (en['suggestions'] || {});
+    const referenced = [...new Set([...js.matchAll(/'(suggestions\.[A-Za-z0-9_.]+)'/g)].map((m) => m[1]))];
+    if (referenced.length < 45) problems.push('only ' + referenced.length + ' suggestions keys referenced');
+    referenced.forEach((key) => {
+      const leaf = key.slice('suggestions.'.length);
+      if (typeof zhDomain[leaf] !== 'string' || !zhDomain[leaf]) problems.push('zh key missing: ' + key);
+      if (typeof enDomain[leaf] !== 'string' || !enDomain[leaf]) problems.push('en key missing: ' + key);
+    });
+    const zhLeaves = Object.keys(zhDomain);
+    const enLeaves = Object.keys(enDomain);
+    if (zhLeaves.length !== enLeaves.length) problems.push('suggestions domain is not symmetric: zh '
+      + zhLeaves.length + ' / en ' + enLeaves.length);
+    zhLeaves.forEach((leaf) => {
+      if (enLeaves.indexOf(leaf) < 0) problems.push('en key missing: suggestions.' + leaf);
+    });
+    /* honesty register: the delete / clear endpoint does not exist server-side,
+     * so the panel must say 未提供 and must not fabricate a delete call */
+    if (referenced.indexOf('suggestions.pref.unsupported') < 0) {
+      problems.push('the preference list does not state that delete/clear is not provided');
+    }
+    if (/api\/preferences\/[^']*(delete|clear)/.test(js)) problems.push('the panel invents a delete/clear endpoint');
+    /* styles: own file, scoped to the panel, palette from tokens only */
+    if (!/data-tab="suggestions"/.test(css)) problems.push('CSS is not scoped to #trust-body[data-tab="suggestions"]');
+    if (css.indexOf('cards__') >= 0) problems.push('insights.css reaches into a cards__ selector');
+    const hex = strayHex(css);
+    if (hex.length) problems.push('literal colour outside a var() fallback: ' + hex.join(', '));
+    if (/ext-sug/.test(styleSource)) problems.push('styles.css gained suggestion rules (the panel owns its own CSS)');
+    if (cjkCount(css) !== 0) problems.push('CJK literals in insights.css');
+    if (!/ext\/insights\.css/.test(indexSource)) problems.push('index.html does not mount ext/insights.css');
+    if (problems.length) throw new Error(problems.join(' | '));
+    return 'keys referenced=' + referenced.length + ' (zh/en both present, domain '
+      + zhLeaves.length + '/' + enLeaves.length + ' symmetric), delete/clear=未提供, '
+      + 'css ' + extInsightsCssSource.length + 'B scoped to data-tab="suggestions", '
+      + 'literal colours outside var()=0, styles.css ext-sug rules=0, CJK=0';
+  });
+
+  check('R5-4 one-time secret: the invite link is rendered once, warned, wiped, never re-echoed', () => {
+    const js = extCollabSource;
+    const share = shareHtmlSource;
+    const server = read(path.join(PKG, 'agent_explainer', 'server.py'));
+    const problems = [];
+    /* 0.4 display discipline in the panel */
+    const warnings = (js.match(/sharing\.share\.result\.warning/g) || []).length;
+    if (warnings < 2) problems.push('the "only shown once" warning is not on both the form and the result');
+    if (!/dataset:\s*\{\s*onetime:\s*'true'\s*\}/.test(js)) problems.push('the one-time view is not marked');
+    if (!/querySelectorAll\('\[data-onetime\]'\)/.test(js)) problems.push('closing does not wipe the secret nodes');
+    if (js.indexOf('C.clear(result)') < 0 || js.indexOf('result.hidden = true') < 0) {
+      problems.push('the one-time view is not cleared and hidden on close');
+    }
+    const echoes = (js.match(/data\.invite_url/g) || []).length;
+    if (echoes !== 1) problems.push('invite_url is read ' + echoes + ' times in the panel (must be exactly the one-time view)');
+    const columns = [...js.matchAll(/table\(box, \[([\s\S]*?)\]\)/g)].map((m) => m[1]);
+    if (columns.length !== 2) problems.push('expected 2 share tables, found ' + columns.length);
+    columns.forEach((cols) => {
+      if (/token|invite_url|link/i.test(cols)) problems.push('a list column renders a secret: ' + cols.replace(/\s+/g, ' '));
+    });
+    /* the server side is what makes "never re-echo" structural */
+    const fields = (server.match(/SHARE_ROW_FIELDS\s*=\s*\(([^)]*)\)/s) || ['', ''])[1];
+    const names = (fields.match(/"([a-z_]+)"/g) || []).map((s) => s.replace(/"/g, ''));
+    if (names.length !== 8) problems.push('SHARE_ROW_FIELDS is ' + names.length + ' fields, not 8');
+    if (names.some((n) => /token|salt|hash|url/i.test(n))) problems.push('the row whitelist leaks a secret field: ' + names.join(','));
+    /* the landing page: hash-only, no storage, no echo, one real request.
+     * Measured on the executable part only: the page's own comment and its
+     * copy deck *name* localStorage / location.hash to explain the rule, and a
+     * rule that measures its own documentation proves nothing. */
+    const shareCode = stripJsComments(stripComments(share)
+      .replace(/<script id="share-i18n">[\s\S]*?<\/script>/g, ''));
+    if (/\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|document\.cookie/.test(shareCode)) {
+      problems.push('share.html touches browser storage');
+    }
+    const hashReads = (shareCode.match(/location\.hash/g) || []).length;
+    if (hashReads !== 1) problems.push('location.hash is read ' + hashReads + ' times (must be exactly once)');
+    if (!/TOKEN_FRAGMENT_KEY\s*=\s*'token'/.test(shareCode)) problems.push('the fragment key is not pinned to token');
+    if (/(textContent|innerText|innerHTML)\s*=\s*[^;\n]*\btoken\b/.test(shareCode)) {
+      problems.push('share.html prints the token into the DOM');
+    }
+    if (!/POST', \{ token: token \}/.test(shareCode)) problems.push('the accept request does not carry the token in the JSON body');
+    if (/\?[^'"]*token/.test(shareCode)) problems.push('the token is put in a ?query somewhere');
+    if (!/token = '';/.test(shareCode)) problems.push('the in-page token is not dropped after a successful accept');
+    if (shareCode.indexOf('/api/shares/accept') < 0) problems.push('the accept endpoint is not the one the panel documents');
+    if (/(https?:)?\/\/[a-z0-9.-]+/i.test(shareCode)) {
+      problems.push('share.html names an external host or asset');
+    }
+    if (/<script[^>]+\bsrc=|<link[^>]+\bhref=|@import/.test(shareCode)) problems.push('share.html loads an external asset');
+    if (!/ext\/collab\.js/.test(indexSource) || !/ext\/collab\.css/.test(indexSource)) {
+      problems.push('index.html does not mount the collab panel');
+    }
+    if (problems.length) throw new Error(problems.join(' | '));
+    return 'warning copy x' + warnings + ', one-time view wiped on close, list columns=2 (0 secrets), '
+      + 'server row whitelist=' + names.length + ' fields (no token/salt/hash/url), '
+      + 'share.html: 1 hash read / 0 storage APIs / 0 printed token / 0 external assets';
+  });
+
+  check('R5-4 visibility gate (B5-2): view hides intervene + rollback, leader path stays open', () => {
+    const js = extCollabSource;
+    const problems = [];
+    ['intervene-button', 'intervene-submit', 'intervene-reject-confirm', 'intervene-reason-box']
+      .forEach((hook) => {
+        if (js.indexOf("'" + hook + "'") < 0) problems.push('gate does not cover the ' + hook + ' control');
+      });
+    if (js.indexOf("hide(pick(card, '.cards__rollback'))") < 0) problems.push('rollback affordance is not hidden for a view collaborator');
+    if (!/var viewOnly = level === 'view';/.test(js)) problems.push('the hide rule is not keyed on the view level');
+    const shareHidden = (js.match(/level === 'view' \|\| level === 'approve'/g) || []).length;
+    if (shareHidden < 2) problems.push('the 再分享 control is not suppressed below manage (found ' + shareHidden + ' guards)');
+    ['sharing.gate.hide.intervene', 'sharing.gate.hide.share', 'sharing.gate.denied',
+     'sharing.gate.leader', 'sharing.gate.basis', 'sharing.gate.level', 'sharing.gate.title']
+      .forEach((key) => { if (js.indexOf(key) < 0) problems.push('gate copy key missing: ' + key); });
+    if (js.indexOf('shared_with_me') < 0 || js.indexOf("status !== 'accepted'") < 0) {
+      problems.push('the derived level is not read from the accepted shared_with_me rows');
+    }
+    if (js.indexOf('markDenied(groupId, res.code)') < 0 || !/deniedFor\(/.test(js)) {
+      problems.push('a 403 does not degrade the controls for this render');
+    }
+    const perms = (js.match(/'\/permissions'/g) || []).length;
+    if (perms !== 1) problems.push('the permission probe is called ' + perms + ' times (one display read only)');
+    /* T25 is a display, not the gate: `can_view/can_approve/can_manage` are all
+     * false for the un-invited group leader, so using them to hide controls
+     * would degrade the leader. Measure it by position: the T25 fields may only
+     * appear in the panel's permission display, never in the derivation path. */
+    const permsStart = js.indexOf('function renderPerms');
+    if (permsStart < 0) problems.push('no permission display function');
+    const t25 = /can_(view|approve|manage)/g;
+    const outside = [];
+    let found;
+    while ((found = t25.exec(js))) {
+      if (permsStart >= 0 && found.index < permsStart) outside.push(found[0] + '@' + found.index);
+    }
+    if (outside.length) problems.push('T25 fields used outside the display (would degrade the leader): ' + outside.join(', '));
+    if (/collab|gate\.hide/.test(appSource)) problems.push('app.js was taught the collaboration gate (it must stay server-authoritative)');
+    if (appSource.indexOf('.options') < 0) problems.push('the intervene affordance app.js owns has moved');
+    if (problems.length) throw new Error(problems.join(' | '));
+    return '4 intervene hooks + rollback hidden on view, 再分享 suppressed below manage (' + shareHidden +
+      ' guards), 403 degrades + is reported, T25 read once for display only, app.js untouched by the gate';
+  });
+
+  check('R5-4 share landing page: standalone, hash-only token, honest states, zh/en inline copy', () => {
+    const share = shareHtmlSource;
+    const problems = [];
+    const block = share.match(/<script id="share-i18n">([\s\S]*?)<\/script>/);
+    if (!block) throw new Error('the landing page has no inline copy deck');
+    const box = { window: {} };
+    vm.runInNewContext(block[1], box);
+    const dicts = box.window.__SHARE_I18N;
+    if (!dicts || !dicts.zh || !dicts.en) throw new Error('the landing copy deck is not exposed as window.__SHARE_I18N');
+    const zhKeys = Object.keys(dicts.zh).sort();
+    const enKeys = Object.keys(dicts.en).sort();
+    if (zhKeys.length < 20) problems.push('the landing deck is thin: ' + zhKeys.length + ' keys');
+    if (zhKeys.join('|') !== enKeys.join('|')) {
+      const only = (a, b) => a.filter((k) => b.indexOf(k) < 0);
+      problems.push('zh/en landing key sets differ: zh-only ' + only(zhKeys, enKeys).join(',') +
+        ' / en-only ' + only(enKeys, zhKeys).join(','));
+    }
+    const cjkEn = zhKeys.filter((k) => cjkCount(dicts.en[k]) > 0);
+    if (cjkEn.length) problems.push('CJK in the en landing deck: ' + cjkEn.join(','));
+    /* the zh deck must really be Chinese, and the en deck really Latin. The one
+     * documented exception is the language-switch label: it names the *other*
+     * language, in that language's own script-free form ("English" / "Chinese"),
+     * which is how app.js's own switch stays CJK-free in the en UI (check 86). */
+    const LATIN_ONLY = new Set(['lang.switch']);
+    const noZh = zhKeys.filter((k) => cjkCount(dicts.zh[k]) === 0 && !LATIN_ONLY.has(k));
+    if (noZh.length) problems.push('zh landing copy is not Chinese: ' + noZh.join(','));
+    ['state.expired', 'state.revoked', 'state.invalid', 'state.used', 'state.accepted',
+     'state.unmounted', 'state.auth', 'state.no_token', 'hint.nostore'].forEach((key) => {
+      if (zhKeys.indexOf(key) < 0) problems.push('missing landing state: ' + key);
+    });
+    ['SHARE_EXPIRED', 'SHARE_TOKEN_INVALID', 'SHARE_TOKEN_USED', 'SHARE_FORBIDDEN',
+     'AUTH_REQUIRED', 'ROUTE_NOT_FOUND'].forEach((code) => {
+      if (share.indexOf("'" + code + "'") < 0) problems.push('no honest state for the server code ' + code);
+    });
+    if (!/lang="zh"/.test(share) || !/data-hook="lang-switch"/.test(share)) {
+      problems.push('the page has no zh default + language switch');
+    }
+    if (!/showFacts\(permission, group\)/.test(share)) problems.push('a successful accept does not show permission + group');
+    if (!/history\.replaceState/.test(share)) problems.push('the fragment is not stripped from the address bar');
+    if (!/credentials:\s*'same-origin'/.test(share)) problems.push('the accept request drops the session cookie');
+    if (!/cache:\s*'no-store'/.test(share)) problems.push('the accept request is cacheable');
+    if (cjkCount(share.replace(/<script id="share-i18n">[\s\S]*?<\/script>/, '')) === 0) {
+      problems.push('the page has no inline zh chrome (the deck must be self-contained)');
+    }
+    if (problems.length) throw new Error(problems.join(' | '));
+    return 'inline deck ' + zhKeys.length + ' keys zh/en symmetric (en CJK=0), '
+      + '6 server codes mapped to real states, 0 external assets, 0 storage APIs, '
+      + 'success view = permission + group only';
+  });
+
+  check('R3-4 evidence face copy + CSS: keys exist in zh and en, styles scoped, the zoom layer is non-modal', () => {
+    const js = stripJsComments(read(FILES.extCards));
+    const css = stripComments(read(FILES.extCardsCss));
+    const problems = [];
+    const zhDomain = (zh.cards || {});
+    const enDomain = (en.cards || {});
+    /* every copy key the evidence / causal code reaches for must exist in BOTH
+     * dictionaries: a missing key paints the raw key on the screen (the
+     * scaffold round shipped `causal.request.pending` with no entry at all). */
+    const referenced = [...new Set([...js.matchAll(/'cards\.([A-Za-z0-9_.]+)'/g)].map((m) => m[1]))]
+      .filter((leaf) => !leaf.endsWith('.'));
+    /* the kind label is built dynamically ('cards.evidence.kind.' + item.kind),
+     * so the schema's own kinds are pinned directly, not through the prefix. */
+    ['screenshot', 'diagram', 'diff', 'file'].forEach((kind) => {
+      const leaf = 'evidence.kind.' + kind;
+      if (typeof zhDomain[leaf] !== 'string' || !zhDomain[leaf]) problems.push('zh key missing: cards.' + leaf);
+      if (typeof enDomain[leaf] !== 'string' || !enDomain[leaf]) problems.push('en key missing: cards.' + leaf);
+    });
+    const required = [
+      'evidence.fingerprint', 'evidence.fingerprint.aria', 'evidence.size',
+      'evidence.provided_by.runtime', 'evidence.provided_by.user',
+      'evidence.provided_by.server', 'evidence.provided_by.unknown',
+      'evidence.screenshot.pending', 'evidence.zoom.aria', 'evidence.zoom.close',
+      'evidence.zoom.nonmodal', 'evidence.vote.failed.code', 'evidence.vote.count.pending',
+      'causal.badge.template', 'causal.badge.llm', 'causal.badge.unknown',
+      'causal.note.template', 'causal.note.llm', 'causal.note.model_unknown',
+      'causal.request.pending'
+    ];
+    referenced.concat(required).forEach((leaf) => {
+      if (typeof zhDomain[leaf] !== 'string' || !zhDomain[leaf]) problems.push('zh key missing: cards.' + leaf);
+      if (typeof enDomain[leaf] !== 'string' || !enDomain[leaf]) problems.push('en key missing: cards.' + leaf);
+    });
+    const zhLeaves = Object.keys(zhDomain);
+    const enLeaves = Object.keys(enDomain);
+    if (zhLeaves.length !== enLeaves.length) {
+      problems.push('cards domain is not symmetric: zh ' + zhLeaves.length + ' / en ' + enLeaves.length);
+    }
+    zhLeaves.forEach((leaf) => {
+      if (enLeaves.indexOf(leaf) < 0) problems.push('en key missing: cards.' + leaf);
+    });
+    /* 0.4 honesty register on the generator marker: `model=template` never says
+     * AI, `model=llm` is the only case allowed to, and an unlabelled model is
+     * admitted instead of guessed. */
+    if (/AI/i.test(String(zhDomain['causal.badge.template'] || ''))
+      || /AI/i.test(String(enDomain['causal.badge.template'] || ''))) {
+      problems.push('the template marker claims AI: the record says model=template');
+    }
+    if (!/AI/.test(String(zhDomain['causal.badge.llm'] || ''))
+      || !/AI/.test(String(enDomain['causal.badge.llm'] || ''))) {
+      problems.push('the llm marker must say AI out loud');
+    }
+    if (!/'cards\.causal\.badge\.unknown'/.test(js)) problems.push('an unlabelled generator is not admitted');
+    if (!/CAUSAL_MODEL_KEYS\s*=\s*\{[\s\S]*template:[\s\S]*llm:/.test(js)) {
+      problems.push('the marker table does not map the schema enum (template | llm)');
+    }
+    /* styles: this file owns the cards__ face; no literal colours, no CJK copy,
+     * and no other stylesheet reaches in here. */
+    const styled = ['cards__evidence', 'cards__strip', 'cards__item', 'cards__thumb', 'cards__thumb-img',
+      'cards__thumb-svg', 'cards__thumb-caption', 'cards__diff-body', 'cards__meta', 'cards__fingerprint',
+      'cards__size', 'cards__prov', 'cards__pending', 'cards__feedback', 'cards__vote', 'cards__count',
+      'cards__vote-state', 'cards__zoom', 'cards__zoom-sheet', 'cards__zoom-head', 'cards__zoom-close',
+      'cards__zoom-body', 'cards__zoom-content', 'cards__zoom-note', 'cards__causal', 'cards__why',
+      'cards__why-icon', 'cards__causal-pop', 'cards__causal-text', 'cards__causal-list',
+      'cards__causal-model', 'cards__badge', 'cards__badge-ai', 'cards__badge-template',
+      'cards__badge-unknown', 'cards__causal-model-note'];
+    styled.forEach((cls) => {
+      if (css.indexOf('.' + cls) < 0) problems.push('cards.css has no rule for .' + cls);
+    });
+    if (css.indexOf('cards__modal') >= 0) problems.push('cards.css still styles a modal evidence view');
+    const hex = strayHex(css);
+    if (hex.length) problems.push('literal colour outside a var() fallback: ' + hex.join(', '));
+    if (cjkCount(css) !== 0) problems.push('CJK literals in cards.css');
+    if (cjkCount(read(FILES.extCardsCss)) !== 0) problems.push('CJK literals in cards.css (comments included)');
+    if (css.indexOf('--c-') < 0) problems.push('cards.css uses no design tokens');
+    if (stripComments(read(FILES.extCollabCss)).indexOf('cards__') >= 0) problems.push('collab.css reaches into a cards__ selector');
+    if (stripComments(read(FILES.extInsightsCss)).indexOf('cards__') >= 0) problems.push('insights.css reaches into a cards__ selector');
+    if (stripComments(styleSource).indexOf('cards__') >= 0) problems.push('styles.css reaches into a cards__ selector');
+    if (!/ext\/cards\.css/.test(indexSource)) problems.push('index.html does not mount ext/cards.css');
+    /* PM §2.1: 放大是「弹层或新视图，非模态阻塞优先」. The layer is transparent
+     * and pointer-transparent, only the sheet takes pointers, nothing here
+     * locks the page scroll, and the evidence path never uses the modal dialog. */
+    if (!/'aria-modal':\s*'false'/.test(js)) problems.push('the zoom layer is not declared aria-modal=false');
+    if (!/\.cards__zoom\s*\{[^}]*pointer-events:\s*none/.test(css)) problems.push('the zoom layer is not pointer-transparent: it would block the page');
+    if (!/\.cards__zoom\s*\{[^}]*background:\s*transparent/.test(css)) problems.push('the zoom layer paints a scrim, which is the modal look');
+    if (!/\.cards__zoom-sheet\s*\{[^}]*pointer-events:\s*auto/.test(css)) problems.push('the zoom sheet does not take pointers');
+    if (/(^|[;\n])\s*(body|html)\s*\{[^}]*overflow:\s*hidden/.test(css)) problems.push('cards.css locks the page scroll (a non-modal layer never may)');
+    if (/C\.openModal\('cards\.evidence/.test(js)) problems.push('evidence enlargement goes through the blocking modal');
+    if (/openEvidenceModal/.test(js)) problems.push('the modal evidence view is still wired');
+    if (!/function closeEvidenceZoom/.test(js) || !/zoom: 'open'/.test(js)) problems.push('the zoom layer has no explicit dismissal');
+    if (!/pop\.hidden = true/.test(js)) problems.push('the causal bubble is open by default (it is an expander, not a dialog)');
+    if (problems.length) throw new Error(problems.join(' | '));
+    return 'keys referenced=' + referenced.length + ' (every one in zh AND en, incl. the scaffold gap causal.request.pending), '
+      + 'cards domain ' + zhLeaves.length + '/' + enLeaves.length + ' symmetric, '
+      + 'R3-4 classes styled=' + styled.length + ', literal colours=0, CJK=0, other stylesheets touch cards__=0, '
+      + 'zoom=non-modal (aria-modal=false, layer pointer-events:none, sheet:auto, no scroll lock, no C.openModal)';
+  });
+
+  check('R3-4 evidence wiring face: T15/T16/T17 only, failure shows the code, counts come from the ledger', () => {
+    const js = stripJsComments(read(FILES.extCards));
+    const problems = [];
+    /* zero new routes: the face talks to the four endpoints that exist, and
+     * `/api/evidence` is the one that is not mounted (docs/03, PM baseline) —
+     * the face must show that refusal, never pretend a local success. */
+    const endpoints = [...new Set([...js.matchAll(/var EP_[A-Z_]+ = '([^']+)'/g)].map((m) => m[1]))].sort();
+    const expected = ['api/evidence', 'api/records', 'api/rollback', 'api/rollback/plan'];
+    if (endpoints.join(',') !== expected.join(',')) {
+      problems.push('the face uses endpoints outside the existing set: ' + endpoints.join(','));
+    }
+    if (!/EP_EVIDENCE \+ '\/' \+ encodeURIComponent\(item\.id\) \+ '\/feedback'/.test(js)) {
+      problems.push('the vote does not go to T16 POST /api/evidence/<id>/feedback');
+    }
+    if (!/EP_RECORDS \+ '\/' \+ encodeURIComponent\(str\(record\.id\)\) \+ '\/causal'/.test(js)) {
+      problems.push('the request button does not go to T17 POST /api/records/<id>/causal');
+    }
+    /* §2.3: a refusal is shown with its code, the state is machine-readable, and
+     * the counts are never invented by the display layer. */
+    if (!/'cards\.evidence\.vote\.failed\.code', \{ code:/.test(js)) problems.push('a failed vote is not shown with its code');
+    if (!/data-vote-state|dataset: \{ evidence: item\.id, voteState: 'idle' \}/.test(js)) problems.push('the vote row carries no machine-readable outcome');
+    if (/counts\[key\] \+= 1/.test(js)) problems.push('the display layer invents a vote count: the ledger owns the numbers');
+    if (!/countsFrom\(result\.data\)/.test(js)) problems.push('the counts are not read from the landed payload');
+    if (!/'cards\.evidence\.vote\.count\.pending'/.test(js)) problems.push('a success without counts is not admitted honestly');
+    /* §2.6: the fingerprint and the provenance come out of the record verbatim */
+    if (!/dataset: \{ sha: item\.sha256 \}/.test(js)) problems.push('the fingerprint is not carried as a machine-readable sha');
+    if (!/fp\.setAttribute\('title', item\.sha256\)/.test(js)) problems.push('the full sha256 is not reachable from the shortened label');
+    if (!/PROVENANCE_KEYS = \{[\s\S]*runtime:[\s\S]*user:[\s\S]*server:/.test(js)) problems.push('provided_by is not mapped to the schema enum');
+    if (!/provided_by\.unknown/.test(js)) problems.push('a record without provided_by is not admitted');
+    if (/item\.caption\.(replace|slice|substr|split)/.test(js)) problems.push('the display layer rewrites the landed caption');
+    if (/item\.diff\.(replace|slice|substr)/.test(js)) problems.push('the display layer rewrites the diff bytes');
+    /* D-7: a screenshot entry without bytes is stated as not wired, twice
+     * (the thumbnail and the enlarged view), never as a broken picture. */
+    const pending = (js.match(/screenshotPendingNote\(/g) || []).length;
+    if (pending !== 3) problems.push('the D-7 note is painted ' + pending + ' times, expected 3 (definition + thumbnail + zoom)');
+    if (!/'cards\.evidence\.screenshot\.pending'/.test(js)) problems.push('the D-7 wording is not a dictionary key');
+    /* the SVG path keeps its guard: bytes are parsed as SVG, never as HTML */
+    if (!/image\/svg\+xml/.test(js)) problems.push('the diagram is not parsed as SVG');
+    if (!/MAX_SVG_BYTES = 524288/.test(js)) problems.push('the inline SVG has no size guard');
+    if (problems.length) throw new Error(problems.join(' | '));
+    return 'endpoints=' + endpoints.join(',') + ' (zero new routes), T16 vote + T17 causal wired, '
+      + 'failure shows the code + data-vote-state, counts read from the payload (invented count=0), '
+      + 'sha256 fingerprint (short label + full sha in title) + provided_by enum, '
+      + 'D-7 screenshot note painted 3x, SVG guard (512KB + image/svg+xml)';
+  });
+
+  /* ---------------------------------------------------------------- *
+   * R4-2 (REQ-004 B4-1 + B4-2): the merged multi-agent view
+   * ---------------------------------------------------------------- */
+
+  const GROUPS_AGENTS = ['agent-alpha', 'agent-bravo', 'agent-charlie', 'agent-delta',
+    'agent-echo', 'agent-foxtrot', 'agent-golf', 'agent-hotel', 'agent-india', 'agent-juliet'];
+
+  const GROUPS_ALIAS_NOTE = 'group_id / user_id / updated_at 是 /api/groups 响应层的只读派生别名'
+    + '（账本实体未改：id / created_by / closed_at；零迁移、零回填、零新路由）';
+
+  function groupEntities() {
+    return [
+      { id: 'grp-alpha', group_id: 'grp-alpha', user_id: 'cap-1', title: 'Alpha run',
+        objective: 'merge ten agents', status: 'open', agent_ids: GROUPS_AGENTS.slice(),
+        created_at: '2026-11-01T08:00:00Z', created_by: 'captain',
+        updated_at: '2026-11-01T09:12:00Z', updated_at_basis: 'last_event' },
+      { id: 'grp-closed', group_id: 'grp-closed', user_id: 'cap-1', title: 'Closed run',
+        objective: 'shipped', status: 'completed', agent_ids: ['agent-alpha'],
+        created_at: '2026-10-20T08:00:00Z', created_by: 'captain', closed_at: '2026-10-22T10:00:00Z',
+        updated_at: '2026-10-22T10:00:00Z', updated_at_basis: 'closed_at' },
+      { id: 'grp-empty', group_id: 'grp-empty', user_id: 'cap-1', title: 'Fallback run',
+        objective: 'no parsable event', status: 'open', agent_ids: ['agent-bravo'],
+        created_at: '2026-10-19T08:00:00Z', created_by: 'captain',
+        updated_at: '2026-10-19T08:00:00Z', updated_at_basis: 'created_at_fallback' }
+    ];
+  }
+
+  function groupRecords() {
+    /* the aggregate's own order: ascending parsable time, and the record whose
+     * timestamp the server could not read is already last - the page adds no
+     * second sort that would give it a place it did not earn. */
+    const rows = GROUPS_AGENTS.map((agent, i) => ({
+      id: 'act-r' + (i + 1), group_id: 'grp-alpha', agent_id: agent,
+      agent_name: agent.replace('agent-', '') + ' agent',
+      action_type: ['read', 'write', 'tool_call', 'plan', 'confirm', 'send', 'export', 'ask', 'wait', 'finish'][i],
+      status: i < 7 ? 'succeeded' : (i < 9 ? 'running' : 'pending_confirmation'),
+      requires_action: i === 9, timestamp: '2026-11-01T08:0' + i + ':00Z',
+      latency_ms: 40 + i, cost: 0.5 + i
+    }));
+    rows.push({
+      id: 'act-r-bad', group_id: 'grp-alpha', agent_id: 'agent-juliet',
+      agent_name: 'juliet agent', action_type: 'other', status: 'observed',
+      timestamp: 'not-a-timestamp', latency_ms: 7, cost: 0.1
+    });
+    return rows;
+  }
+
+  function groupListPayload() {
+    return {
+      ok: true, groups: groupEntities(), count: groupEntities().length,
+      alias_fields: ['group_id', 'user_id', 'updated_at'],
+      note: GROUPS_ALIAS_NOTE,
+      facts: { version: '1.0', max_agents: 10, stuck_after_seconds: 600, store: { path: 'groups.jsonl', count: 3 } }
+    };
+  }
+
+  function groupAggregatePayload(groupId) {
+    const group = groupEntities().find((g) => g.group_id === groupId) || groupEntities()[0];
+    const id = group.group_id;
+    if (id === 'grp-empty') {
+      return {
+        ok: true, group: group, records: [], agents: [],
+        progress: { total: 0, done: 0, running: 0, needs_me: 0, percent: 0 },
+        resources: { cost: null, latency_ms: {}, cost_by_agent: {}, latency_by_agent: {} },
+        window: { started_at: null, ended_at: null, total_ms: 0 },
+        stuck: [], generated_at: '2026-11-01T09:20:00Z',
+        alias_fields: ['group_id', 'user_id', 'updated_at'], note: GROUPS_ALIAS_NOTE
+      };
+    }
+    const records = groupRecords();
+    return {
+      ok: true, group: group, records: records,
+      agents: GROUPS_AGENTS.map((agent, i) => ({
+        id: agent, name: agent.replace('agent-', '') + ' agent',
+        /* the backend's slot is sha256(id) % 8, so it always lands inside the
+         * palette: with 10 agents two slots must be shared, which is the
+         * collision the panel has to state */
+        count: 1, color_index: i % 8, stuck: agent === 'agent-foxtrot'
+      })),
+      progress: { total: records.length, done: 7, running: 2, needs_me: 1, percent: 54 },
+      resources: { cost: 12.5, latency_ms: { avg: 45 }, cost_by_agent: {}, latency_by_agent: {} },
+      window: { started_at: '2026-11-01T08:00:00Z', ended_at: '2026-11-01T09:12:00Z', total_ms: 4320000 },
+      stuck: ['agent-foxtrot'], generated_at: '2026-11-01T09:13:00Z',
+      alias_fields: ['group_id', 'user_id', 'updated_at'], note: GROUPS_ALIAS_NOTE
+    };
+  }
+
+  function groupsLayer(options) {
+    const layer = bootExtLayer(Object.assign({ search: '?view=desktop' }, options || {}));
+    loadScript(layer.sandbox, FILES.extGroups, 'ext/groups.js');
+    if (!layer.sandbox.TraceLensGroups) throw new Error('ext/groups.js did not expose TraceLensGroups');
+    const demo = JSON.parse(JSON.stringify(loadDemoPayload().records || []));
+    /* the demo set carries no group_id at all: exactly the shape the ungrouped
+     * column must state out loud instead of guessing a group */
+    demo.forEach((record) => { delete record.group_id; });
+    const calls = [];
+    layer.ui.setApiTransport((endpoint, apiPath, body, method) => {
+      /* app.js hands the transport the target as it appears in the page
+       * (`api/groups`, `api/groups/<id>`): the gate below reads that shape. */
+      const target = String(apiPath || '').replace(/^\//, '');
+      if (endpoint === 'health') {
+        return { status: 200, data: { name: 'TraceLens', status: 'ok', mode: 'local', schema_version: '1.1' } };
+      }
+      if (endpoint === 'records') {
+        return { status: 200, data: { records: demo, meta: { count: demo.length, synthetic: true } } };
+      }
+      if (endpoint !== 'groups') return { status: 404, data: { code: 'ROUTE_NOT_FOUND' } };
+      calls.push({ apiPath: target, method: method || 'GET' });
+      if ((method || 'GET') === 'POST') {
+        /* the baseline does not mount the create route (PM-VERDICT-R4-1 §1
+         * item 10): the honest answer is 404 ROUTE_NOT_FOUND, which is what the
+         * page has to show. The 11-agent shape is exercised in the DOM
+         * self-test, where the service's own GROUP_AGENTS_EXCEEDED answer can
+         * be scripted against the same panel code. */
+        return { status: 404, data: { code: 'ROUTE_NOT_FOUND', message: 'no such endpoint', detail: {} } };
+      }
+      if (target === 'api/groups') return { status: 200, data: groupListPayload() };
+      const id = target.replace('api/groups/', '');
+      if (id === 'grp-ghost') return { status: 404, data: { code: 'GROUP_NOT_FOUND', message: 'no such group' } };
+      return { status: 200, data: groupAggregatePayload(id) };
+    });
+    layer.__groups = { calls: calls, records: demo };
+    return layer;
+  }
+
+  async function groupsPainted() {
+    const layer = groupsLayer();
+    await layer.ui.probeApi();
+    const synced = await layer.ui.syncRecordsFromApi();
+    if (!synced) throw new Error('the fixture records never reached the page');
+    layer.ext.boot();
+    if (!layer.ext.open('groups')) throw new Error('the groups tab is not reachable (permission gate)');
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    return layer;
+  }
+
+  const nodeText = (node) => (node ? String(node.textContent || '') : '');
+
+  check('R4-2 groups panel: one tab, eight zones, the guarded door, scoped CSS, mounted in index.html', () => {
+    const js = read(FILES.extGroups);
+    const css = read(FILES.extGroupsCss);
+    const html = read(FILES.index);
+    if (!/\.register\(\{/.test(js)) throw new Error('panel never registers with the extension shell');
+    if (!/id:\s*'groups'/.test(js)) throw new Error('panel id is not groups');
+    if (!/order:\s*30/.test(js)) throw new Error('the groups tab has no order slot');
+    if (!/permission:\s*'records\.read'/.test(js)) throw new Error('the tab is not gated on records.read');
+    ['list', 'detail', 'progress', 'resources', 'agents', 'timeline', 'ungrouped', 'create'].forEach((zone) => {
+      if (js.indexOf("'" + zone + "'") < 0) throw new Error('missing zone: ' + zone);
+    });
+    if (js.indexOf("ctx.get(EP_GROUPS") < 0) throw new Error('panel does not read through the guarded ctx.get');
+    if (js.indexOf("ctx.post(EP_GROUPS") < 0) throw new Error('the create form does not go through the guarded ctx.post');
+    if (!/data-tab="groups"/.test(css)) throw new Error('panel CSS is not scoped to the groups tab');
+    if (!/ext\/groups\.css/.test(html)) throw new Error('index.html does not mount ext/groups.css');
+    if (!/ext\/groups\.js/.test(html)) throw new Error('index.html does not mount ext/groups.js');
+    if (cjkCount(js) !== 0) throw new Error('panel source contains ' + cjkCount(js) + ' CJK literals');
+    if (cjkCount(css) !== 0) throw new Error('panel CSS contains CJK literals');
+    const zones = (js.match(/zone\(ctx, panel, '/g) || []).length;
+    /* chars and bytes are different口径 (the source comments carry arrows), so
+     * both are printed: a size quoted in a report must say which one it is */
+    return 'panel ' + js.length + ' chars / ' + Buffer.byteLength(js, 'utf8') + ' bytes, css '
+      + css.length + ' chars / ' + Buffer.byteLength(css, 'utf8') + ' bytes, zones=' + zones
+      + ', CJK=0, mounted=css+js';
+  });
+
+  check('R4-2 colour contract: ext/groups.js copies groups.py COLOR_PALETTE, MAX_AGENTS pinned, no second palette', () => {
+    const py = read(FILES.groupsPy);
+    const js = read(FILES.extGroups);
+    const css = read(FILES.extGroupsCss);
+    const pyBlock = /COLOR_PALETTE = \(([\s\S]*?)\)/.exec(py);
+    const jsBlock = /var GROUP_COLOR_PALETTE = \[([\s\S]*?)\]/.exec(js);
+    if (!pyBlock) throw new Error('groups.py no longer exposes a readable COLOR_PALETTE');
+    if (!jsBlock) throw new Error('ext/groups.js carries no GROUP_COLOR_PALETTE (the JS side of the contract)');
+    const hexes = (text) => (text.match(/#[0-9a-fA-F]{6}/g) || []).map((h) => h.toLowerCase());
+    const pyPalette = hexes(pyBlock[1]);
+    const jsPalette = hexes(jsBlock[1]);
+    if (pyPalette.length !== jsPalette.length) {
+      throw new Error('palette lengths differ: python=' + pyPalette.length + ' js=' + jsPalette.length);
+    }
+    const drift = pyPalette.filter((h, i) => h !== jsPalette[i]);
+    if (drift.length) throw new Error('the palettes drifted (change both sides): ' + drift.join(', '));
+    const pySize = /PALETTE_SIZE = len\(COLOR_PALETTE\)/.test(py);
+    const jsSize = /var GROUP_PALETTE_SIZE = GROUP_COLOR_PALETTE\.length/.test(js);
+    if (!pySize || !jsSize) throw new Error('the palette size is not derived from the table on both sides');
+    const pyMax = /MAX_AGENTS = (\d+)/.exec(py);
+    const jsMax = /var GROUP_MAX_AGENTS = (\d+)/.exec(js);
+    if (!pyMax || !jsMax || pyMax[1] !== jsMax[1]) {
+      throw new Error('the agent limit drifted: python=' + (pyMax && pyMax[1]) + ' js=' + (jsMax && jsMax[1]));
+    }
+    if (Number(pyMax[1]) !== 10) throw new Error('MAX_AGENTS is no longer 10: ' + pyMax[1]);
+    /* the CSS owns no agent colour: no palette hex appears in it outside a
+     * token fallback, and every colour it does carry sits inside var() */
+    const stripped = css.replace(/var\([^()]*\)/g, 'var()');
+    const paletteInCss = pyPalette.filter((hex) => stripped.toLowerCase().indexOf(hex) >= 0);
+    if (paletteInCss.length) {
+      throw new Error('the CSS ships a second agent palette (the colour comes from the backend index): ' + paletteInCss.join(', '));
+    }
+    const stray = (stripped.match(/#[0-9a-fA-F]{3,8}\b/g) || []);
+    if (stray.length) throw new Error('literal colours outside var() fallbacks: ' + stray.join(', '));
+    /* the honest consequence of 8 slots for 10 agents is stated, not hidden */
+    if (js.indexOf('groups.agents.color_shared') < 0) throw new Error('the palette collision is not stated by the panel');
+    return 'palette=' + pyPalette.length + ' hexes identical (python/js), MAX_AGENTS=' + pyMax[1]
+      + ', css palette hexes=0, css colours outside var()=0';
+  });
+
+  check('R4-2 alias discipline: alias_fields + note + updated_at_basis consumed, three bases, no browser clock', () => {
+    const js = read(FILES.extGroups);
+    const zh = readJson(FILES.zh);
+    const en = readJson(FILES.en);
+    ['alias_fields', 'note', 'updated_at_basis'].forEach((field) => {
+      if (js.indexOf("'" + field + "'") < 0 && js.indexOf('.' + field) < 0) {
+        throw new Error('the panel does not consume the response field ' + field);
+      }
+    });
+    if (js.indexOf('data.note') < 0) throw new Error('the server note is not rendered from the response');
+    ['closed_at', 'last_event', 'created_at_fallback'].forEach((basis) => {
+      const key = 'groups.alias.basis.' + basis;
+      const leaf = 'alias.basis.' + basis;
+      if (js.indexOf("'" + key + "'") < 0) throw new Error('no label wired for the basis ' + basis);
+      if (!zh.groups[leaf] || !en.groups[leaf]) throw new Error('basis label key missing in a dictionary: ' + key);
+    });
+    if (zh.groups['alias.basis.absent'] === zh.groups['alias.basis.last_event']) {
+      throw new Error('the absent-basis fallback copy is identical to a real basis');
+    }
+    /* 0.4: an alias is never printed as a migrated ledger, and the page never
+     * reaches for a clock to fill a missing time. Comments are stripped first:
+     * the rule itself names the words it forbids in shipped copy. */
+    const code = js.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
+    if (/migrat/i.test(code)) {
+      throw new Error('the panel code talks about migration (the ledger is not migrated)');
+    }
+    if (/new Date\(/.test(code)) throw new Error('the panel builds a Date (the page has no clock authority)');
+    const paint = /function paintTimeline\([\s\S]*?\n  \}/.exec(code);
+    if (!paint) throw new Error('paintTimeline is not readable (the render timing must be measurable)');
+    const nowTotal = (code.match(/Date\.now\(\)/g) || []).length;
+    const nowInPaint = (paint[0].match(/Date\.now\(\)/g) || []).length;
+    if (nowTotal === 0 || nowTotal !== nowInPaint) {
+      throw new Error('Date.now() must live only in the render measurement (total=' + nowTotal
+        + ', in paintTimeline=' + nowInPaint + ')');
+    }
+    if (js.indexOf('ctx.fmtTime') < 0) throw new Error('the panel does not print times through the app formatter');
+    if (js.indexOf("groups.alias.updated.absent") < 0) throw new Error('a missing updated_at is not stated honestly');
+    return 'alias fields consumed=3, basis labels=3 (zh+en), note=verbatim, new Date()=0, '
+      + 'Date.now()=' + nowTotal + ' all inside paintTimeline=' + nowInPaint + ' (render timing only)';
+  });
+
+  check('R4-2 honest numbers: denominator = progress.total, duration = window.total_ms, members never the denominator', () => {
+    const js = read(FILES.extGroups);
+    const zh = readJson(FILES.zh);
+    const en = readJson(FILES.en);
+    if (js.indexOf('source: \'progress.total\'') < 0) throw new Error('the progress bar does not name its denominator source');
+    if (js.indexOf('denominator: \'records-in-view\'') < 0) throw new Error('the bar does not state that the denominator is the view record count');
+    if (js.indexOf('groups.progress.note') < 0) throw new Error('the denominator is not explained in words');
+    if (js.indexOf('groups.progress.members_not_denominator') < 0) throw new Error('the member count is not excluded from the denominator');
+    if (js.indexOf('source: \'window.total_ms\'') < 0) throw new Error('the elapsed time does not name the deterministic window');
+    if (js.indexOf('groups.resources.elapsed_note') < 0) throw new Error('the elapsed source is not explained in words');
+    if (js.indexOf('data-render-ms') < 0) throw new Error('the render time is not machine-readable on the DOM');
+    ['progress.note', 'progress.members_not_denominator', 'resources.elapsed_note'].forEach((leaf) => {
+      const zhValue = String(zh.groups[leaf] || '');
+      const enValue = String(en.groups[leaf] || '');
+      if (!zhValue || !enValue) throw new Error('copy missing for ' + leaf);
+      if (!/\{members\}/.test(zh.groups['progress.members_not_denominator'])) {
+        throw new Error('the members line lost its parameter');
+      }
+    });
+    /* the percent the server answers with is printed as it is: groups.py
+     * _percent() is an integer 0-100, so a second rounding in the printed copy
+     * would be a second fact source (the bar's own fill width is a pixel
+     * ratio, not a printed number, so it is not this rule) */
+    const progressFn = /function paintProgress\([\s\S]*?\n  \}/.exec(js);
+    if (!progressFn) throw new Error('paintProgress is not readable');
+    if (progressFn[0].indexOf("'groups.progress.percent', { percent: percent }") < 0) {
+      throw new Error('progress.percent is not printed as the integer the server answered');
+    }
+    return 'denominator=progress.total, duration=window.total_ms, members excluded in copy (zh+en), percent printed as served';
+  });
+
+  check('R4-2 zero new routes: the panel speaks only api/groups, the app.js door is untouched', () => {
+    const js = read(FILES.extGroups);
+    const app = read(FILES.app);
+    const targets = [...new Set((js.match(/'api\/[a-z0-9_\/-]*'/g) || []).map((s) => s.slice(1, -1)))].sort();
+    if (targets.length !== 1 || targets[0] !== 'api/groups') {
+      throw new Error('the panel reaches for more than the groups base: ' + targets.join(', '));
+    }
+    if (!/groups: 'api\/groups'/.test(app)) throw new Error('app.js no longer allowlists the groups base');
+    const door = /function extRequest\([\s\S]*?\n  \}/.exec(app);
+    if (!door) throw new Error('the guarded request door is not readable in app.js');
+    if (/'api\/groups\/[^']*'/.test(js)) {
+      throw new Error('the panel hardcodes a groups sub-path (the id must come from the response)');
+    }
+    const verbs = (js.match(/ctx\.(get|post)\(/g) || []).length;
+    return 'targets=' + targets.join(',') + ' (allowlisted base), ctx calls=' + verbs + ', app.js door intact';
+  });
+
+  check('R4-2 10-agent boundary: 10 shown, no truncation, 11 refused, the create route states 404', () => {
+    const js = read(FILES.extGroups);
+    const zh = readJson(FILES.zh);
+    const en = readJson(FILES.en);
+    if (js.indexOf('truncated: \'false\'') < 0) throw new Error('the panel does not state that it truncates nothing');
+    if (js.indexOf('groups.agents.max_note') < 0) throw new Error('the 10-agent boundary is not stated in the agents zone');
+    if (js.indexOf('groups.create.max') < 0) throw new Error('the create form does not refuse more than 10 agents locally');
+    if (js.indexOf('GROUP_AGENTS_EXCEEDED') < 0) throw new Error('the server refusal code is not mapped to copy');
+    if (js.indexOf('groups.create.unavailable') < 0) throw new Error('the unmounted create route is not stated by the form');
+    if (js.indexOf("'ROUTE_NOT_FOUND'") < 0) throw new Error('the 404 answer is not shown as itself');
+    if (js.indexOf("feedback.setAttribute('data-state', 'ok')") >= 0
+      && js.indexOf("if (res.ok)") < 0) throw new Error('a create success is claimed without the server saying ok');
+    ['agents.max_note', 'create.unavailable', 'create.max'].forEach((leaf) => {
+      if (!zh.groups[leaf] || !en.groups[leaf]) throw new Error('boundary copy missing: ' + leaf);
+    });
+    if (zh.groups['create.max'].indexOf('{max}') < 0 || zh.groups['create.max'].indexOf('{count}') < 0) {
+      throw new Error('the boundary copy lost its parameters');
+    }
+    return 'shown=10 (max pinned 10), truncated=false, 11th=create.max + GROUP_AGENTS_EXCEEDED, POST=ROUTE_NOT_FOUND stated';
+  });
+
+  check('R4-2 i18n parts: groups.zh/en parts add only new keys, parity, parameters identical, en has no CJK', () => {
+    const partsZh = readJson(FILES.i18nGroupsParts);
+    const partsEn = readJson(FILES.i18nGroupsPartsEn);
+    const zh = readJson(FILES.zh);
+    const en = readJson(FILES.en);
+    const collab = readJson(path.join(HERE, 'i18n', 'parts', 'collab.zh.json'));
+    const zhLeaves = Object.keys(partsZh.groups);
+    const enLeaves = Object.keys(partsEn.groups);
+    if (zhLeaves.length !== enLeaves.length) throw new Error('the parts files differ in key count');
+    const drift = zhLeaves.filter((k) => enLeaves.indexOf(k) < 0);
+    if (drift.length) throw new Error('en parts is missing: ' + drift.join(', '));
+    const overlap = zhLeaves.filter((k) => Object.prototype.hasOwnProperty.call(collab.groups, k));
+    if (overlap.length) throw new Error('the parts file re-declares keys the collab parts owns: ' + overlap.join(', '));
+    const missing = zhLeaves.filter((k) => !zh.groups[k] || !en.groups[k]);
+    if (missing.length) throw new Error('parts keys not merged into the dictionaries: ' + missing.join(', '));
+    const params = (text) => (String(text).match(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g) || []).sort().join(',');
+    const paramDrift = zhLeaves.filter((k) => params(zh.groups[k]) !== params(en.groups[k]));
+    if (paramDrift.length) throw new Error('zh/en parameters drifted for: ' + paramDrift.join(', '));
+    const cjkEn = zhLeaves.filter((k) => cjkCount(en.groups[k]) !== 0);
+    if (cjkEn.length) throw new Error('en copy contains CJK: ' + cjkEn.join(', '));
+    return 'new keys=' + zhLeaves.length + ' (zh+en parity, params identical, en CJK=0, no key stolen from collab)';
+  });
+
+  check('R4-2 runtime: 10 agents with backend colours, merged order, bad stamps last, ungrouped column', async () => {
+    const layer = await groupsPainted();
+    const py = read(FILES.groupsPy);
+    const palette = (/(COLOR_PALETTE = \([\s\S]*?\))/.exec(py)[1].match(/#[0-9a-fA-F]{6}/g) || [])
+      .map((h) => h.toLowerCase());
+    const body = layer.document.body;
+    const panel = queryAll(body, 'section.ext-grp')[0];
+    if (!panel) throw new Error('the groups panel did not paint (no section.ext-grp)');
+    if (layer.document.getElementById('trust-body').getAttribute('data-tab') !== 'groups') {
+      throw new Error('the shell did not open the groups tab');
+    }
+    const zones = queryAll(panel, 'section[data-zone]');
+    if (zones.length !== 8) throw new Error('zones painted=' + zones.length + ' (expected 8)');
+    const agents = queryAll(panel, 'li.ext-grp__agent');
+    if (agents.length !== 10) throw new Error('agent rows=' + agents.length + ' (B4-2 needs all 10, no truncation)');
+    const legend = queryAll(panel, 'ul.ext-grp__agents')[0];
+    if (legend.getAttribute('data-agents') !== '10' || legend.getAttribute('data-max') !== '10') {
+      throw new Error('the legend does not carry agents=10/max=10: ' + legend.getAttribute('data-agents')
+        + '/' + legend.getAttribute('data-max'));
+    }
+    /* the chip colour is the backend index rendered through the backend table */
+    const chips = queryAll(legend, 'span.ext-grp__chip');
+    const wrong = [];
+    agents.forEach((row, i) => {
+      const chip = row.querySelectorAll('span.ext-grp__chip')[0];
+      if (!chip) { wrong.push('agent ' + i + ' has no chip'); return; }
+      const index = Number(chip.getAttribute('data-index'));
+      const style = String(chip.getAttribute('style') || '');
+      if (style.indexOf(palette[index]) < 0) {
+        wrong.push('agent index ' + index + ' is not the backend hex ' + palette[index] + ' (' + style + ')');
+      }
+    });
+    if (wrong.length) throw new Error(wrong.join('; '));
+    /* ten agents into eight slots: the collision is stated, not hidden */
+    const shared = Number(legend.getAttribute('data-color-shared'));
+    if (shared < 2) throw new Error('the 8-slot collision is not counted: ' + shared);
+    const colorNote = queryAll(panel, 'p.ext-grp__note--color')[0];
+    if (!colorNote) throw new Error('the colour collision has no note on screen');
+    if (colorNote.getAttribute('data-size') !== String(palette.length)) {
+      throw new Error('the note does not state the palette size the backend owns');
+    }
+    const abbrs = agents.map((row) => row.querySelectorAll('.ext-grp__avatar-abbr')[0])
+      .filter((node) => !!node).map((node) => node.textContent);
+    if (new Set(abbrs).size !== 10) throw new Error('avatar abbreviations are not 10 distinct: ' + abbrs.join(','));
+    /* merged timeline: 11 rows, the unreadable stamp stays last */
+    const table = queryAll(panel, 'table.ext-grp__timeline')[0];
+    if (!table) throw new Error('no merged timeline');
+    const rows = queryAll(table, 'tbody tr');
+    if (rows.length !== 11) throw new Error('timeline rows=' + rows.length + ' (expected 11)');
+    if (table.getAttribute('data-total') !== '11' || table.getAttribute('data-bad-time') !== '1') {
+      throw new Error('the timeline does not count its rows honestly: ' + table.getAttribute('data-total')
+        + '/' + table.getAttribute('data-bad-time'));
+    }
+    if (rows[rows.length - 1].getAttribute('data-bad-time') !== 'true') {
+      throw new Error('the record with an unreadable timestamp is not last');
+    }
+    const ordered = rows.slice(0, 10).map((r) => r.getAttribute('data-time'));
+    const sortedCopy = ordered.slice().sort();
+    if (ordered.join('|') !== sortedCopy.join('|')) throw new Error('the merged view is not time-ordered');
+    /* filters keep the time order, and hiding an agent hides only its rows */
+    const toggles = queryAll(panel, 'button.ext-grp__filter-btn');
+    if (toggles.length !== 10) throw new Error('agent filter buttons=' + toggles.length);
+    toggles[0].click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const filtered = queryAll(panel, 'table.ext-grp__timeline tbody tr');
+    if (filtered.length !== 10) throw new Error('hiding one agent left ' + filtered.length + ' rows');
+    if (filtered.some((r) => r.getAttribute('data-agent') === GROUPS_AGENTS[0])) {
+      throw new Error('the filtered view still shows the hidden agent');
+    }
+    const filteredTimes = filtered.slice(0, 9).map((r) => r.getAttribute('data-time'));
+    if (filteredTimes.join('|') !== filteredTimes.slice().sort().join('|')) {
+      throw new Error('the filtered view lost the time order');
+    }
+    const hiddenNote = nodeText(panel).indexOf('1 个 Agent 被隐藏') >= 0;
+    if (!hiddenNote) throw new Error('the hidden agent is not counted in words');
+    toggles[0].click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    /* descending: the parsable part flips, the unreadable stamp stays last */
+    const sort = queryAll(panel, 'button[data-act="sort"]')[0];
+    sort.click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const desc = queryAll(panel, 'table.ext-grp__timeline tbody tr');
+    if (desc[desc.length - 1].getAttribute('data-bad-time') !== 'true') {
+      throw new Error('descending order moved the unreadable stamp out of the last place');
+    }
+    const descTimes = desc.slice(0, 10).map((r) => r.getAttribute('data-time'));
+    if (descTimes.join('|') !== descTimes.slice().sort().reverse().join('|')) {
+      throw new Error('descending order is not the reverse time order');
+    }
+    sort.click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    /* honest denominator + deterministic duration */
+    const bar = queryAll(panel, 'div.ext-grp__bar')[0];
+    if (bar.getAttribute('data-total') !== '11' || bar.getAttribute('data-source') !== 'progress.total') {
+      throw new Error('the progress bar does not take its denominator from the response: '
+        + bar.getAttribute('data-total') + '/' + bar.getAttribute('data-source'));
+    }
+    if (bar.getAttribute('aria-valuemax') !== '11') throw new Error('the bar max is not the response total');
+    if (queryAll(panel, 'p.ext-grp__note').length < 2) throw new Error('the honest denominator line is missing');
+    const elapsed = queryAll(panel, 'p.ext-grp__elapsed')[0];
+    if (elapsed.getAttribute('data-ms') !== '4320000'
+      || elapsed.getAttribute('data-source') !== 'window.total_ms') {
+      throw new Error('the total duration is not the server window: ' + elapsed.getAttribute('data-ms'));
+    }
+    /* R4-1 aliases: the strip, the verbatim note, the basis label */
+    const strip = queryAll(panel, 'div.ext-grp__alias')[0];
+    if (!strip || strip.getAttribute('data-note') !== 'server') throw new Error('the alias strip is not fed by the server note');
+    const noteLine = queryAll(strip, 'p.ext-grp__alias-note')[0];
+    if (nodeText(noteLine).indexOf(GROUPS_ALIAS_NOTE) < 0) throw new Error('the server note is not shown verbatim');
+    const fieldsLine = nodeText(queryAll(strip, 'p.ext-grp__alias-fields')[0]);
+    ['group_id', 'user_id', 'updated_at'].forEach((field) => {
+      if (fieldsLine.indexOf(field) < 0) throw new Error('alias_fields not shown: ' + field);
+    });
+    const updated = queryAll(panel, 'p.ext-grp__updated')[0];
+    if (updated.getAttribute('data-basis') !== 'last_event') {
+      throw new Error('updated_at is shown without the basis label (last_event expected): ' + updated.getAttribute('data-basis'));
+    }
+    const basisText = nodeText(queryAll(updated, 'span.ext-grp__updated-basis')[0]);
+    const zh = readJson(FILES.zh);
+    if (basisText.indexOf(String(zh.groups['alias.basis.last_event'])) < 0) {
+      throw new Error('the basis label copy is not the dictionary sentence: ' + basisText);
+    }
+    /* ungrouped: the demo set has no group_id, so the column must say so */
+    const ungroupedZone = queryAll(panel, 'section[data-zone="ungrouped"]')[0];
+    const ungroupedBox = queryAll(ungroupedZone, 'div.ext-grp__ungrouped')[0];
+    const ungroupedCount = layer.__groups.records.length;
+    if (ungroupedBox.getAttribute('data-count') !== String(ungroupedCount)) {
+      throw new Error('the ungrouped count is not the record count: ' + ungroupedBox.getAttribute('data-count'));
+    }
+    if (ungroupedBox.getAttribute('data-guessed') !== 'false') throw new Error('the panel claims it guessed a group');
+    const listRows = queryAll(panel, 'table.ext-grp__table tbody tr');
+    if (listRows.length !== 3) throw new Error('the group list rows=' + listRows.length);
+    if (ungroupedCount === 0) throw new Error('the fixture lost its ungrouped records');
+    const calls = layer.__groups.calls.map((c) => c.apiPath + ' ' + c.method);
+    if (calls.filter((c) => c === 'api/groups GET').length !== 1) {
+      throw new Error('the view is not one list call: ' + calls.join(', '));
+    }
+    const renderMs = Number(queryAll(panel, 'table.ext-grp__timeline')[0].getAttribute('data-render-ms'));
+    if (!(renderMs >= 0)) throw new Error('the render time is not machine-readable');
+    return 'zones=8, agents=10 (backend palette, colour-shared=' + shared + ', abbreviations 10 distinct), '
+      + 'rows=11 (bad stamp last in asc+desc), filter keeps order, denominator=11 (progress.total), '
+      + 'duration=4320000ms (window.total_ms), alias note verbatim, basis=last_event, ungrouped='
+      + ungroupedCount + ' (guessed=false), render-ms=' + renderMs;
+  });
+
+  check('R4-2 create form is honest: no fake success, 11 agents refused, the unmounted route shown as 404', async () => {
+    const layer = await groupsPainted();
+    const panel = queryAll(layer.document.body, 'section.ext-grp')[0];
+    const form = queryAll(panel, 'form.ext-grp__create')[0];
+    if (!form) throw new Error('the create zone has no form');
+    const feedback = queryAll(form, 'p.ext-grp__create-feedback')[0];
+    const titleInput = queryAll(form, '[data-field="create-title"]')[0];
+    const agentsInput = queryAll(form, '[data-field="create-agents"]')[0];
+    const submit = queryAll(form, 'button[data-act="create-submit"]')[0];
+    if (feedback.getAttribute('data-state') !== 'idle') throw new Error('the form starts in a non-idle state');
+    /* the shim has no form-submit synthesis: the page's handler is on the
+     * form, and a real browser reaches it from the submit button (type
+     * submit), which the form carries and this check asserts below */
+    const send = () => form.dispatchEvent({ type: 'submit' });
+    if (submit.getAttribute('type') !== 'submit') throw new Error('the create button is not a submit button');
+    send();
+    if (feedback.getAttribute('data-state') !== 'invalid') {
+      throw new Error('an empty create is not reported as invalid: ' + feedback.getAttribute('data-state'));
+    }
+    titleInput.value = 'Eleven agents';
+    agentsInput.value = GROUPS_AGENTS.concat(['agent-kilo']).join(',');
+    send();
+    if (feedback.getAttribute('data-state') !== 'over-max') {
+      throw new Error('11 agents are not refused locally: ' + feedback.getAttribute('data-state'));
+    }
+    if (nodeText(feedback).indexOf('10') < 0) throw new Error('the refusal does not state the limit');
+    agentsInput.value = GROUPS_AGENTS.slice(0, 2).join(',');
+    send();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    if (feedback.getAttribute('data-state') !== 'refused:ROUTE_NOT_FOUND') {
+      throw new Error('the unmounted route is not shown as the server answered: ' + feedback.getAttribute('data-state'));
+    }
+    const text = nodeText(feedback);
+    if (text.indexOf('ROUTE_NOT_FOUND') < 0) throw new Error('the code is not printed');
+    if (text.indexOf(String(readJson(FILES.zh).groups['create.unavailable'])) < 0) {
+      throw new Error('the form does not state that the route is not mounted');
+    }
+    const posts = layer.__groups.calls.filter((c) => c.method === 'POST');
+    if (posts.length !== 1) throw new Error('one valid create = ' + posts.length + ' POSTs');
+    if (posts[0].apiPath !== 'api/groups') throw new Error('the POST left the allowlisted base: ' + posts[0].apiPath);
+    return 'idle -> invalid (empty) -> over-max (11 agents, limit printed) -> refused:ROUTE_NOT_FOUND (1 POST on api/groups), no success state';
+  });
+
+  check('R4-2 degraded states: no group selected, group not found, and the empty window all read from the response', async () => {
+    const layer = groupsLayer();
+    await layer.ui.probeApi();
+    await layer.ui.syncRecordsFromApi();
+    layer.ext.boot();
+    layer.ext.open('groups');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const panel = queryAll(layer.document.body, 'section.ext-grp')[0];
+    const rows = queryAll(panel, 'table.ext-grp__table tbody tr');
+    if (rows.length !== 3) throw new Error('group list rows=' + rows.length);
+    /* the third group has no records and no window: the panel must not invent
+     * a duration, a progress bar of 0/0, or an agent list */
+    const third = rows[2].querySelectorAll('button[data-act="select"]')[0];
+    third.click();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const updated = queryAll(panel, 'p.ext-grp__updated')[0];
+    if (updated.getAttribute('data-basis') !== 'created_at_fallback') {
+      throw new Error('the created_at fallback basis is not shown: ' + updated.getAttribute('data-basis'));
+    }
+    const zh = readJson(FILES.zh);
+    if (nodeText(queryAll(updated, 'span.ext-grp__updated-basis')[0])
+      .indexOf(String(zh.groups['alias.basis.created_at_fallback'])) < 0) {
+      throw new Error('the fallback basis sentence is not the dictionary copy');
+    }
+    const elapsed = queryAll(panel, 'p.ext-grp__elapsed')[0];
+    if (elapsed.getAttribute('data-ms') !== '' || elapsed.getAttribute('data-window') !== 'absent') {
+      throw new Error('a window with no endpoints still prints a duration: '
+        + elapsed.getAttribute('data-ms') + '/' + elapsed.getAttribute('data-window'));
+    }
+    if (nodeText(elapsed).indexOf(String(zh.groups['resources.unknown'])) < 0) {
+      throw new Error('an empty window is not printed as the server\'s "not provided"');
+    }
+    const bar = queryAll(panel, 'div.ext-grp__bar')[0];
+    if (bar.getAttribute('data-total') !== '0') throw new Error('the bar denominator is invented for an empty group');
+    if (queryAll(panel, 'li.ext-grp__agent').length !== 0) throw new Error('agents appear for a group with none');
+    if (nodeText(panel).indexOf(String(zh.groups['agents.none'])) < 0) throw new Error('the empty agent list is not stated');
+    if (nodeText(panel).indexOf(String(zh.groups['stuck.empty'])) < 0) throw new Error('the empty stuck list is not stated');
+    /* the group-not-found code maps to its dictionary sentence */
+    const errorKeys = read(FILES.extGroups);
+    const en = readJson(FILES.en);
+    ['GROUP_NOT_FOUND', 'GROUP_FIELD_INVALID', 'GROUP_AGENTS_EXCEEDED', 'GROUP_CLOSED', 'GROUP_WRITE_FAILED']
+      .forEach((code) => {
+        const mapped = new RegExp("['\"]?" + code + "['\"]?\\s*:\\s*'groups\\.error\\.[a-z_]+").exec(errorKeys);
+        if (!mapped) throw new Error('server code not mapped to copy: ' + code);
+        const leaf = /groups\.error\.([a-z_]+)/.exec(mapped[0])[1];
+        if (!zh.groups['error.' + leaf] || !en.groups['error.' + leaf]) {
+          throw new Error('server code ' + code + ' maps to a key that is not in both dictionaries: ' + leaf);
+        }
+      });
+    const cost = queryAll(panel, 'p.ext-grp__cost')[0];
+    if (cost.getAttribute('data-reported') !== 'false') throw new Error('a missing cost is presented as a number');
+    return 'empty group: basis=created_at_fallback, duration=resources.unknown, total=0, agents=none, stuck=empty; '
+      + '5 server codes mapped to groups.error.* copy';
+  });
+
+  /* ---- R8-1 (REQ-008 B8-4 first half): the pre-export verification gate ------
+   * The backend refuses to package an evidence bundle while the audit chain or the
+   * export ledger chain is broken, and it writes nothing at all. The page's side of
+   * that promise is narrow and checkable: the refusal code maps to its own
+   * dictionary line, the export counter does not move, no last-export line appears,
+   * the raw server sentence never reaches the page, and zh/en/embed are in sync.
+   * No new call face is mounted this round (the compliance export route is still
+   * declared-but-unmounted), so the audit export panel is the reachable face. */
+  check('R8-1 pre-export gate: a chain-broken refusal maps to its own copy, moves no counter, fakes no download', async () => {
+    const inst = auditBoot({ exportStatus: 500, exportCode: 'COMPLIANCE_CHAIN_BROKEN' });
+    await inst.ui.probeApi();
+    await inst.ui.authProbe();
+    const out = await inst.ui.exportAudit('csv');
+    if (!out || out.ok !== false) throw new Error('a gate refusal was treated as a success: ' + JSON.stringify(out));
+    if (out.code !== 'COMPLIANCE_CHAIN_BROKEN') throw new Error('the refusal code was lost: ' + out.code);
+    if (inst.auditCalls('auditExport').length !== 1) throw new Error('the refusal retried the export: ' + inst.auditCalls('auditExport').length + ' calls');
+    const snap = inst.ui.exportState();
+    if (snap.count !== 0) throw new Error('a refusal counted as an export: count=' + snap.count);
+    if (snap.error !== 'export.error.compliance_chain_broken') throw new Error('refusal line = ' + snap.error);
+    const line = ivFind(inst.document, '[data-hook="export-feedback"]')[0];
+    if (!line) throw new Error('the export panel has no feedback line to refuse with');
+    if (line.getAttribute('data-i18n') !== 'export.error.compliance_chain_broken') {
+      throw new Error('the refusal is not dictionary copy: ' + line.getAttribute('data-i18n'));
+    }
+    const shown = String(line.textContent || '');
+    if (!shown) throw new Error('the refusal line renders empty');
+    if (shown.indexOf('Audit chain is broken at entry 3') >= 0) throw new Error('the raw server message is pasted into the page');
+    const lastNode = ivFind(inst.document, '[data-hook="export-last"]')[0];
+    if (lastNode && lastNode.getAttribute('data-visible') !== 'false') {
+      throw new Error('a refusal shows a last-export line - the page claims a file that was never written');
+    }
+    /* the map + the dictionaries + the generated embed must agree, key for key */
+    const app = read(FILES.app);
+    const map = app.split('EXPORT_ERROR_KEYS').slice(1).join('EXPORT_ERROR_KEYS').split('};')[0];
+    if (!/COMPLIANCE_CHAIN_BROKEN\s*:\s*'export\.error\.compliance_chain_broken'/.test(map)) {
+      throw new Error('app.js does not map COMPLIANCE_CHAIN_BROKEN to its own dictionary line');
+    }
+    const zh = readJson(FILES.zh);
+    const en = readJson(FILES.en);
+    const leaf = 'error.compliance_chain_broken';
+    if (!zh.export || !zh.export[leaf]) throw new Error('zh.json is missing export.' + leaf);
+    if (!en.export || !en.export[leaf]) throw new Error('en.json is missing export.' + leaf);
+    if (shown.indexOf(String(zh.export[leaf])) < 0 && shown.indexOf(String(en.export[leaf])) < 0) {
+      throw new Error('the rendered line is not the dictionary sentence');
+    }
+    if (String(zh.export[leaf]).indexOf('零') < 0) throw new Error('the zh refusal does not say the zero-output promise');
+    if (String(en.export[leaf]).indexOf('wrote nothing') < 0) throw new Error('the en refusal does not say the zero-output promise');
+    [/成功/, /success/i].forEach(() => {
+      if (/成功/.test(String(zh.export[leaf])) || /success/i.test(String(en.export[leaf]))) {
+        throw new Error('a refusal line must not read like a success');
+      }
+    });
+    const embed = read(path.join(HERE, 'i18n', 'embed.js'));
+    if (embed.indexOf(leaf) < 0) throw new Error('i18n/embed.js is out of sync: run selfcheck.mjs --sync-embed');
+    const keys = read(path.join(HERE, 'i18n', 'keys.md'));
+    if (keys.indexOf('export.' + leaf) < 0) throw new Error('i18n/keys.md is out of sync: run selfcheck.mjs --sync-keys');
+    return 'gate refusal: code mapped to export.error.compliance_chain_broken, count=0, no last-export line, '
+      + 'raw server text kept out of the page, zh+en+embed+keys in sync';
+  });
+
+  /* ---- R8-5 (REQ-008 B8-3 under BOSS-REPLY-PM-PLAN-001 §D-2): the degraded
+   * anchoring state is shown where a person looks for the evidence file.
+   * Three things are checkable from the DOM: the panel states anchor_state
+   * 'unavailable' and eth_tx_hash 'none' (the backend's own constants), the CID
+   * line sits next to the "unanchored / awaiting integration" wording, and no
+   * on-chain progress or completion copy exists anywhere in the dictionaries.
+   * The live export face (button / range picker / progress / result page) is
+   * R8-6; this round only the honest static slice is allowed to exist. */
+  check('R8-5 degraded anchor state: panel says unanchored, shows no on-chain progress, fakes no tx hash', async () => {
+    const inst = auditBoot();
+    await inst.ui.probeApi();
+    await inst.ui.authProbe();
+    const box = ivFind(inst.document, '[data-hook="export-anchor"]')[0];
+    if (!box) {
+      throw new Error('the export panel has no degraded-state block: an offline CID without an '
+        + 'anchor note is a lie waiting to happen');
+    }
+    if (box.getAttribute('data-anchor-state') !== 'unavailable') {
+      throw new Error('the panel shows an anchor state the backend does not have: '
+        + box.getAttribute('data-anchor-state'));
+    }
+    if (box.getAttribute('data-eth-tx-hash') !== 'none') {
+      throw new Error('the panel carries a transaction hash that was never produced: '
+        + box.getAttribute('data-eth-tx-hash'));
+    }
+    if (box.getAttribute('data-cid-anchored') !== 'false') {
+      throw new Error('the panel implies the offline CID is anchored');
+    }
+    const leaves = ['anchor.state', 'anchor.cid', 'anchor.tx', 'anchor.deferred'];
+    const lines = ivFind(inst.document, '[data-hook^="export-anchor-"]');
+    if (lines.length !== leaves.length) {
+      throw new Error('the degraded block has ' + lines.length + ' lines, expected ' + leaves.length);
+    }
+    const zh = readJson(FILES.zh);
+    const en = readJson(FILES.en);
+    lines.forEach((node) => {
+      const key = String(node.getAttribute('data-i18n') || '');
+      const leaf = key.replace(/^export\./, '');
+      if (leaves.indexOf(leaf) < 0) throw new Error('degraded line is not dictionary copy: ' + key);
+      if (!zh.export || !zh.export[leaf]) throw new Error('zh.json is missing export.' + leaf);
+      if (!en.export || !en.export[leaf]) throw new Error('en.json is missing export.' + leaf);
+      const shown = String(node.textContent || '');
+      if (!shown) throw new Error('degraded line renders empty: ' + key);
+      if (shown.indexOf(String(zh.export[leaf])) < 0 && shown.indexOf(String(en.export[leaf])) < 0) {
+        throw new Error('the degraded line is not the dictionary sentence: ' + key);
+      }
+    });
+    const words = lines.map((node) => String(node.textContent || '')).join(' ');
+    const cidLine = String((zh.export['anchor.cid'] || ''));
+    if (cidLine.indexOf('未锚定（no anchor）') < 0) {
+      throw new Error('the CID line does not say 未锚定（no anchor）: ' + cidLine);
+    }
+    if (words.indexOf('unavailable') < 0) throw new Error('the block never states anchor_state=unavailable');
+    if (words.indexOf('None') < 0) throw new Error('the block never states eth_tx_hash=None');
+    /* no completion illusion anywhere: dictionaries, generated embed, keys.md */
+    const blobs = {
+      'zh.json': JSON.stringify(zh),
+      'en.json': JSON.stringify(en),
+      'embed.js': read(path.join(HERE, 'i18n', 'embed.js')),
+      'keys.md': read(path.join(HERE, 'i18n', 'keys.md'))
+    };
+    const lies = ['正在上链', '已上链', '交易哈希已生成', '上链完成', '锚定成功'];
+    Object.keys(blobs).forEach((label) => {
+      lies.forEach((lie) => {
+        if (blobs[label].indexOf(lie) >= 0) {
+          throw new Error(label + ' carries a completion illusion: ' + lie);
+        }
+      });
+    });
+    const app = read(FILES.app);
+    if (app.indexOf("var EXPORT_ANCHOR_STATE = 'unavailable';") < 0) {
+      throw new Error('app.js does not use the backend constant for the anchor state');
+    }
+    const embed = blobs['embed.js'];
+    const keys = blobs['keys.md'];
+    leaves.forEach((leaf) => {
+      if (embed.indexOf(leaf) < 0) throw new Error('i18n/embed.js is out of sync: run --sync-embed (' + leaf + ')');
+      if (keys.indexOf('export.' + leaf) < 0) throw new Error('i18n/keys.md is out of sync: run --sync-keys (' + leaf + ')');
+    });
+    /* R8-6 (this round): the live export face exists from here on, so the old
+     * "no R8-6 face" boundary is replaced by the honest-面 contract. The panel
+     * may mount the hosts, but it may not write its own progress (no timer, no
+     * width math) and it may not speak to the unmounted compliance route. */
+    const panelNoComments = app.split('function renderExportPanel')[1].split('function renderAuditPanel')[0]
+      .replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+    ['setInterval', 'setTimeout', '/api/compliance', 'style.width'].forEach((token) => {
+      if (panelNoComments.indexOf(token) >= 0) {
+        throw new Error('the export panel writes its own progress or calls an unmounted route: ' + token);
+      }
+    });
+    if (panelNoComments.indexOf('export-progress-host') < 0) {
+      throw new Error('the export panel lost the R8-6 progress host');
+    }
+    if (panelNoComments.indexOf('export-result-host') < 0) {
+      throw new Error('the export panel lost the R8-6 result host');
+    }
+    if (panelNoComments.indexOf('TraceLensCompliance') < 0) {
+      throw new Error('the export panel does not delegate progress/result to ext/compliance.js');
+    }
+    /* the bar itself lives in ext/compliance.js: it must be indeterminate by
+     * construction - declared non-determinate, never given a percentage, and
+     * carrying no timer or animation that could imply one. */
+    const extFile = read(path.join(HERE, 'ext', 'compliance.js'))
+      .replace(/\/\*[\s\S]*?\*\//g, ' ');
+    if (extFile.indexOf("'data-determinate', 'false'") < 0) {
+      throw new Error('ext/compliance.js does not declare the progress bar non-determinate');
+    }
+    if (extFile.indexOf("'data-percent', ''") < 0) {
+      throw new Error('ext/compliance.js does not clear the percentage');
+    }
+    ['setInterval', 'setTimeout', 'style.width', 'aria-valuenow'].forEach((token) => {
+      if (extFile.indexOf(token) >= 0) {
+        throw new Error('ext/compliance.js can fake a progress value: ' + token);
+      }
+    });
+    if (/[\u4e00-\u9fff]/.test(extFile)) {
+      throw new Error('ext/compliance.js carries a CJK literal instead of a dictionary key');
+    }
+    return 'degraded state rendered from backend constants: anchor_state=unavailable, eth_tx_hash=none, '
+      + 'cid_anchored=false, 4 dictionary lines, no completion copy in zh/en/embed/keys, '
+      + 'R8-6 face mounted as indeterminate (no percent, no timer, no unmounted route)';
+  });
+
+  /* ---- R8-6 (REQ-008 6): the live export face. This check is deliberately
+   * SOURCE-level, not DOM-level: the audit rail panel is not on the boot path
+   * this rig drives, so a DOM assertion here would need a second rendering
+   * harness (that is R8-7 territory). What the source proves is the part that
+   * would otherwise be untested: the hosts exist, the panel delegates instead
+   * of computing, and the bar can never report a number. The DOM shape of the
+   * panel is pinned by tests/test_export_face.py against the same files. */
+  check('R8-6 export face: hosts mounted, delegated to ext/compliance.js, bar can never report a number', async () => {
+    const app = read(FILES.app);
+    const ext = read(path.join(HERE, 'ext', 'compliance.js'));
+    const strip = (text) => text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+    const panel = strip(app.split('function renderExportPanel')[1].split('function renderAuditPanel')[0]);
+    ['export-progress-host', 'export-result-host', 'export-format', 'export-range'].forEach((hook) => {
+      if (panel.indexOf(hook) < 0) throw new Error('the export panel lost its R8-6 host: ' + hook);
+    });
+    if (panel.indexOf('TraceLensCompliance') < 0) {
+      throw new Error('the export panel does not delegate progress/result to ext/compliance.js');
+    }
+    ['setInterval', 'setTimeout', 'style.width', 'percent'].forEach((token) => {
+      if (panel.indexOf(token) >= 0) {
+        throw new Error('the panel computes its own progress: ' + token);
+      }
+    });
+    const bar = strip(ext);
+    if (bar.indexOf("'data-determinate', 'false'") < 0) {
+      throw new Error('ext/compliance.js does not declare the bar non-determinate');
+    }
+    if (bar.indexOf("'data-percent', ''") < 0) {
+      throw new Error('ext/compliance.js does not clear the percentage');
+    }
+    ['setInterval', 'setTimeout', 'requestAnimationFrame', 'style.width', 'aria-valuenow'].forEach((token) => {
+      if (bar.indexOf(token) >= 0) throw new Error('the bar can fake a value: ' + token);
+    });
+    if (CJK_HAN.test(bar)) throw new Error('ext/compliance.js carries a CJK literal');
+    const zh = readJson(FILES.zh);
+    const en = readJson(FILES.en);
+    ['result.title', 'result.anchored', 'progress.busy', 'format.current'].forEach((leaf) => {
+      if (!zh.export[leaf]) throw new Error('zh.json is missing export.' + leaf);
+      if (!en.export[leaf]) throw new Error('en.json is missing export.' + leaf);
+    });
+    return 'export face mounted: 4 hosts present, delegated to ext/compliance.js, '
+      + 'bar non-determinate with no percent/timer, copy in zh+en';
+  });
+
+  check('0.6.0 update channel: mounted in settings, browser mode draws no controls, no invented progress', async () => {
+    const app = read(FILES.app);
+    const ext = read(path.join(HERE, 'ext', 'update.js'));
+    const css = read(path.join(HERE, 'ext', 'update.css'));
+    const html = read(FILES.index);
+    const strip = (text) => text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+    // 1) the panel only hands over a host; the section itself lives in ext/
+    const panel = strip(app.split('function renderSettingsPanel')[1].split('function auditErrorKey')[0]);
+    if (panel.indexOf('settings-update-host') < 0) {
+      throw new Error('the settings panel lost its update mount point');
+    }
+    if (panel.indexOf('TraceLensUpdate') < 0) {
+      throw new Error('the settings panel does not delegate to ext/update.js');
+    }
+
+    // 2) both assets are actually loaded by the page
+    ['ext/update.js'].forEach((src) => {
+      if (html.indexOf(src) < 0) throw new Error('index.html does not load ' + src);
+    });
+    if (html.indexOf('ext/update.css') < 0) throw new Error('index.html does not load ext/update.css');
+
+    // 3) the bar can never report a number (same rule as R8-6)
+    const bar = strip(ext);
+    ['setInterval', 'setTimeout', 'requestAnimationFrame', 'style.width', 'aria-valuenow'].forEach((token) => {
+      if (bar.indexOf(token) >= 0) throw new Error('the update bar can fake a value: ' + token);
+    });
+    if (bar.indexOf('data-determinate') < 0 || bar.indexOf("'false'") < 0) {
+      throw new Error('ext/update.js does not declare the bar non-determinate');
+    }
+    if (CJK_HAN.test(bar)) throw new Error('ext/update.js carries a CJK literal');
+
+    // 4) browser mode must bail out before drawing any control
+    const head = bar.split('function bridge()')[0].length; // eslint-disable-line no-unused-vars
+    const browserGuard = bar.indexOf('update.hint.browser');
+    const firstButton = bar.indexOf('update.action.check');
+    if (browserGuard < 0) {
+      throw new Error('browser mode has no explaining line');
+    }
+    if (firstButton < 0 || browserGuard > firstButton) {
+      throw new Error('the browser-mode line is not emitted before the controls');
+    }
+    if (bar.indexOf('if (!api)') < 0) {
+      throw new Error('the section does not branch on the desktop bridge');
+    }
+
+    // 5) every reason code the UI claims to know has a sentence in both languages
+    const zh = readJson(FILES.zh);
+    const en = readJson(FILES.en);
+    const block = /var KNOWN_REASONS = \{([\s\S]*?)\};/.exec(bar);
+    if (!block) throw new Error('ext/update.js lost its reason table');
+    const codes = (block[1].match(/([a-z_]+):\s*1/g) || []).map((t) => t.split(':')[0].trim());
+    if (codes.length < 15) throw new Error('the reason table shrank to ' + codes.length + ' codes');
+    codes.forEach((code) => {
+      if (!zh.update['reason.' + code]) throw new Error('zh.json is missing update.reason.' + code);
+      if (!en.update['reason.' + code]) throw new Error('en.json is missing update.reason.' + code);
+    });
+    if (!zh.update['reason.other'] || !en.update['reason.other']) {
+      throw new Error('the fallback sentence update.reason.other is missing');
+    }
+
+    // 6) no motion: a moving stripe would read as measured progress
+    //    (comments are stripped first - the header explains the rule by name)
+    const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    ['@keyframes', 'animation', 'transition'].forEach((token) => {
+      if (cssCode.indexOf(token) >= 0) throw new Error('update.css animates: ' + token);
+    });
+
+    // 7) only tokens that exist in :root (an undefined one falls back to transparent)
+    // collect every custom property the design system declares anywhere in
+    // styles.css (a `:root` selector also appears in a comment, so slicing on
+    // the string ':root' would pick up the wrong block)
+    const defined = new Set((read(FILES.styles).match(/--[a-z0-9-]+\s*:/g) || [])
+      .map((t) => t.replace(/\s*:$/, '')));
+    const used = new Set((css.match(/var\(--[a-z0-9-]+\)/g) || []).map((t) => t.slice(4, -1)));
+    const missing = [...used].filter((t) => !defined.has(t));
+    if (missing.length) throw new Error('update.css uses undefined tokens: ' + missing.join(', '));
+
+    return 'update section mounted, delegated to ext/update.js, ' + codes.length
+      + ' reason codes all have copy, browser mode explains itself, no animation, tokens defined';
+  });
+
+  check('feature centre: eight features, eight addressable pages, no second implementation', async () => {
+    const html = read(FILES.index);
+    const js = read(path.join(HERE, 'ext', 'workspaces.js'));
+    const css = read(path.join(HERE, 'ext', 'workspaces.css'));
+    const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+    const code = strip(js);
+    const zh = readJson(FILES.zh);
+    const en = readJson(FILES.en);
+
+    // 1) both assets are actually loaded by the page
+    if (html.indexOf('ext/workspaces.js') < 0) throw new Error('index.html does not load ext/workspaces.js');
+    if (html.indexOf('ext/workspaces.css') < 0) throw new Error('index.html does not load ext/workspaces.css');
+    if (html.indexOf('ext/workspaces.js') < html.indexOf('ext/update.js')) {
+      throw new Error('workspaces.js loads before the plugins it hosts');
+    }
+
+    // 2) eight features, each with a page id, a title and a description in both languages
+    const block = /var FEATURES = \[([\s\S]*?)\n  \];/.exec(code);
+    if (!block) throw new Error('ext/workspaces.js lost its feature table');
+    const ids = (block[1].match(/id:\s*'([a-z]+)'/g) || []).map((t) => t.split("'")[1]);
+    if (ids.length !== 8) throw new Error('the feature table has ' + ids.length + ' entries, expected 8');
+    new Set(ids).forEach((id) => {
+      if (!zh.workspaces['feature.' + id + '.title']) throw new Error('zh.json is missing workspaces.feature.' + id + '.title');
+      if (!zh.workspaces['feature.' + id + '.desc']) throw new Error('zh.json is missing workspaces.feature.' + id + '.desc');
+      if (!en.workspaces['feature.' + id + '.title']) throw new Error('en.json is missing workspaces.feature.' + id + '.title');
+      if (!en.workspaces['feature.' + id + '.desc']) throw new Error('en.json is missing workspaces.feature.' + id + '.desc');
+    });
+    if (ids.length !== new Set(ids).size) throw new Error('a feature id is listed twice');
+
+    // 3) no second implementation: the export page mounts app.js's own panel,
+    //    and the plugin pages call the registered tab renderer.
+    if (code.indexOf('renderExportPanel') < 0) throw new Error('the export page does not mount the audit export panel');
+    if (code.indexOf('compliance/export') >= 0) throw new Error('ext/workspaces.js grew its own export request');
+    if (code.indexOf('plugin.tab.render(mount, C)') < 0) throw new Error('plugin pages do not delegate to the registered tab');
+    if (code.indexOf('plugin.tab.repaint(') < 0) throw new Error('plugin pages never repaint on a state change');
+    if (code.indexOf('openRollbackPlan') < 0) throw new Error('the rollback page does not reuse the card plugin plan dialog');
+    if (code.indexOf('renderEvidenceAndCausal') < 0) throw new Error('the evidence page does not reuse the card evidence renderer');
+
+    // 4) no CJK literal and no invented numbers in the source
+    if (CJK_HAN.test(code)) throw new Error('ext/workspaces.js carries a CJK literal');
+    ['setInterval', 'setTimeout', 'requestAnimationFrame'].forEach((token) => {
+      if (code.indexOf(token) >= 0) throw new Error('ext/workspaces.js runs a timer: ' + token);
+    });
+
+    // 5) every token the stylesheet uses is declared in the design system
+    const defined = new Set((read(FILES.styles).match(/--[a-z0-9-]+\s*:/g) || [])
+      .map((t) => t.replace(/\s*:$/, '')));
+    const used = new Set((css.match(/var\(--[a-z0-9-]+\)/g) || []).map((t) => t.slice(4, -1)));
+    const missing = [...used].filter((t) => !defined.has(t));
+    if (missing.length) throw new Error('workspaces.css uses undefined tokens: ' + missing.join(', '));
+    if (css.indexOf('@media (max-width: 820px)') < 0) throw new Error('the workspace has no narrow layout');
+
+    // 6) runtime: build the page, open it, walk all eight routes, close it.
+    const sandbox = makeSandbox(read(FILES.index), { innerWidth: 1400, innerHeight: 900 });
+    sandbox.TraceLensDicts = { zh: zh, en: en };
+    loadPageScripts(sandbox);
+    loadScript(sandbox, FILES.extCore, 'ext/core.js');
+    loadScript(sandbox, FILES.extCards, 'ext/cards.js');
+    const ext = sandbox.TraceLensExt;
+    if (!ext) throw new Error('ext/core.js did not expose TraceLensExt');
+    loadScript(sandbox, path.join(HERE, 'ext', 'workspaces.js'), 'ext/workspaces.js');
+    ext.boot();
+    const doc = sandbox.document;
+    /* the shim's document-level search is rooted at <html>; the workspace is
+     * appended to <body>, so every query below is scoped to the body like the
+     * other DOM checks in this file. */
+    const body = doc.body;
+    const W = sandbox.TraceLensWorkspaces;
+    if (!W) throw new Error('ext/workspaces.js did not expose TraceLensWorkspaces');
+
+    /* one live record, so the record-scoped pages (rollback / confidence /
+     * evidence) render their real controls instead of the empty state. */
+    const liveRecord = {
+      id: 'act-workspace-0001',
+      schema_version: '1.1',
+      timestamp: '2026-01-01T00:00:00Z',
+      action_type: 'tool_call',
+      status: 'success',
+      confidence: 0.42,
+      confidence_source: { method: 'logprobs', samples: 8 },
+      tool_name: 'shell',
+      human_readable: { summary: 'workspace fixture record' }
+    };
+    sandbox.TraceLensUI.setApiTransport((endpoint) => {
+      if (endpoint === 'health') {
+        return { status: 200, data: { name: 'TraceLens', status: 'ok', mode: 'local', schema_version: '1.1' } };
+      }
+      if (endpoint !== 'records') return { status: 404, data: { code: 'ROUTE_NOT_FOUND' } };
+      return { status: 200, data: { records: [liveRecord], meta: { count: 1, synthetic: true } } };
+    });
+    await sandbox.TraceLensUI.syncRecordsFromApi();
+
+    const entry = body.querySelector('[data-hook="feature-center-entry"]');
+    if (!entry) throw new Error('the topbar has no feature-centre entry');
+    if (entry.getAttribute('aria-haspopup') !== 'dialog') throw new Error('the entry does not announce a dialog');
+
+    /* app.js rebuilds the topbar from a dozen call sites that never go through
+     * the render notify (language switch, settings apply, demo toggle...). All
+     * of them start with clear(#topbar), so the entry must put itself back. */
+    if (code.indexOf('MutationObserver') < 0) {
+      throw new Error('nothing re-adds the entry after app.js rebuilds the topbar');
+    }
+    if (W.state().watching !== true) throw new Error('no observer is watching #topbar');
+
+    const topbar = body.querySelector('#topbar');
+    if (!topbar) throw new Error('the page lost #topbar');
+    while (topbar.firstChild) topbar.removeChild(topbar.firstChild);
+    if (body.querySelector('[data-hook="feature-center-entry"]')) {
+      throw new Error('the topbar wipe did not take effect (test would be vacuous)');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    if (!body.querySelector('[data-hook="feature-center-entry"]')) {
+      throw new Error('the entry does not survive a topbar rebuild');
+    }
+
+    W.open('overview');
+    const host = doc.getElementById('feature-center');
+    if (!host || host.hidden) throw new Error('opening the feature centre left it hidden');
+    const cards = body.querySelectorAll('.workspace-feature-card');
+    if (cards.length !== 8) throw new Error('the overview shows ' + cards.length + ' cards, expected 8');
+    const navItems = body.querySelectorAll('.workspace__nav-item');
+    if (navItems.length !== 8) {
+      throw new Error('the navigation lists ' + navItems.length + ' features, expected 8');
+    }
+
+    const pages = [];
+    ids.forEach((id) => {
+      W.show(id);
+      const page = body.querySelector('#feature-page-' + id);
+      if (!page) throw new Error('route ' + id + ' rendered no page');
+      if (sandbox.location.hash !== 'feature=' + id) {
+        throw new Error('route ' + id + ' did not write its address (' + sandbox.location.hash + ')');
+      }
+      const title = body.querySelector('#workspace-title');
+      if (!title || title.textContent !== zh.workspaces['feature.' + id + '.title']) {
+        throw new Error('route ' + id + ' does not print its own title');
+      }
+      pages.push(page.getAttribute('data-feature-page'));
+    });
+    if (new Set(pages).size !== 8) throw new Error('two features share one page');
+
+    // the export page hosts app.js's panel, not a copy of it
+    W.show('compliance');
+    const mounted = body.querySelector('[data-hook="workspace-export-panel"] [data-hook="export-buttons"]');
+    if (!mounted) throw new Error('the compliance page does not mount the audit export panel');
+
+    // the evidence page carries a real submit form, not a static description
+    W.show('evidence');
+    if (!body.querySelector('[data-hook="evidence-upload-form"]')) {
+      throw new Error('the evidence page has no upload form');
+    }
+    if (!body.querySelector('[data-hook="evidence-upload-submit"]')) {
+      throw new Error('the evidence form has no submit control');
+    }
+
+    // the confidence page bands from the record, and filters without re-estimating
+    W.show('confidence');
+    if (body.querySelectorAll('.workspace-stat').length !== 4) {
+      throw new Error('the confidence page does not print its four counters');
+    }
+
+    W.close();
+    if (!host.hidden) throw new Error('closing the feature centre left it visible');
+    if (sandbox.location.hash !== '') throw new Error('closing did not restore the previous address');
+
+    return 'eight features, eight pages, entry in the topbar, ' + ids.join('/')
+      + '; export page mounts the audit panel, evidence page submits, tokens defined, narrow layout present';
+  });
+
   return checks;
 }
 
@@ -5434,7 +7739,7 @@ async function run() {
 const args = process.argv.slice(2);
 const syncs = args.filter((a) => a.startsWith('--sync'));
 /* importable surface: t10/t11 integration tests can boot the same shim DOM */
-export { boot, queryAll, parseHtml, makeDocument, CJK, CJK_HAN, FILES, SAMPLES, dictKeys, readJson, run };
+export { boot, bootExtLayer, queryAll, parseHtml, makeDocument, CJK, CJK_HAN, FILES, SAMPLES, dictKeys, readJson, run };
 const isMain = process.argv[1]
   ? import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
   : false;

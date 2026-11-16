@@ -1,0 +1,25 @@
+{
+  "rollback": {
+    "inverse.restore_file": "Restore the deleted file (pre-state taken from this system's undo journal)",
+    "inverse.revoke_message": "Register the message recall (external inboxes are outside this system's control)",
+    "inverse.undo_config_change": "Undo the configuration / permission change",
+    "inverse.cancel_booking": "Cancel the booking / order (the cancel is a new compensation record)",
+    "inverse.undo_note": "Undo the note write",
+    "inverse.delete_generated": "Delete the generated artefact",
+    "inverse.undo_write": "Record-level compensation: only the write inside this system is undone; tokens already spent and content already generated or sent cannot be recalled, and the page never says the generated result was recalled",
+    "inverse.noop_read": "Read-only action: no external side effect, nothing to undo",
+    "inverse.irreversible_financial": "Money transfer is irreversible: the funds left the account boundary this system governs and there is no unilateral reversal channel; run the manual reversal through the payment / banking channel and append a compensation record (never claim this step was undone)",
+    "inverse.irreversible_contract": "Signature is irreversible: the signed text already reached the counterparty and the evidence store, so this system cannot withdraw the signature; run the rescission / voiding / addendum process and append a compensation record (never claim the signature was undone)",
+    "inverse.escalate_financial_reversal": "Escalate to a manual payment reversal: this system does not reverse the transfer, it only records the escalation request and the compensation record",
+    "inverse.escalate_contract_rescission": "Escalate to a contract rescission / voiding process: this system does not withdraw the signature, it only records the escalation request and the compensation record",
+    "error.rollback_not_found": "No record matches that action_id (ROLLBACK_NOT_FOUND).",
+    "error.rollback_not_reversible": "That action has no registered inverse operation, so it cannot be rolled back (ROLLBACK_NOT_REVERSIBLE).",
+    "error.rollback_dependents_pending": "Later actions depend on this one; confirm them together (confirm_all=true) or roll them back first (ROLLBACK_DEPENDENTS_PENDING).",
+    "error.rollback_already_rolled_back": "That action was already rolled back (ROLLBACK_ALREADY_ROLLED_BACK).",
+    "error.rollback_inverse_failed": "The inverse operation failed; the journal records what was attempted (ROLLBACK_INVERSE_FAILED).",
+    "error.rollback_field_invalid": "A rollback field is missing or has the wrong type (ROLLBACK_FIELD_INVALID).",
+    "error.rollback_dependents_irreversible": "Dependent steps in the closure have no inverse operation; only the reversible members can be rolled back, and confirm_all=true rolls just those (ROLLBACK_DEPENDENTS_IRREVERSIBLE).",
+    "error.rollback_journal_unreadable": "The undo journal cannot be read, so rollback state is unknown; nothing was planned or executed (ROLLBACK_JOURNAL_UNREADABLE).",
+    "error.rollback_idempotency_mismatch": "That idempotency key was already used for a different action_id (ROLLBACK_IDEMPOTENCY_MISMATCH)."
+  }
+}

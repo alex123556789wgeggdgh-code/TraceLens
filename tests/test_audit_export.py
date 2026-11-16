@@ -32,13 +32,14 @@ from typing import Any
 from urllib.parse import quote
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(ROOT), str(ROOT / "tools")):
+for _p in (str(ROOT), str(ROOT / "tests"), str(ROOT / "tools")):   # tests/：裸 `python -m unittest tests.<模块>` 也能 import scratch
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 from agent_explainer import audit as au  # noqa: E402
 from agent_explainer import auth as auth_mod  # noqa: E402
 from agent_explainer import server as sv  # noqa: E402
+import http_fixture as fx  # noqa: E402  连接加固：端口就绪 + 瞬态一次性重试，断言级不重试
 
 WEB = ROOT / "agent_explainer" / "web"
 SAMPLE_PATH = ROOT / "samples" / "action_records.json"
@@ -86,8 +87,10 @@ def tearDownModule() -> None:   # noqa: N420
 def http_request(host: str, port: int, method: str, path: str, body: Any = None,
                  extra_headers: dict | None = None,
                  timeout: float = 8.0) -> tuple[int, dict, Any]:
-    conn = http.client.HTTPConnection(host, port, timeout=timeout)
-    try:
+    # M2-PRE 4（PM-VERDICT-R1-9 裁决② / R5-1 接线）：连接生命周期交给 tests/http_fixture——
+    # 端口就绪等待 + 连接级瞬态一次性重试；POST/PUT/PATCH/DELETE 这类非幂等动词绝不重放
+    # （服务端可能已写入），断言级失败绝不重试。请求构造与响应解析逐行不动，返回形状一字不改。
+    def once(conn: http.client.HTTPConnection) -> tuple[int, dict, Any]:
         payload = body
         if isinstance(payload, (dict, list)):
             payload = json.dumps(payload, ensure_ascii=False)
@@ -108,8 +111,8 @@ def http_request(host: str, port: int, method: str, path: str, body: Any = None,
             except (UnicodeDecodeError, json.JSONDecodeError):
                 pass
         return resp.status, {k.lower(): v for k, v in resp.getheaders()}, data
-    finally:
-        conn.close()
+
+    return fx.with_connection(host, port, once, verb=method, path=path, timeout=timeout)
 
 
 def code_of(data: Any) -> str:

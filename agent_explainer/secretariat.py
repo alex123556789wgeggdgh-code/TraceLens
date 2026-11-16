@@ -40,6 +40,10 @@ import tempfile
 from typing import Any, Iterable, Mapping, Sequence
 
 from . import crypto_sig as cs
+# 「代行」标注的键名与长度上限由协作层（sharing）单点定义：两边各写一份字面量，
+# 键名漂移的后果是"责任标注静默消失"——那正是 B5-3 要避免的事。sharing 只 import
+# 标准库与 feature_store，不反向 import 本模块，无循环依赖。
+from . import sharing
 from .feature_store import (
     GENESIS_HASH,
     FeaturePaths,
@@ -64,6 +68,11 @@ __all__ = [
     "ROLE_LABELS",
     "TSA_LOCAL_PREFIX",
     "KEYRING_ID",
+    "ON_BEHALF_FIELDS",
+    "ON_BEHALF_TEMPLATE",
+    "ON_BEHALF_REF_KEYS",
+    "on_behalf_note",
+    "on_behalf_index",
     "SecretariatError",
     "Secretariat",
     "risk_requirements",
@@ -243,6 +252,90 @@ def _parse_iso(text: Any) -> _dt.datetime | None:
 
 def _iso(moment: _dt.datetime) -> str:
     return moment.astimezone(_dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+# --------------------------------------------------------------------------- #
+# 「代行」标注（REQ-005 B5-3；口径来源 PM-PLAN §7.1 冻结 + TASK-R5-2 §2.2，只读渲染增补）
+# --------------------------------------------------------------------------- #
+
+#: 认定书的动作条目**只在有代行标注时**才多这三个键；无标注的行为行逐字不变（连键序都不动）。
+#: 记的是"谁做的（actor）/ 替谁做的（on_behalf_of）/ 怎么用人话说（note）"。
+ON_BEHALF_FIELDS = ("on_behalf_of", "on_behalf_actor", "on_behalf_note")
+#: 措辞逐字取自 PM-PLAN §7.1：「由 X 代行 Y 行使权限，最终责任归 human_owner」。
+#: Y 取**记录里的** ``human_owner``（责任根），不是事件里那个标注字符串——
+#: 「最终责任归真人」是冻结口径，不能被一条事件的自述改写。
+ON_BEHALF_TEMPLATE = "由 {actor} 代行 {principal} 行使权限，最终责任归 {principal}（human_owner）"
+#: 代行句进认定书正文、正文进认定书签名 → 必须有界（DID 两侧各自已有上限，这里再兜一道）。
+ON_BEHALF_NOTE_MAX = 640
+#: 协作事件指向"哪条记录"的字段：事件 ``target`` 之外，``detail`` 里这两个键也认。
+#: 只认这三处、不猜别的形状：猜出来的关联会在认定书里凭空多出一句责任归属的话。
+ON_BEHALF_REF_KEYS = ("record_id", "action_id")
+#: 协作事件**窗口未取全**时登记进 ``verification.problems`` 的取证 scope（R5-3 / T7 接线）。
+#: 口径（PM-VERDICT-R5-2 §3.2）：认定书只带得动**窗口内**的事件，窗口外的代行标注不参与
+#: 渲染 —— 认定书必须**自己承认**这一点，不得让读者以为"这份认定书看过了全部协作记录"。
+COLLAB_EVENTS_SCOPE = "collab_events"
+#: 窗口未取全这条登记的固定说法（进 ``detail.reason``，界面走 i18n，这里只放事实）。
+COLLAB_EVENTS_WINDOW_REASON = ("协作事件只读到了最近 {returned} 条（该身份账本共 {total} 条，"
+                               "窗口上限 {limit}）：窗口外的代行标注不参与本次渲染")
+
+
+def on_behalf_note(*, actor: str, principal: str) -> str:
+    """把「谁做的 / 替谁做的 / 谁担责」渲染成认定书上那一行人话（纯函数，可单测）。
+
+    ``actor`` = 实际操作人（协作者 DID，即事件的 ``actor_did``）；
+    ``principal`` = 最终担责的真人（**记录里的** ``human_owner``）。
+    两侧都裁到上限：这句话进认定书正文、正文进认定书签名，不能有无限长的自述。
+    """
+    who = str(actor or "").strip()[:sharing.ON_BEHALF_MAX_LEN]
+    owner = str(principal or "").strip()[:sharing.ON_BEHALF_MAX_LEN]
+    text = ON_BEHALF_TEMPLATE.format(actor=who, principal=owner)
+    return text[:ON_BEHALF_NOTE_MAX]
+
+
+def on_behalf_index(events: Iterable[Mapping[str, Any]] | None
+                    ) -> dict[str, dict[str, str]]:
+    """把带代行标注的协作事件收成 ``记录标识 → {actor, on_behalf_of, event_id}``。
+
+    口径（TASK-R5-2 §2.2：标注的**唯一载体是事件层** ``detail.on_behalf_of``）：
+
+    * 只收 ``detail.on_behalf_of`` 为非空字符串的事件，其余（含畸形值）**整条跳过**——
+      没有标注就没有代行句，认定书逐字不变；
+    * 关联标识取事件的 ``target``，外加 ``detail.record_id`` / ``detail.action_id``；
+      空标识跳过（空串会把"所有没有 id 的记录"都关联上，那是凭空造责任）；
+    * 同一条记录被多次代行时**后写的胜出**（账本升序，最近一次才是当下有效的事实）；
+      每一次代行在账本里都是独立一条、链上可查，这里只是渲染用的索引；
+    * 本函数**不改账本、不读文件**：调用方把 ``ShareService.events()`` 递进来
+      （协作层与总裁办之间不新增依赖方向，只共用同一个键名常量）。
+    """
+    index: dict[str, dict[str, str]] = {}
+    for event in (events or []):
+        if not isinstance(event, Mapping):
+            continue
+        detail = event.get("detail")
+        if not isinstance(detail, Mapping):
+            continue
+        raw = detail.get(sharing.ON_BEHALF_KEY)
+        if not isinstance(raw, str):
+            continue
+        principal = raw.strip()
+        if not principal:
+            continue
+        refs: list[str] = []
+        target = event.get("target")
+        if isinstance(target, str) and target.strip():
+            refs.append(target.strip())
+        for key in ON_BEHALF_REF_KEYS:
+            value = detail.get(key)
+            if isinstance(value, str) and value.strip():
+                refs.append(value.strip())
+        if not refs:
+            continue
+        hit = {"actor": str(event.get("actor_did") or "").strip(),
+               "on_behalf_of": principal[:sharing.ON_BEHALF_MAX_LEN],
+               "event_id": str(event.get("id") or "")}
+        for ref in refs:
+            index[ref] = dict(hit)
+    return index
 
 
 #: 委托默认有效期（30 天）
@@ -1246,8 +1339,37 @@ class Secretariat:
     def build_letter(self, *, subject: str, records: Sequence[Mapping[str, Any]],
                      responsibility: str = "technical",
                      period: Mapping[str, Any] | None = None,
-                     note: str = "", audit_head: str | None = None) -> dict[str, Any]:
-        """生成可离线验证的责任认定书，并落盘 + 进索引账本。"""
+                     note: str = "", audit_head: str | None = None,
+                     collab_events: Sequence[Mapping[str, Any]] | None = None,
+                     collab_window: Mapping[str, Any] | None = None,
+                     ) -> dict[str, Any]:
+        """生成可离线验证的责任认定书，并落盘 + 进索引账本。
+
+        ``collab_events``（R5-2 / B5-3「代行」渲染增补，**只读**）：调用方把协作层
+        ``ShareService.events()`` 的协作事件递进来。带 ``detail.on_behalf_of`` 标注的事件
+        会让对应的动作条目多一行「由 X 代行 Y 行使权限，最终责任归 Y（human_owner）」
+        （X = 事件 ``actor_did`` = 实际操作人；Y = **记录里的** ``human_owner``）。
+
+        ``collab_window``（R5-3 / T7 接线，**只读**的取数自述）：调用方把"这次只看了账本
+        最近多少条、账本一共多少条"作为事实递进来，形状
+        ``{"limit": 500, "total": 12345, "returned": 500, "complete": False}``。
+        ``complete`` 不为 ``True`` 时，认定书在 ``verification.problems`` 里如实登记一条
+        （scope = :data:`COLLAB_EVENTS_SCOPE`）：**窗口外的代行标注不参与本次渲染**，
+        这份认定书不是"看过了全部协作记录"的结论。不传 → 认定书逐字不变（既有调用零变化）。
+        分页取数能力本仓没有（``ShareService.events`` 只有 ``limit``），按 PM-VERDICT-R5-2
+        §3.2 的口径**从简登记**，分页列 backlog。
+        
+        三条边界（都是可测的）：
+
+        * **不传 / 传空 → 认定书逐字不变**：动作条目一个键都不多，键序、哈希、
+          ``records_root`` 与改前完全一致（离线复算口径不动）；
+        * **代行标注只进渲染层**：``human_owner`` 字段不动、``delegation_chain`` 结构不动、
+          签名域（``SIGNATURE_FIELDS`` 11 字段）一字不动 —— 最终责任永远归真人，
+          事件层说的"谁做的"在这里只加一句人话，不改变任何已签名的字；
+        * **标注与责任根冲突不静默**：事件里的 ``on_behalf_of`` 与记录的 ``human_owner``
+          不一致时，认定书按口径把责任写在 ``human_owner`` 上，并把这次不一致登记进
+          ``verification.problems``（"记了日志但责任归属说不清"正是 REQ-005 点名要防的）。
+        """
         title = str(subject or "").strip()
         if not title:
             raise SecretariatError("SECRETARIAT_FIELD_INVALID", "认定书需要一个主题",
@@ -1285,6 +1407,48 @@ class Secretariat:
             "entry_hash": item.get("entry_hash"),
             "signature_ok": result.get("checks", {}).get("signature") == "valid",
         } for item, result in verified]
+        # 「代行」渲染增补（R5-2 / B5-3，只读增补）：**只往有标注的**动作条目上追加三个键，
+        # 无标注的条目逐字不变（键序也不动）→ digest 列表与 records_root 的计算路径一字未改。
+        # 唯一可见的连带效应：没有 entry_hash 的动作（未签名的记录）走"整条规范 JSON 哈希"，
+        # 代行键会进那一次哈希 —— 复算输入就是认定书自带的 actions 本体（同一份东西），
+        # 两边同源，所以离线可验证性不破（tests 用 verify_letter 与 tools/verify_letter.py 钉住）。
+        on_behalf = on_behalf_index(collab_events)
+        on_behalf_problems: list[dict[str, Any]] = []
+        for action, (item, _result) in zip(action_items, verified):
+            hit = on_behalf.get(str(item.get("id") or ""))
+            if not hit:
+                continue
+            actor = str(hit.get("actor") or "")
+            if not actor:
+                # 事件里连"谁做的"都没记 → 代行句写不出主语。不猜一个名字填进认定书，
+                # 也不静默丢掉：登记一条问题，让复核的人看得见"这里本该有一句代行话"。
+                on_behalf_problems.append({
+                    "code": "SECRETARIAT_FIELD_INVALID",
+                    "detail": {"scope": sharing.ON_BEHALF_KEY,
+                               "id": str(item.get("id") or ""),
+                               "event_id": str(hit.get("event_id") or ""),
+                               "reason": "代行事件没记 actor_did：写不出「由谁代行」，"
+                                         "本条不渲染代行句"}})
+                continue
+            owner = str(item.get("human_owner") or "").strip()
+            principal = str(hit.get("on_behalf_of") or "")
+            if owner and owner != principal:
+                # 责任根只有一个：记录的 human_owner。事件的自述与它对不上时，
+                # 认定书按口径写 human_owner，并登记这次不一致，不静默、不改写记录。
+                on_behalf_problems.append({
+                    "code": "SECRETARIAT_FIELD_INVALID",
+                    "detail": {"scope": sharing.ON_BEHALF_KEY,
+                               "id": str(item.get("id") or ""),
+                               "event_id": str(hit.get("event_id") or ""),
+                               "human_owner": owner[:sharing.ON_BEHALF_MAX_LEN],
+                               "on_behalf_of": principal[:sharing.ON_BEHALF_MAX_LEN],
+                               "reason": "事件里的代行标注与记录的责任根（human_owner）不一致："
+                                         "最终责任按冻结口径写在 human_owner 上，"
+                                         "这次不一致如实登记"}})
+            action["on_behalf_of"] = principal
+            action["on_behalf_actor"] = actor
+            action["on_behalf_note"] = on_behalf_note(
+                actor=actor, principal=(owner or principal))
         digests = [str(action.get("entry_hash") or sha256_hex(cs.canonical_json(action)))
                    for action in action_items]
         records_root = sha256_hex("\n".join(sorted(digests)))
@@ -1304,6 +1468,21 @@ class Secretariat:
                                           and result.get("checks", {}).get("signature") == "valid")
         problems: list[dict[str, Any]] = [
             problem for _, result in verified for problem in result.get("problems", [])][:50]
+        # 代行标注的冲突登记（R5-2）：不参与上面的 [:50] 截断 —— 责任归属说不清的条目
+        # 不能被一堆别的问题挤出列表；没冲突时这个列表是空的，认定书零变化。
+        problems.extend(on_behalf_problems)
+        # 协作事件窗口未取全（R5-3 / T7）：认定书必须自己承认"只看了最近这么多条"。
+        # 从简登记（PM-VERDICT-R5-2 §3.2）：分页能力缺失不伪装成"看全了"，如实进 problems。
+        if isinstance(collab_window, Mapping) and collab_window.get("complete") is not True:
+            _taken = collab_window.get("returned")
+            _total = collab_window.get("total")
+            _cap = collab_window.get("limit")
+            problems.append({"code": "SECRETARIAT_FIELD_INVALID",
+                             "detail": {"scope": COLLAB_EVENTS_SCOPE,
+                                        "reason": COLLAB_EVENTS_WINDOW_REASON.format(
+                                            returned=_taken, total=_total, limit=_cap),
+                                        "limit": _cap, "total": _total,
+                                        "returned": _taken}})
         if not str(audit_head or "").strip():
             # docs/12 §5 尾注：拿不到审计链头时写 "" 并**如实登记**，不得伪造一个链头。
             problems.append({"code": "SECRETARIAT_FIELD_INVALID",

@@ -34,12 +34,16 @@ import unittest
 REPO = pathlib.Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+if str(REPO / "tests") not in sys.path:   # 裸 `python -m unittest tests.<模块>` 时也能 import scratch
+    sys.path.insert(0, str(REPO / "tests"))
 
 from agent_explainer import auth as auth_mod  # noqa: E402
+from agent_explainer import crypto_sig as cs  # noqa: E402
 from agent_explainer import ingest as ingest_mod  # noqa: E402
 from agent_explainer import server as sv  # noqa: E402
 from agent_explainer import store as st  # noqa: E402
 from agent_explainer import trace_adapter as ta  # noqa: E402
+import http_fixture as fx  # noqa: E402  测试夹具的 HTTP 连接加固（见 tests/http_fixture.py）
 
 from scratch import scratch_dir, scratch_reason  # noqa: E402
 
@@ -132,8 +136,10 @@ def resume(folder: pathlib.Path, **over):
 
 def http_request(port: int, method: str, path: str, body=None,
                  headers: dict | None = None, timeout: float = 15.0):
-    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
-    try:
+    # M2-PRE 4（PM-VERDICT-R1-9 裁决②）：连接生命周期交给 tests/http_fixture——
+    # 端口就绪等待 + 连接级瞬态一次性重试；POST 这类非幂等动词绝不重放，
+    # 断言级失败绝不重试。请求构造与响应解析口径一行不改。
+    def once(conn: http.client.HTTPConnection):
         payload = body
         if isinstance(payload, (dict, list)):
             payload = json.dumps(payload, ensure_ascii=False)
@@ -153,8 +159,9 @@ def http_request(port: int, method: str, path: str, body=None,
             except json.JSONDecodeError:
                 pass
         return resp.status, {k.lower(): v for k, v in resp.getheaders()}, data
-    finally:
-        conn.close()
+
+    return fx.with_connection("127.0.0.1", port, once, verb=method, path=path,
+                              timeout=timeout)
 
 
 def post_import(port: int, body, headers: dict | None = None):
@@ -222,6 +229,47 @@ def ids_of(records: list[dict]) -> set[str]:
 def source_kind(record: dict) -> str:
     source = record.get("source")
     return str(source.get("kind")) if isinstance(source, dict) else ""
+
+
+def expansion_5_0_values() -> dict:
+    """S0-2b：5.0 九个可合并扩展字段（`ingest.EXPANSION_MERGE_FIELDS`）各一个合法值。
+
+    形状取自 docs/schemas/action_record.schema.json（导入面送的就是这些）。
+    """
+    return {
+        "group_id": "grp-s0-2b",
+        "shared_users": [{"did": cs.did_from_name("s0-2b-sharee", kind="user"),
+                          "permission": "view", "shared_at": "2026-11-14T00:00:00Z"}],
+        "multimedia_evidence": [{"kind": "screenshot", "evidence_id": "ev-s0-2b",
+                                 "media_type": "image/png",
+                                 "uri": "local://evidence/s0-2b.png",
+                                 "sha256": "a" * 64, "bytes": 2048,
+                                 "caption": "合成截图（非真实采集）",
+                                 "provided_by": "server"}],
+        "causal_explanation": {"counterfactual": "若当时选「只复制不覆盖」，线上文件不会被改",
+                               "model": "template", "language": "zh"},
+        "rollback_ref": "act-s0-2b-target",
+        "rollback_state": "none",
+        "improvement_suggestion": {"id": "sug-s0-2b", "tool": "files.upload",
+                                   "param": "overwrite", "direction": "down",
+                                   "occurrences": 2, "status": "pending"},
+        "evidence_feedback": {"like": 3, "dislike": 1,
+                              "updated_at": "2026-11-14T00:00:00Z"},
+        "confidence_source": {"method": "logprobs", "logprob": 0.82, "samples": 12},
+    }
+
+
+def forged_material() -> dict:
+    """伪造的受保护材料（签名 / 干预历史 / 责任链）：这些不是记录字段，导入面直接 400。"""
+    attacker = cs.did_from_name("s0-2b-attacker", kind="user")
+    return {
+        "signature": "deadbeef" * 8,
+        "entry_hash": "0" * 64,
+        "intervention_history": [{"target_action_id": "act-fake",
+                                  "decision": "approve", "actor_id": "attacker"}],
+        "human_owner": attacker,
+        "delegation_chain": [attacker],
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -590,6 +638,87 @@ class ImportTracesTests(unittest.TestCase):
         self.assertEqual(after["user_intervention"]["decision"], "approve",
                          "导入不得覆盖用户的决定（受保护字段）")
 
+    # -- S0-2b：5.0 扩展字段经导入面端到端送达（适配器闸门 → 合并 → 签名入库） ----
+
+    def test_native_import_delivers_the_5_0_expansion_fields(self) -> None:
+        """create 路径：九个 5.0 字段过适配器闸门、原样入库（扩名单前这条入参是 400）。"""
+        rec = copy.deepcopy(NATIVE_RECORDS[0])
+        rec["id"] = "act-s0-2b-create"
+        rec["parent_action_id"] = None
+        rec.update(expansion_5_0_values())
+        out, err = grab_import(self.svc, [rec], request_id="req-s0-2b-create")
+        self.assertIsNone(err, f"入参被闸门拦下了：{err}")
+        self.assertEqual(out["created"], 1)
+        stored = self.svc.store.get("act-s0-2b-create")
+        self.assertIsNotNone(stored)
+        for field, value in expansion_5_0_values().items():
+            self.assertEqual(value, stored.get(field), f"{field} 没经导入面送达")
+
+    def test_upsert_merges_the_5_0_fields_and_strips_protected_ones(self) -> None:
+        """update 路径：九字段合并进签名后的记录；受保护字段逐个剥离；决定不被覆盖。"""
+        svc = service("import-s0-2b-sign-" + self.id().split(".")[-1], sign_on_write=True)
+        self.addCleanup(lambda: clean(svc._t22_room))
+        decided = sv.apply_decision(svc.store.get(PENDING_ID), "approve",
+                                    reason="我看过了", request_id="req-s0-2b-decide")
+        svc.store.put(decided)
+        before = svc.store.get(PENDING_ID)
+        incoming = copy.deepcopy(before)
+        incoming.update(expansion_5_0_values())
+        # 这些字段本身是 ActionRecord 的记录字段（过得了字段封闭闸门），但受合并层保护：
+        incoming["user_intervention"] = {"decision": "reject", "reason": "导入方替用户改决定",
+                                         "decided_by": "importer", "decided_at": "2026-11-14T00:00:00Z",
+                                         "modified_fields": [], "edited_by": None}
+        incoming["source"] = {"kind": "manual", "adapter": "native",
+                              "format_version": "1.1", "source_uri": "paste://forged"}
+        incoming["policy"] = {"requires_human_confirmation": False, "auto_approve_forbidden": False,
+                              "timeout_behavior": "auto_approve", "queue_serial": False,
+                              "min_role_to_decide": "viewer"}
+        incoming["execution_receipt"] = {"state": "executed", "reported_by": None,
+                                         "reported_at": None, "detail": "导入方谎称已执行",
+                                         "sdk_version": None, "effect_notice": None}
+        incoming["demo_data"] = False
+        incoming["synthetic"] = False
+        incoming["human_readable"] = copy.deepcopy(before["human_readable"])
+        incoming["human_readable"]["l1"] = "导入方改写的文案"
+        incoming["intervention_options"] = [{"id": "forged", "kind": "approve",
+                                             "label": "替批", "consequence": "直接放行",
+                                             "effect_notice": None, "editable_fields": [],
+                                             "requires_reason": False, "risk_note": None,
+                                             "dangerous": True}]
+        out, err = grab_import(svc, {"payload": [incoming], "mode": "upsert"},
+                               request_id="req-s0-2b-upsert")
+        self.assertIsNone(err, f"入参被闸门拦下了：{err}")
+        self.assertEqual(out["updated"], 1)
+        stored = svc.store.get(PENDING_ID)
+        for field, value in expansion_5_0_values().items():
+            self.assertEqual(value, stored.get(field), f"{field} 没进合并产物")
+        # 受保护字段逐个保持服务端已有值（合并层剥离，入参一个字都改不动）
+        self.assertEqual("approve", stored["user_intervention"]["decision"],
+                         "导入不得覆盖用户的决定")
+        for field in ("source", "policy", "execution_receipt", "demo_data", "synthetic",
+                      "human_readable", "intervention_options"):
+            self.assertEqual(before[field], stored[field], f"{field} 被入参覆盖了（受保护）")
+        checks = svc.secretariat.verify_record(stored)["checks"]
+        self.assertEqual("valid", checks["signature"], "合并产物入库前重新签名（合并在签名之前）")
+        self.assertEqual("valid", checks["entry_hash"], checks)
+
+    def test_import_of_a_field_outside_every_list_is_still_400(self) -> None:
+        """名单外新键与签名材料照旧拒：字段封闭闸门只是变长，没有开门。"""
+        base = copy.deepcopy(NATIVE_RECORDS[0])
+        base["parent_action_id"] = None
+        banned = {"brand_new_key": 1}
+        banned.update(forged_material())
+        for name in banned:
+            rec = copy.deepcopy(base)
+            rec["id"] = f"act-s0-2b-stray-{name}"
+            rec[name] = copy.deepcopy(banned[name])
+            _out, err = grab_import(self.svc, [rec], request_id=f"req-s0-2b-stray-{name}")
+            self.assertIsNotNone(err, f"{name} 竟然进了导入面")
+            self.assertEqual(err.http_status, 400, name)
+            self.assertEqual(err.code, "ADAPTER_OUTPUT_INVALID", name)
+            self.assertIn(name, str(err.message), f"错误要说清被拦的是 {name}")
+            self.assertIsNone(self.svc.store.get(f"act-s0-2b-stray-{name}"), name)
+
     def test_audit_records_the_import_but_never_the_pasted_body(self) -> None:
         secret = "internal-inbox@corp.example"
         doc = copy.deepcopy(MCP)
@@ -705,6 +834,31 @@ class ImportApiTests(unittest.TestCase):
             self.assertNotEqual(row.get("demo_data"), True)
             self.assertEqual(source_kind(row), "upload")
         self.assertEqual(meta["imported_count"], MCP_COUNT)
+
+    def test_http_import_delivers_the_5_0_expansion_fields(self) -> None:
+        """S0-2b 端到端：`POST /api/import` 带 5.0 扩展字段 → 200 → 记录里逐字可见。"""
+        rec = copy.deepcopy(NATIVE_RECORDS[0])
+        rec["id"] = "act-s0-2b-http"
+        rec["parent_action_id"] = None
+        rec.update(expansion_5_0_values())
+        status, _hd, data = import_text(self.port, [rec], mode="upsert")
+        self.assertEqual(status, 200, f"HTTP 面把 5.0 字段拦在门外：{data}")
+        self.assertEqual(data["created"], 1)
+        rows, _meta = records_of(self.port)
+        stored = next((r for r in rows if str(r.get("id")) == "act-s0-2b-http"), None)
+        self.assertIsNotNone(stored)
+        for field, value in expansion_5_0_values().items():
+            self.assertEqual(value, stored.get(field), f"{field} 没经 HTTP 面送达")
+
+    def test_http_import_of_a_field_outside_every_list_is_400(self) -> None:
+        rec = copy.deepcopy(NATIVE_RECORDS[0])
+        rec["id"] = "act-s0-2b-http-stray"
+        rec["brand_new_key"] = 1
+        status, _hd, data = import_text(self.port, [rec], mode="upsert")
+        self.assertEqual(status, 400, data)
+        self.assertEqual(code_of(data), "ADAPTER_OUTPUT_INVALID")
+        rows, _meta = records_of(self.port)
+        self.assertNotIn("act-s0-2b-http-stray", ids_of(rows))
 
     def test_get_on_the_import_route_is_method_not_allowed(self) -> None:
         status, _hd, data = http_request(self.port, "GET", sv.API_PATH_IMPORT)

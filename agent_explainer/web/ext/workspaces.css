@@ -1,0 +1,1400 @@
+/* ------------------------------------------------------------------ *
+ * TraceLens - feature centre workspace shell (web/ext/workspaces.css)
+ * ------------------------------------------------------------------
+ * Direction: ARCHIVE / CASE FILE. Not a dashboard.
+ *
+ * The eight features are audit surfaces, so the shell is built like a
+ * bound volume rather than a card grid: warm paper, warm near-black ink,
+ * hairline rules, serif display type, mono for ids and hashes, and one
+ * vermilion seal that only ever says "you are here" (selected row, hover
+ * rule, focus ring). Flat surfaces, no drop shadows on content, no pill
+ * shapes, no rounded card wall - the previous version had all four.
+ *
+ * Type: --ws-serif for headings and index numerals, --ws-sans for body,
+ * --ws-mono for numbers, ids and hashes. All three resolve from fonts
+ * that ship with the OS, because the product must run offline: there is
+ * no webfont request anywhere in this file.
+ *
+ * Motion: the design system caps a single rule at 200ms, so transitions
+ * stay inside --dur-fast / --dur-base. The page-load sequence is built
+ * from a 200ms rise plus staggered *delays* (60ms steps), which gives the
+ * orchestrated entrance without any rule exceeding the cap. Everything
+ * animated lives behind prefers-reduced-motion: no-preference.
+ *
+ * Rules honoured: no CJK literals (i18n lint K-10), every colour comes
+ * from a token declared in styles.css (selfcheck asserts this), no
+ * timers, no percentages, narrow layout at 820px.
+ * ------------------------------------------------------------------ */
+
+body[data-workspace="open"] {
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- *
+ * 1. topbar entry - a small sealed stamp, not a pill
+ * ---------------------------------------------------------------- */
+
+.workspace-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-3) 0 0;
+  border: 1px solid var(--ws-rule-2);
+  border-radius: 2px;
+  /* transparent, not paper: this button is mounted inside the app's own
+   * topbar, and an off-white chip on a white bar reads as a stain. The
+   * vermilion seal is what carries the identity. */
+  background: transparent;
+  color: var(--ws-ink);
+  font-family: var(--ws-sans);
+  font-size: var(--fs-0);
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.workspace-entry:hover {
+  border-color: var(--ws-ink);
+  background: var(--ws-paper-2);
+}
+
+.workspace-entry:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 2px;
+}
+
+.workspace-entry__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 30px;
+  margin: -1px 0 -1px -1px;
+  border-right: 1px solid var(--ws-rule-2);
+  background: var(--ws-accent);
+  color: var(--ws-paper-2);
+  font-family: var(--ws-serif);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.workspace-entry__label {
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- *
+ * 2. overlay shell + paper atmosphere
+ * ---------------------------------------------------------------- */
+
+.workspace {
+  position: fixed;
+  inset: 0;
+  /* above the page chrome (topbar 30 / rail 40 / sheet 50) and the retired
+   * launcher (60), below the trust panel (80), toasts (90) and modals (95) */
+  z-index: 70;
+  display: flex;
+  background: var(--ws-paper);
+  color: var(--ws-ink);
+  font-family: var(--ws-sans);
+  text-rendering: optimizeLegibility;
+}
+
+.workspace[hidden] {
+  display: none;
+}
+
+/* two wide washes: a seal-red bloom top-left, a lighter sheet top-right.
+ * Fixed to the overlay, never interactive, never announced. */
+.workspace::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(42rem 26rem at 6% -6%, var(--ws-accent-soft), transparent 62%),
+    radial-gradient(38rem 24rem at 102% 2%, var(--ws-paper-2), transparent 58%);
+}
+
+/* paper grain: SVG fractal noise as a data URI, 3.5% overlay. Keeps the
+ * surface from reading as a flat white panel (the "AI slop" tell). */
+.workspace::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.workspace__frame {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------- *
+ * 3. sidebar - the spine of the volume
+ * ---------------------------------------------------------------- */
+
+.workspace__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-height: 0;
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  border-right: 1px solid var(--ws-rule);
+  background: var(--ws-paper-2);
+  overflow-y: auto;
+}
+
+.workspace__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace__brand:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 4px;
+}
+
+/* the seal: vermilion block, paper-coloured serif monogram */
+.workspace__brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 1px;
+  background: var(--ws-accent);
+  color: var(--ws-paper-2);
+  font-family: var(--ws-serif);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.workspace__brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.workspace__brand-title {
+  font-family: var(--ws-serif);
+  font-size: var(--fs-2);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.workspace__brand-subtitle {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workspace__nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.workspace__nav-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace__nav-label {
+  margin: 0 0 var(--space-2);
+  padding: 0 0 var(--space-1);
+  border-bottom: 1px solid var(--ws-rule);
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* each entry is a ledger row: index, title, hairline. The active row is
+ * marked by a vermilion rule in the left gutter - a seal in the margin. */
+.workspace__nav-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 38px;
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: none;
+  color: var(--ws-ink-2);
+  font-family: var(--ws-sans);
+  font-size: var(--fs-1);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+
+.workspace__nav-item:hover {
+  color: var(--ws-ink);
+  border-left-color: var(--ws-rule-2);
+  background: var(--ws-paper);
+}
+
+.workspace__nav-item.is-active {
+  border-left-color: var(--ws-accent);
+  background: var(--ws-accent-soft);
+  color: var(--ws-ink);
+  font-weight: 600;
+}
+
+.workspace__nav-item:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: -2px;
+}
+
+.workspace__nav-number {
+  flex: none;
+  width: 18px;
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.workspace__nav-item.is-active .workspace__nav-number {
+  color: var(--ws-accent);
+}
+
+.workspace__nav-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace__sidebar-hint {
+  margin: auto 0 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--ws-rule);
+  color: var(--ws-ink-3);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+/* ---------------------------------------------------------------- *
+ * 4. main column + running head
+ * ---------------------------------------------------------------- */
+
+.workspace__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace__header {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-7) var(--space-5);
+  border-bottom: 1px solid var(--ws-rule-2);
+}
+
+/* the second, thinner rule just under the first: a printed double rule,
+ * the cheapest way to read as "document" rather than "app". */
+.workspace__header::after {
+  content: "";
+  position: absolute;
+  left: var(--space-7);
+  right: var(--space-7);
+  bottom: -4px;
+  height: 1px;
+  background: var(--ws-rule);
+}
+
+.workspace__heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace__back {
+  margin-bottom: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.workspace__back[hidden] {
+  display: none;
+}
+
+.workspace__back::before {
+  content: "\2190";
+  margin-right: 6px;
+}
+
+.workspace__back:hover {
+  color: var(--ws-accent);
+}
+
+.workspace__back:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 2px;
+}
+
+.workspace__title {
+  margin: 0;
+  color: var(--ws-ink);
+  font-family: var(--ws-serif);
+  font-size: clamp(26px, 2.4vw, 34px);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+.workspace__title:focus {
+  outline: none;
+}
+
+.workspace__subtitle {
+  margin: var(--space-2) 0 0;
+  max-width: 64ch;
+  color: var(--ws-ink-2);
+  font-size: var(--fs-1);
+  line-height: 1.7;
+}
+
+/* folio: the page number of the volume, set in the margin of the head */
+.workspace__folio {
+  flex: none;
+  margin: 0 var(--space-3) 0 0;
+  padding-top: 3px;
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.workspace__close {
+  flex: none;
+  min-height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--ws-rule);
+  border-radius: 1px;
+  background: transparent;
+  color: var(--ws-ink-3);
+  font-family: var(--ws-sans);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.workspace__close:hover {
+  border-color: var(--ws-ink);
+  color: var(--ws-ink);
+}
+
+.workspace__close:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 2px;
+}
+
+.workspace__content {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-5) var(--space-7) var(--space-7);
+  overflow-y: auto;
+}
+
+.workspace-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 1120px;
+}
+
+/* ---------------------------------------------------------------- *
+ * 5. overview - a table of contents, not a card wall
+ * ---------------------------------------------------------------- */
+
+.workspace-home__intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2) var(--space-5);
+  padding-bottom: 0;
+}
+
+/* the kicker owns its own line; the deck line under it is lead left,
+ * note right. All three on one row would stack the 10px mono kicker
+ * against the 40px serif lead and overlap on narrow viewports. */
+.workspace-home__intro .workspace__eyebrow {
+  flex: 1 1 100%;
+}
+
+.workspace__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--ws-accent);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.workspace__eyebrow::before {
+  content: "";
+  width: 28px;
+  height: 1px;
+  background: var(--ws-accent);
+}
+
+.workspace-home__lead {
+  margin: 0;
+  /* 18ch is what makes the line break land on the comma; text-wrap:
+   * balance would split a word in the middle instead (CJK has no spaces
+   * for the balancing algorithm to respect). */
+  max-width: 18ch;
+  color: var(--ws-ink);
+  font-family: var(--ws-serif);
+  font-size: clamp(28px, 2.8vw, 40px);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+}
+
+.workspace-home__note {
+  /* a colophon note on the right of the deck line, not a paragraph under
+   * it: the lead is the display moment, the note is its annotation. */
+  margin: 0 0 0 auto;
+  max-width: 38ch;
+  color: var(--ws-ink-3);
+  font-size: var(--fs-0);
+  line-height: 1.6;
+  text-align: left;
+}
+
+/* two columns of hairlines: eight entries, one rule between each pair.
+ * No radius, no shadow, no icon - the numeral and the rule carry it. */
+.workspace-home__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-6);
+  border-top: 1px solid var(--ws-rule-2);
+  border-bottom: 1px solid var(--ws-rule);
+}
+
+.workspace-feature-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* 136 keeps four ruled rows plus the intro inside one 980px-tall window.
+   * The index only works if all eight are visible at once; a table of
+   * contents you have to scroll is not a table of contents. */
+  min-height: 136px;
+  padding: 10px 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+/* the last two sit on the grid's own bottom rule */
+.workspace-feature-card:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+/* no lift on hover: a translate would tear the rule away from its
+ * neighbour and break the ledger line the whole layout depends on. */
+.workspace-feature-card:hover {
+  border-bottom-color: var(--ws-accent);
+}
+
+.workspace-feature-card:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 2px;
+}
+
+.workspace-feature-card__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.workspace-feature-card__number {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-serif);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.workspace-feature-card:hover .workspace-feature-card__number,
+.workspace-feature-card:focus-visible .workspace-feature-card__number {
+  color: var(--ws-accent);
+}
+
+.workspace-feature-card__group {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.workspace-feature-card__title {
+  color: var(--ws-ink);
+  font-family: var(--ws-serif);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.workspace-feature-card__desc {
+  flex: 1;
+  max-width: 46ch;
+  color: var(--ws-ink-2);
+  font-size: var(--fs-0);
+  line-height: 1.6;
+}
+
+.workspace-feature-card__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: var(--space-1);
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: color var(--dur-fast) var(--ease), gap var(--dur-fast) var(--ease);
+}
+
+.workspace-feature-card:hover .workspace-feature-card__action,
+.workspace-feature-card:focus-visible .workspace-feature-card__action {
+  gap: 12px;
+  color: var(--ws-accent);
+}
+
+.workspace-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--ws-rule);
+  border-left: 2px solid var(--ws-accent);
+  background: var(--ws-paper-2);
+}
+
+.workspace-identity > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-identity__title {
+  margin: 0;
+  color: var(--ws-ink);
+  font-family: var(--ws-serif);
+  font-size: var(--fs-2);
+  font-weight: 600;
+}
+
+.workspace-identity__desc {
+  margin: var(--space-1) 0 0;
+  color: var(--ws-ink-2);
+  font-size: var(--fs-0);
+  line-height: 1.7;
+}
+
+/* ---------------------------------------------------------------- *
+ * 6. shared building blocks
+ * ---------------------------------------------------------------- */
+
+.workspace-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--ws-rule);
+  border-radius: 2px;
+  background: var(--ws-paper-2);
+}
+
+.workspace-panel__title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ws-ink);
+  font-family: var(--ws-serif);
+  font-size: var(--fs-2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* a 12px rule before every panel title: the same margin mark the
+ * eyebrow uses, so blocks read as sections of one document. */
+.workspace-panel__title::before {
+  content: "";
+  flex: none;
+  width: 12px;
+  height: 1px;
+  background: var(--ws-accent);
+}
+
+.workspace-panel__intro {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--ws-ink-2);
+  font-size: var(--fs-0);
+  line-height: 1.7;
+}
+
+.workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.workspace-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--ws-rule-2);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ws-ink);
+  font-family: var(--ws-sans);
+  font-size: var(--fs-0);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease);
+}
+
+.workspace-button:hover:not([disabled]) {
+  border-color: var(--ws-ink);
+}
+
+/* the one accent action per page: solid ink, seal on hover */
+.workspace-button--primary {
+  border-color: var(--ws-ink);
+  background: var(--ws-ink);
+  color: var(--ws-paper-2);
+}
+
+.workspace-button--primary:hover:not([disabled]) {
+  border-color: var(--ws-accent);
+  background: var(--ws-accent);
+  color: var(--ws-paper-2);
+}
+
+.workspace-button--ghost {
+  border-color: transparent;
+  background: none;
+  color: var(--ws-ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--ws-rule-2);
+  text-underline-offset: 3px;
+}
+
+.workspace-button--ghost:hover:not([disabled]) {
+  border-color: transparent;
+  color: var(--ws-accent);
+  text-decoration-color: var(--ws-accent);
+}
+
+.workspace-button[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.workspace-button:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 2px;
+}
+
+.workspace-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.workspace-field__label {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workspace-field__hint {
+  margin: 0;
+  color: var(--ws-ink-3);
+  font-size: var(--fs-0);
+  line-height: 1.65;
+}
+
+.workspace-input {
+  width: 100%;
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ws-rule-2);
+  border-radius: 2px;
+  background: var(--ws-paper);
+  color: var(--ws-ink);
+  font-family: var(--ws-sans);
+  font-size: var(--fs-1);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.workspace-input:hover {
+  border-color: var(--ws-ink-3);
+}
+
+.workspace-input:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 1px;
+  border-color: var(--ws-ink);
+}
+
+.workspace-textarea {
+  min-height: 88px;
+  font-family: var(--ws-mono);
+  font-size: var(--fs-0);
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.workspace-inline-state:empty {
+  display: none;
+}
+
+.workspace-inline-note {
+  margin: 0;
+  color: var(--ws-ink-3);
+  font-size: var(--fs-0);
+  line-height: 1.65;
+}
+
+/* a stamped tag: square corners, mono, no fill */
+.workspace-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--ws-rule-2);
+  border-radius: 1px;
+  background: transparent;
+  color: var(--ws-ink-2);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.workspace-status--muted {
+  border-style: dashed;
+  color: var(--ws-ink-3);
+}
+
+/* ---------------------------------------------------------------- *
+ * 7. rollback page
+ * ---------------------------------------------------------------- */
+
+.workspace-record-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.workspace-record-controls,
+.workspace-upload {
+  gap: var(--space-4);
+}
+
+.workspace-record-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--ws-rule);
+  border-left: 2px solid var(--ws-rule-2);
+  background: var(--ws-paper);
+}
+
+.workspace-record-summary code {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.workspace-record-summary .workspace-status {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+}
+
+.workspace-record-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+  border-top: 1px solid var(--ws-rule);
+  overflow-y: auto;
+}
+
+.workspace-record-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule);
+  border-left: 2px solid transparent;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+
+.workspace-record-row:hover {
+  border-left-color: var(--ws-rule-2);
+  background: var(--ws-paper);
+}
+
+.workspace-record-row.is-active {
+  border-left-color: var(--ws-accent);
+  background: var(--ws-accent-soft);
+}
+
+.workspace-record-row:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: -2px;
+}
+
+.workspace-record-row__title {
+  color: var(--ws-ink);
+  font-size: var(--fs-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-record-row__id {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-record-row__state {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------------------- *
+ * 8. confidence page
+ * ---------------------------------------------------------------- */
+
+.workspace-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--ws-rule-2);
+  border-bottom: 1px solid var(--ws-rule);
+}
+
+/* counters as a printed table: hairline between cells, no boxes */
+.workspace-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-left: 1px solid var(--ws-rule);
+}
+
+.workspace-stat:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.workspace-stat__label {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workspace-stat__value {
+  color: var(--ws-ink);
+  font-family: var(--ws-serif);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-toolbar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.workspace-toolbar .workspace-panel__intro {
+  flex: 1 1 320px;
+}
+
+.workspace-toolbar .workspace-field {
+  flex: 0 0 200px;
+}
+
+.workspace-confidence-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--ws-rule);
+}
+
+.workspace-confidence-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--ws-rule);
+}
+
+/* the score reads as a stamped figure, not a pill */
+.workspace-confidence-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  padding: 3px var(--space-2);
+  border: 1px solid var(--ws-rule-2);
+  border-radius: 1px;
+  background: transparent;
+  color: var(--ws-ink-2);
+  font-family: var(--ws-mono);
+  font-size: var(--fs-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-confidence-badge[data-band="green"] {
+  border-color: var(--c-ok-line);
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.workspace-confidence-badge[data-band="light_green"] {
+  border-color: var(--c-ok-line);
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.workspace-confidence-badge[data-band="yellow"] {
+  border-color: var(--c-progress-line);
+  background: var(--c-progress-soft);
+  color: var(--c-progress);
+}
+
+.workspace-confidence-badge[data-band="red"] {
+  border-color: var(--c-danger-line);
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+}
+
+.workspace-confidence-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.workspace-confidence-copy code {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.workspace-confidence-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--ws-ink-3);
+  font-size: var(--fs-0);
+}
+
+/* ---------------------------------------------------------------- *
+ * 9. evidence page
+ * ---------------------------------------------------------------- */
+
+.workspace-evidence-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.workspace-evidence-existing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 80px;
+}
+
+.workspace-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---------------------------------------------------------------- *
+ * 10. plugin + export pages
+ * ---------------------------------------------------------------- */
+
+.workspace-plugin {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* the mounted audit panel brings its own card chrome; drop the radius and
+ * shadow so it reads as part of the same sheet instead of a widget. */
+.workspace-export .workspace-panel {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.workspace-export__mount {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--ws-rule);
+}
+
+.workspace-export__mount > * {
+  margin-top: 0;
+}
+
+.workspace-export__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.workspace-export__feedback,
+.workspace-export__verify {
+  margin: 0;
+  color: var(--ws-ink-3);
+  font-size: var(--fs-0);
+  line-height: 1.65;
+}
+
+.workspace-export__progress,
+.workspace-export__result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* honest degradation stays visible: anchor fields are stated, not hidden */
+.workspace-export__anchor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--ws-rule-2);
+  border-left: 2px solid var(--ws-rule-2);
+  background: var(--ws-paper);
+}
+
+/* ---------------------------------------------------------------- *
+ * 11. motion - one orchestrated entrance, then nothing
+ * ---------------------------------------------------------------- */
+
+@keyframes workspace-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes workspace-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* no fill on the shell: if the animation never runs the overlay is
+   * simply there, at opacity 1. An overlay that can be left at opacity 0
+   * by a paused animation is a blank window, not a style choice. */
+  .workspace {
+    animation: workspace-fade var(--dur-base) var(--ease);
+  }
+
+  /* eight entries, 60ms apart: the eye reads the index top-left to
+   * bottom-right instead of the whole page appearing at once.
+   * fill-mode backwards holds the start frame only during the delay, so a
+   * skipped animation still leaves the card visible. */
+  .workspace-feature-card {
+    animation: workspace-rise var(--dur-base) var(--ease) backwards;
+  }
+
+  .workspace-feature-card:nth-child(1) { animation-delay: 40ms; }
+  .workspace-feature-card:nth-child(2) { animation-delay: 100ms; }
+  .workspace-feature-card:nth-child(3) { animation-delay: 160ms; }
+  .workspace-feature-card:nth-child(4) { animation-delay: 220ms; }
+  .workspace-feature-card:nth-child(5) { animation-delay: 280ms; }
+  .workspace-feature-card:nth-child(6) { animation-delay: 340ms; }
+  .workspace-feature-card:nth-child(7) { animation-delay: 400ms; }
+  .workspace-feature-card:nth-child(8) { animation-delay: 460ms; }
+}
+
+/* ---------------------------------------------------------------- *
+ * 12. narrow viewports
+ * ---------------------------------------------------------------- */
+
+@media (max-width: 1080px) {
+  .workspace__frame {
+    grid-template-columns: 208px minmax(0, 1fr);
+  }
+
+  .workspace__header {
+    padding: var(--space-5) var(--space-5) var(--space-4);
+  }
+
+  .workspace__header::after {
+    left: var(--space-5);
+    right: var(--space-5);
+  }
+
+  .workspace__content {
+    padding: var(--space-5) var(--space-5) var(--space-6);
+  }
+
+  .workspace-record-layout,
+  .workspace-evidence-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-stat:nth-child(3) {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .workspace-stat:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--ws-rule);
+  }
+}
+
+@media (max-width: 820px) {
+  .workspace__frame {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  /* the spine becomes a horizontal index strip: still a ruled list, only
+   * rotated - not a row of rounded chips. */
+  .workspace__sidebar {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-right: 0;
+    border-bottom: 1px solid var(--ws-rule-2);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .workspace__brand {
+    flex: none;
+  }
+
+  .workspace__brand-copy,
+  .workspace__sidebar-hint,
+  .workspace__nav-label {
+    display: none;
+  }
+
+  .workspace__nav {
+    flex-direction: row;
+    gap: var(--space-3);
+  }
+
+  .workspace__nav-group {
+    flex-direction: row;
+  }
+
+  .workspace__nav-item {
+    width: auto;
+    min-height: 44px;
+    padding: 0 var(--space-3) 0 var(--space-2);
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+
+  .workspace__nav-item:hover {
+    border-bottom-color: var(--ws-rule-2);
+  }
+
+  .workspace__nav-item.is-active {
+    border-bottom-color: var(--ws-accent);
+    background: none;
+  }
+
+  .workspace__header {
+    position: relative;
+    flex-wrap: wrap;
+    padding: var(--space-4);
+  }
+
+  .workspace__header::after {
+    display: none;
+  }
+
+  /* the heading takes the whole first row; otherwise flex squeezes it
+   * behind the close control and the title drops below them. */
+  .workspace__heading {
+    flex: 1 1 100%;
+    padding-right: 96px;
+  }
+
+  /* the folio is a margin note for the printed page, not for a phone. */
+  .workspace__folio {
+    display: none;
+  }
+
+  .workspace__close {
+    position: absolute;
+    top: var(--space-4);
+    right: var(--space-4);
+  }
+
+  .workspace__content {
+    padding: var(--space-4) var(--space-4) var(--space-6);
+  }
+
+  .workspace-home__lead {
+    font-size: 30px;
+  }
+
+  .workspace-home__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* one column: the desktop row height only stretches the gap between
+   * the description and its action. */
+  .workspace-feature-card {
+    min-height: 0;
+  }
+
+  .workspace-feature-card:nth-last-child(-n + 2) {
+    border-bottom: 1px solid var(--ws-rule);
+  }
+
+  .workspace-feature-card:last-child {
+    border-bottom: 0;
+  }
+
+  .workspace-identity {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-confidence-row {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 560px) {
+  .workspace-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-stat {
+    border-left: 0;
+    padding-left: 0;
+    border-bottom: 1px solid var(--ws-rule);
+  }
+
+  .workspace-stat:last-child {
+    border-bottom: 0;
+  }
+
+  .workspace-toolbar .workspace-field {
+    flex: 1 1 100%;
+  }
+
+  .workspace-home__lead {
+    font-size: 26px;
+  }
+}

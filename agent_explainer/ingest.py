@@ -17,6 +17,9 @@
    永不覆盖 ``user_intervention`` / ``intervention_options`` / ``execution_receipt``
    的决定语义（t8：决定 ≠ 生效），也永不覆盖 ``human_readable``
    （那是 t5 解释层的产物，不是上报方可以随口改写的字段）。
+   5.0 起合并是**两层叠加**：4.4 的 ``MERGE_FIELDS`` 之后再接 ``EXPANSION_MERGE_FIELDS``
+   （5.0 可选扩展字段），受保护字段在合并层剥离——实现只有一份
+   :func:`merge_facts_full`，导入路径与上报路径调它，合并产物再去签名。
 5. **广播是有界队列**：慢订阅者丢最旧帧并标记 ``degraded``，绝不把写入方拖住；
    断线重连用 ``Last-Event-ID`` 从有界环形缓冲补发，补不上的部分如实说明。
 
@@ -40,6 +43,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
 from . import audit as audit_mod
+from . import confidence as confidence_mod
 from . import trace_adapter as ta
 
 __all__ = [
@@ -51,11 +55,14 @@ __all__ = [
     "STREAM_EVENT_TYPES", "REPLAY_RING_SIZE",
     "MAX_EVENTS_PER_REQUEST", "MAX_ENVELOPE_BYTES",
     "MERGE_FIELDS", "PROTECTED_FIELDS",
+    "EXPANSION_MERGE_FIELDS", "EXPANSION_PROTECTED_FIELDS", "ALL_PROTECTED_FIELDS",
     "ACTION_TYPE_LABELS", "STATUS_LABELS", "RECORD_STATUSES", "DECIDABLE_STATUSES",
     "EFFECT_NOTICE", "SECRET_KEY_HINTS",
     "IngestError", "INGEST_STATUS", "ingest_status_of",
     "TokenVault", "RateLimiter", "StreamHub", "Subscriber", "IngestBroker",
-    "make_event", "make_events_batch", "parse_envelope", "merge_facts",
+    "make_event", "make_events_batch", "parse_envelope",
+    "merge_facts", "merge_facts_full", "strip_protected_fields",
+    "FIXATION_TRACKED_FIELDS", "account_fixation_changes", "resync_facts_hash",
     "human_readable_for", "default_intervention_options", "stamp_source",
     "public_record", "scrub",
     "ANONYMOUS_LOCAL_TOKEN",
@@ -133,6 +140,42 @@ READABLE_FACT_FIELDS: frozenset[str] = frozenset({
     "status", "result_summary", "tool_used", "risk_level", "requires_action",
     "requires_action_reason", "latency_ms", "error", "impact_scope", "action_due_at",
 })
+
+# ---------------------------------------------------------------------------
+# 5.0 扩展字段名单（S0-2：与 4.4 的两张名单同模块、同消费方）
+# ---------------------------------------------------------------------------
+# 权威定义只在这里一份：`server.py` 按原名 re-export（`server.EXPANSION_MERGE_FIELDS`
+# 与本模块的那个是同一个对象），所以"server 一套名单、ingest 另一套"这种漂移没有土壤。
+# 消费方是下面的 :func:`merge_facts_full`：server 的导入路径与本模块的上报路径调同一份实现。
+
+#: 5.0 新增的**可选**记录字段：导入/上报只允许这些字段从入参合并进来。
+#: 与 4.4 的 `MERGE_FIELDS` 是叠加关系（同一次合并里两层顺序执行，语义完全同款）。
+#: 现状：合并器已实现（S0-2），`tests/test_merge_fields.py` 把"名单真的被消费"钉成断言。
+EXPANSION_MERGE_FIELDS: tuple[str, ...] = (
+    "group_id", "shared_users", "multimedia_evidence", "causal_explanation",
+    "rollback_ref", "rollback_state", "improvement_suggestion", "evidence_feedback",
+    "confidence_source",
+)
+#: 这些字段永不从入参合并：决定语义（决定 ≠ 生效）、来源归因、演示标记、签名材料。
+#: 签名覆盖整条记录，所以导入方带 `signature` 进来只会造出一条验不过的假签名。
+#: `intervention_history` 也在这里：干预必须每次独立成条 signed 记录，入参可伪造的
+#: 「干预历史」一旦被 Agent 签进记录，等于替伪造的责任链背书（见 docs/07 §3.2）。
+#: `human_owner` / `delegation_chain` 由 secretariat 按身份记录填（责任链的链根是真人）。
+#: 入参若自带这两个字段，等于让导入方给别人派责任：必须禁止合并。
+EXPANSION_PROTECTED_FIELDS: tuple[str, ...] = (
+    "user_intervention", "intervention_options", "human_readable", "source",
+    "demo_data", "synthetic", "policy", "signature", "entry_hash", "prev_hash",
+    "agent_pubkey", "approval", "tsa_timestamp", "input_hash", "output_hash",
+    "execution_receipt", "intervention_history",
+    # `human_owner` / `delegation_chain` 由 secretariat 按身份记录填（责任链的链根是真人）。
+    # 入参若自带这两个字段，等于让导入方给别人派责任：必须禁止合并。
+    "human_owner", "delegation_chain",
+)
+#: 剥离闸门的默认口径：5.0 受保护名单 ∪ 4.4 受保护名单（顺序稳定、去重）。
+#: 白名单本来就拿不到这些字段；显式剥离是第二道闸门，并让"入参带了受保护字段"这件事
+#: 在合并层留下痕迹（如实原则），不依赖"调用方只用白名单"这一事实。
+ALL_PROTECTED_FIELDS: tuple[str, ...] = tuple(
+    dict.fromkeys(EXPANSION_PROTECTED_FIELDS + PROTECTED_FIELDS))
 
 # ---------------------------------------------------------------------------
 # 错误
@@ -734,17 +777,14 @@ def parse_envelope(payload: Any, *, max_events: int = MAX_EVENTS_PER_REQUEST,
 # 合并规则
 # ---------------------------------------------------------------------------
 
-def merge_facts(before: Mapping[str, Any],
-                incoming: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """按白名单合并事实字段，返回 (新记录, changed_fields)。
+def _merge_layer(merged: dict[str, Any], incoming: Mapping[str, Any],
+                 fields: Sequence[str], changed: list[dict[str, Any]]) -> None:
+    """按**一份**白名单就地合并：白名单外不取、blank 不覆盖、canonical 相同不算变化。
 
-    ``PROTECTED_FIELDS`` 挡在外面的永不覆盖：决定语义（``user_intervention`` /
-    ``intervention_options``）、执行回执、解释文案、来源归因、演示标记、policy。
-    上报方能改的是"这一步发生了什么"，不是"人决定了什么"。
+    4.4 的 ``MERGE_FIELDS`` 与 5.0 的 ``EXPANSION_MERGE_FIELDS`` 两层共用这一段，
+    所以"同款语义"不是抄一遍，是同一份代码。
     """
-    merged = copy.deepcopy(dict(before))
-    changed: list[dict[str, Any]] = []
-    for field in MERGE_FIELDS:
+    for field in fields:
         if field not in incoming:
             continue
         value = incoming[field]
@@ -755,8 +795,144 @@ def merge_facts(before: Mapping[str, Any],
             continue
         merged[field] = copy.deepcopy(value)
         changed.append({"field": field, "before": _brief(prior), "after": _brief(value)})
+
+
+def strip_protected_fields(incoming: Mapping[str, Any],
+                           protected: Sequence[str] = ALL_PROTECTED_FIELDS,
+                           ) -> tuple[dict[str, Any], list[str]]:
+    """把受保护字段从入参里剥掉，返回 ``(干净入参, 被剥掉的字段名)``。
+
+    受保护字段（决定语义 / 来源归因 / 演示标记 / 签名材料 / 干预历史 / 责任链）
+    **永不从入参合并**：它们只由服务端写入。合并层只按白名单取值，本来就拿不到这些
+    字段；这里显式剥离是第二道闸门，好处有二：
+    1. 不依赖"调用方只用白名单"这一事实（以后有人加一条非白名单的写入路径也不会漏）；
+    2. 入参带了这些字段时留下可上报的痕迹（``stripped_fields``），不是无声吞掉。
+
+    入参校验层的闸门（``ADAPTER_OUTPUT_INVALID`` / ``INTERVENE_FIELD_UNKNOWN``）保持不变，
+    这里是它们之下的那一道：越界的字段进不了记录。
+    """
+    hit = [name for name in protected if name in incoming]
+    if not hit:
+        return dict(incoming), []
+    banned = set(hit)
+    return {k: v for k, v in incoming.items() if k not in banned}, hit
+
+
+def merge_facts_full(before: Mapping[str, Any],
+                     incoming: Mapping[str, Any],
+                     *,
+                     merge_fields: Sequence[str] = MERGE_FIELDS,
+                     expansion_fields: Sequence[str] = EXPANSION_MERGE_FIELDS,
+                     protected_fields: Sequence[str] = ALL_PROTECTED_FIELDS,
+                     ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+    """5.0 扩展字段合并器：4.4 白名单 + 5.0 白名单**叠加**合并，返回
+    ``(新记录, changed_fields, stripped_fields)``。
+
+    三条口径（docs/07 §3.1 与 server.py 的契约注释）：
+
+    1. **叠加，不削弱**：先按 4.4 的 ``MERGE_FIELDS`` 合并（那份白名单与
+       ``PROTECTED_FIELDS`` 的语义挡板一字不动），再按 5.0 的
+       ``EXPANSION_MERGE_FIELDS`` 合并可选扩展字段，两层同款语义、同一段代码。
+    2. **受保护字段剥离**：``EXPANSION_PROTECTED_FIELDS``（并上 4.4 的
+       ``PROTECTED_FIELDS``）里的字段从入参剥掉，永不进入合并产物——
+       ``intervention_history`` / ``human_owner`` / ``delegation_chain`` /
+       ``signature`` / ``entry_hash`` / ``prev_hash`` / ``execution_receipt`` 等
+       由服务端写入。
+    3. **合并必须发生在签名之前**：本函数只产记录、不签名；调用方（导入路径
+       ``server.import_traces``、上报路径 ``IngestBroker``）拿合并产物去
+       ``sign_on_write_record`` / ``signer``，签名覆盖合并后的事实。
+
+    ``stripped_fields`` 是入参里出现过的受保护字段名（按名单顺序），供调用方如实上报。
+    """
+    clean, stripped = strip_protected_fields(incoming, protected_fields)
+    merged = copy.deepcopy(dict(before))
+    changed: list[dict[str, Any]] = []
+    _merge_layer(merged, clean, merge_fields, changed)
+    _merge_layer(merged, clean, expansion_fields, changed)
     merged["received_at"] = _iso()
+    return merged, changed, stripped
+
+
+def merge_facts(before: Mapping[str, Any],
+                incoming: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """按白名单合并事实字段，返回 (新记录, changed_fields)。
+
+    ``PROTECTED_FIELDS`` 挡在外面的永不覆盖：决定语义（``user_intervention`` /
+    ``intervention_options``）、执行回执、解释文案、来源归因、演示标记、policy。
+    上报方能改的是"这一步发生了什么"，不是"人决定了什么"。
+
+    5.0 起本函数是 :func:`merge_facts_full` 的兼容包装（既有调用点与 ``__all__``
+    口径不变）：在同一套 4.4 语义之上叠加 5.0 扩展字段合并，并剥掉受保护字段。
+    需要"入参里哪些受保护字段被剥掉"这份痕迹的调用方直接调 ``merge_facts_full``。
+    """
+    merged, changed, _stripped = merge_facts_full(before, incoming)
     return merged, changed
+
+
+# ---------------------------------------------------------------------------
+# 5.1 R2-1 / R2-2：固化与联动之后要对齐的两件账（事实指纹、上报帧记账）
+# ---------------------------------------------------------------------------
+
+#: 固化 / 联动**自己写入**的字段里，允许进上报帧 ``changed_fields`` 记账的那几个。
+#: 口径与合并层逐字一致：受保护字段（``policy`` / ``intervention_options`` / ``human_readable``
+#: / ``user_intervention`` / ``source`` …）由服务端写入，既有门禁钉着"受保护字段不得记进
+#: changed_fields"（``tests/test_merge_fields.py``、``tests/test_trace_adapter.py``），
+#: 所以联动补齐的那几个受保护字段在这里**不记账**（只如实落盘，并由重签覆盖）。
+#: 下面这几个都在 ``MERGE_FIELDS`` / ``EXPANSION_MERGE_FIELDS`` 里，本来就是可上报的事实字段。
+FIXATION_TRACKED_FIELDS: tuple[str, ...] = (
+    "confidence", "confidence_source", "requires_action", "requires_action_reason",
+    "status", "uncertainty",
+)
+
+
+def account_fixation_changes(before: Mapping[str, Any],
+                             after: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """把固化 / 联动**实际写入**的字段并成上报帧的 ``changed_fields`` 条目。
+
+    形状与 :func:`merge_facts_full` 的第二返回值逐字同款（``field`` / ``before`` / ``after``，
+    两侧经 :func:`_brief` 摘要），前端与 SDK 读帧代码不用分两种情况。
+    只记"真的变了"的字段（``_canonical`` 相同不算变化，同合并层口径）；没变就是空列表。
+    """
+    out: list[dict[str, Any]] = []
+    for field in FIXATION_TRACKED_FIELDS:
+        prior, fresh = before.get(field), after.get(field)
+        if _canonical(prior) == _canonical(fresh):
+            continue
+        out.append({"field": field, "before": _brief(prior), "after": _brief(fresh)})
+    return out
+
+
+def resync_facts_hash(record: dict[str, Any]) -> bool:
+    """固化 / 联动改写了事实字段之后，把 ``human_readable.source_facts_hash`` 对齐到**最终事实**（就地）。
+
+    护栏 P3 的定义（``tools/facts_hash.py``）：文案是结构化事实的函数，
+    指纹 = 那组事实的规范化 sha256。``FACT_FIELDS`` 里含 ``confidence`` 与 ``status``——
+    固化把非法数打成 ``null``、联动把 ``status`` 打成 ``pending_confirmation``，都改了事实；
+    指纹若算在固化之前，落盘记录就"声明的指纹与正文事实不一致"。
+
+    三条边界：
+
+    * 只认已存在的指纹：``source_facts_hash`` 为空 / 非字符串 → **不发明指纹**。
+      SDK 实时上报的文案由 :func:`human_readable_for` 生成，那个字段的产品口径本来就是
+      ``null``（本模块既有写法），这里不越界替它补一个。
+    * 幂等：合规数值经 ``confidence.normalize`` 是 ``round(x, 4)``，与适配器的 ``_confidence``
+      同口径 ⇒ 没改事实时重算得到同一个值，一个字都不动（既有断言不受影响）。
+    * 算法只有一份：复用包内 ``trace_adapter._sha256_canonical`` + ``ta.FACT_FIELDS``
+      （``explanations.py:559`` 同此做法），不新写第二套指纹实现。
+    """
+    readable = record.get("human_readable")
+    if not isinstance(readable, Mapping):
+        return False
+    declared = readable.get("source_facts_hash")
+    if not isinstance(declared, str) or not declared:
+        return False
+    payload = {"schema_version": record.get("schema_version"),
+               "facts": {key: record.get(key) for key in ta.FACT_FIELDS}}
+    fresh = "sha256:" + ta._sha256_canonical(payload)
+    if fresh == declared:
+        return False
+    readable["source_facts_hash"] = fresh
+    return True
 
 
 def stamp_source(record: dict[str, Any], *, kind: str, source_uri: str) -> dict[str, Any]:
@@ -947,6 +1123,19 @@ class IngestBroker:
             action_id = str(record.get("id"))
             before = self.store.get(action_id)
             if before is None:
+                # 签名之前固化置信度 + 低置信联动（`confidence` 在签名域里，只能签名前写）
+                pre_fixate = copy.deepcopy(record)
+                fixated = confidence_mod.fixate_for_import(record)
+                fixation = account_fixation_changes(pre_fixate, fixated)
+                # 联动把 `status` 打成 pending_confirmation 时，文案要跟着**最终事实**重算：
+                # "角标要人拍板、l1 还写着进行中"正是 ``READABLE_FACT_FIELDS`` 要防的自相矛盾。
+                # 文案字段本身在受保护名单里，这里只由本模块按落库事实重算（同合并路径口径）。
+                if {str(c.get("field")) for c in fixation} & READABLE_FACT_FIELDS:
+                    self._refresh_readable(fixated, pre_fixate, fixation, language=language)
+                record = fixated
+                # 固化 / 联动改了事实字段（非法数打成 null、status 打成 pending_confirmation）
+                # → 声明的事实指纹跟着对齐最终落盘事实（幂等：没改事实时一个字都不动）
+                resync_facts_hash(record)
                 if self.signer is not None:
                     record = self.signer(record, None)
                 self.store.put(record)
@@ -960,11 +1149,26 @@ class IngestBroker:
                 duplicates.append({"action_id": action_id,
                                    "reason": "id 已存在，mode=create 不覆盖已有记录"})
                 continue
-            after, changed = merge_facts(before, record)
-            refreshed = self._refresh_readable(after, before, changed, language=language)
+            after, changed, stripped = merge_facts_full(before, record)
+            # 合并 → **固化 + 联动** → 按最终事实重算文案 → 对齐事实指纹 → 签名。
+            # 顺序是 R2-2 遗留②的裁决：固化必须在 `_refresh_readable` **之前**，
+            # 否则"角标要人拍板、文案还写着进行中"自相矛盾，声明的 `source_facts_hash`
+            # 也会早于最终落盘的事实（`FACT_FIELDS` 含 confidence 与 status）。
+            # 两张白名单零改动（`confidence` / `confidence_source` 本来就在名单里）。
+            # `fixate_for_import` 是**就地**写入选入记录的，所以"之前"必须先留一份快照，
+            # 否则记账比对的是同一个对象，永远得到空列表。
+            pre_fixate = copy.deepcopy(after)
+            fixated = confidence_mod.fixate_for_import(after)
+            fixation = account_fixation_changes(pre_fixate, fixated)
+            after = fixated
+            refreshed = self._refresh_readable(after, before, list(changed) + fixation,
+                                               language=language)
+            resync_facts_hash(after)
             if refreshed is not None:
-                changed = list(changed) + [{"field": "human_readable", "before": "旧事实的文案",
-                                            "after": _clip(str(refreshed.get("l1") or ""), 80)}]
+                fixation = fixation + [{"field": "human_readable", "before": "旧事实的文案",
+                                        "after": _clip(str(refreshed.get("l1") or ""), 80)}]
+            if fixation:
+                changed = list(changed) + fixation
             if self.signer is not None:
                 after = self.signer(after, before)
             self.store.put(after)
@@ -972,6 +1176,8 @@ class IngestBroker:
             frames.append(self.hub.publish(EVENT_UPDATED, {
                 "record": after, "action_id": action_id, "changed_fields": changed,
                 "source_kind": kind, "token_id": record_token.get("token_id"),
+                # 入参里被闸门拦下的受保护字段（合并层剥掉的）如实随帧上报，不吞掉
+                "stripped_fields": stripped,
                 "received_at": _iso()}, record_id=action_id))
 
         batch_frame = self.hub.publish(EVENT_BATCH, {
@@ -1076,16 +1282,8 @@ class IngestBroker:
         facts = {str(c.get("field")) for c in changed if isinstance(c, Mapping) and c.get("field")}
         if not facts.intersection(READABLE_FACT_FIELDS):
             return None
-        old = before.get("human_readable")
-        old = old if isinstance(old, Mapping) else {}
-        notes = [str(x) for x in list(old.get("l2") or [])[1:]]
-        after["human_readable"] = human_readable_for(
-            str(after.get("id") or ""), intent=str(after.get("intent") or ""),
-            action_type=str(after.get("action_type") or "tool_call"),
-            status=str(after.get("status") or "running"),
-            tool_used=(after.get("tool_used") or None),
-            language=str(old.get("language") or language),
-            extra_notes=notes)
+        after["human_readable"] = _rebuilt_readable(after, before.get("human_readable"),
+                                                    language)
         return after["human_readable"]
 
     # -- 记账（复用 t9 审计，不改审计）------------------------------------
@@ -1191,6 +1389,42 @@ def human_readable_for(action_id: str, *, intent: str, action_type: str, status:
     }
 
 
+def _rebuilt_readable(record: Mapping[str, Any], prior: Mapping[str, Any] | None,
+                      language: str) -> dict[str, Any]:
+    """按**落库事实**重算 l1/l3（上报方自己声明的补充说明原样保留）。
+
+    这是 :meth:`IngestBroker._refresh_readable` 的模块级同一份实现：文案字段在
+    ``PROTECTED_FIELDS`` 里，上报方永远写不进来，本模块只按已定事实重算——
+    固化 / 联动改了 ``status`` 之后，"角标要人拍板、l1 还写着进行中"这种自相矛盾
+    必须当场消掉（``READABLE_FACT_FIELDS`` 的存在理由）。
+    """
+    old = prior if isinstance(prior, Mapping) else {}
+    notes = [str(x) for x in list(old.get("l2") or [])[1:]]
+    return human_readable_for(
+        str(record.get("id") or ""), intent=str(record.get("intent") or ""),
+        action_type=str(record.get("action_type") or "tool_call"),
+        status=str(record.get("status") or "running"),
+        tool_used=(record.get("tool_used") or None),
+        language=str(old.get("language") or language),
+        extra_notes=notes)
+
+
+def _scope_field(rid: str, short: str) -> dict[str, Any]:
+    """来源没给字段清单时，``modify`` 选项唯一能给出的可改字段：执行范围。
+
+    schema 的 ``$defs/interventionOption`` 要求 ``kind=modify ⇒ editable_fields`` 必须存在且
+    ``minItems: 1``（界面按它动态渲染改写表单，US-04）——给 ``[]`` 等于交出一张
+    「点得开、里面没有表单」的空卡片，A2 校验也过不去。
+    这里只给"改写执行范围"这一项：它是决定语义里真实存在的可改面
+    （``user_intervention.modified_params`` 记的就是改写后的参数，执行端按它跑），
+    不凭空发明上报方没提过的参数名。与 ``confidence.py`` 联动补齐的那三条同形同文案。
+    """
+    return {"name": "scope", "label": "执行范围（只跑你写下的范围）",
+            "type": "text", "required": True,
+            "help_text": _clip(f"来源声明的范围：{short}；改写后只执行你写下的范围，"
+                               f"其余步骤保持原样并标注已跳过", 200)}
+
+
 def default_intervention_options(action_id: str, *, intent: str, action_type: str,
                                  language: str = "zh",
                                  editable_fields: Sequence[Mapping[str, Any]] | None = None,
@@ -1203,7 +1437,9 @@ def default_intervention_options(action_id: str, *, intent: str, action_type: st
     """
     rid = _clean_id(action_id)
     short = _clip(intent, 40)
-    fields = [dict(f) for f in (editable_fields or [])]
+    given = [dict(f) for f in (editable_fields or [])]
+    # 来源没给字段清单时也要给 modify 一个真字段（schema：modify ⇒ editable_fields ≥1）
+    fields = given or [_scope_field(rid, short)]
     return [
         {"id": f"opt-{rid}-approve", "kind": "approve", "label": "同意执行",
          "description": f"按上报的范围执行「{short}」",
@@ -1216,8 +1452,8 @@ def default_intervention_options(action_id: str, *, intent: str, action_type: st
          "consequence": "只执行你设定的范围，其余保持原样并在清单标注已跳过",
          "effect_notice": EFFECT_NOTICE, "editable_fields": fields,
          "requires_reason": False,
-         "risk_note": risk_note or ("来源未提供可修改字段，只能整体同意或拒绝"
-                                    if not fields else None),
+         "risk_note": risk_note or ("来源未提供可改字段，已按『改写执行范围』给出一项可改字段"
+                                    if not given else None),
          "dangerous": False},
         {"id": f"opt-{rid}-reject", "kind": "reject", "label": "先不执行",
          "description": "停下来，等你决定下一步",
@@ -1391,6 +1627,18 @@ def make_event(action_id: str, *, action_type: str = "tool_call",
         "trace_link": dict(trace_link) if trace_link else None,
         "labels": merged_labels,
     }
+    # 5.1 R2-1 固化 + R2-2 联动（导入侧、签名之前）：来源给了置信度 → 归一后固化 + 来源形态合规；
+    # 什么都没给 → 维持 null 并如实标 {method: "default"}；`confidence < 0.5` → 按 docs/02 D10
+    # 翻 requires_action 并补齐 schema C1 全套（数据进既有「需要我」面板，不新增端点）。
+    # 联动写在字段封闭闸门之前 ⇒ 产出的记录字段封闭、schema 合法、可被签名覆盖；
+    # status 落在可决定集（running/observed → pending_confirmation），note「来源未提供置信度」不动。
+    pre_fixate = copy.deepcopy(event)
+    event = confidence_mod.fixate_for_import(event)
+    # 联动把 status 打成 pending_confirmation ⇒ 模板文案跟着最终事实重算：
+    # l1/l3 本来就是我（本模块）按事实拼的，不存在"改写上报方文案"的问题。
+    if {str(c.get("field")) for c in account_fixation_changes(pre_fixate, event)} & READABLE_FACT_FIELDS:
+        event["human_readable"] = _rebuilt_readable(event, pre_fixate.get("human_readable"),
+                                                    language)
     missing = [k for k in ta.REQUIRED_RECORD_KEYS if k not in event]
     extra = sorted(set(event) - set(ta.REQUIRED_RECORD_KEYS) - set(ta.OPTIONAL_RECORD_KEYS))
     if missing or extra:      # 自家构造器的闸门：这是 t14 的 bug，不能靠脏数据入库掩盖

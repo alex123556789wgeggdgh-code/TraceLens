@@ -97,6 +97,34 @@
 
   /* progress ring: written at runtime by app.js (0-100), never a colour */
   --progress: 0;
+
+  /* ---------------------------------------------------------------- *
+   * feature centre (ext/workspaces.css): paper-and-ink editorial
+   * ----------------------------------------------------------------
+   * Direction: an archive / case file, not a dashboard. Warm paper, warm
+   * near-black ink, hairline rules, serif display, mono for hashes. One
+   * accent only - a vermilion seal - reserved for "where you are"
+   * (selected row, hover rule, focus ring). Tokens live here rather than
+   * in workspaces.css because that file may only *reference* tokens
+   * declared in this one (selfcheck + tests/test_workspaces_face.py).
+   * Fonts resolve from what ships with the OS: no webfont download, the
+   * product must work offline. */
+  --ws-paper: #f4f0e8;
+  --ws-paper-2: #fbf8f2;
+  --ws-ink: #17140f;
+  --ws-ink-2: #4c453a;
+  --ws-ink-3: #6f6555;
+  --ws-rule: #ded6c7;
+  --ws-rule-2: #c2b7a3;
+  --ws-accent: #a6381f;
+  --ws-accent-soft: #f4e5de;
+  --ws-serif: "Source Han Serif SC", "Noto Serif SC", "Songti SC", SimSun, serif;
+  --ws-sans: "DengXian", "Noto Sans SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --ws-mono: Consolas, "Cascadia Mono", "Courier New", monospace;
+  --ws-shadow-1: 0 1px 2px rgba(23, 20, 15, 0.06);
+  --ws-shadow-2: 0 8px 28px rgba(23, 20, 15, 0.10);
+  --ws-dur: 320ms;
+  --ws-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -125,6 +153,19 @@
     --c-focus: #6db1f5;
     --c-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     --c-shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.4);
+
+    /* same archive, after dark: ink becomes paper, seals brighten. */
+    --ws-paper: #14120f;
+    --ws-paper-2: #1c1915;
+    --ws-ink: #f2ebdf;
+    --ws-ink-2: #c1b7a7;
+    --ws-ink-3: #8a8172;
+    --ws-rule: #332d25;
+    --ws-rule-2: #4a4237;
+    --ws-accent: #e0663c;
+    --ws-accent-soft: #2b1a13;
+    --ws-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --ws-shadow-2: 0 8px 28px rgba(0, 0, 0, 0.55);
   }
 }
 
@@ -917,6 +958,36 @@ ol {
   background: var(--c-progress-soft);
   border-color: var(--c-progress-line);
   color: var(--c-progress);
+}
+
+/* R2-3 (REQ-002 B2-2): a low-confidence badge keeps the .badge--* family and
+ * adds a slow attention pulse, so "this number is shaky" is visible without
+ * opening the card. The loop length is a named token on the rule (the 200ms cap
+ * in :root governs UI transitions; a looping attention pulse is not one), the
+ * colours stay tokens, and section 11's prefers-reduced-motion block plus the
+ * explicit one below stop the loop outright for that preference. The ring
+ * itself and the card border live in the trust layer's own stylesheet
+ * (web/ext/cards.css), which owns every card-level class there.
+ */
+.badge--low-confidence {
+  --conf-pulse: 1600ms;
+  animation: badge-low-confidence-pulse var(--conf-pulse) var(--ease) infinite;
+}
+
+@keyframes badge-low-confidence-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--c-progress-line);
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--c-progress-line);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge--low-confidence {
+    animation: none;
+  }
 }
 
 .card__meta {
@@ -3585,6 +3656,115 @@ ol {
   flex-wrap: wrap;
   gap: var(--space-2);
   margin: var(--space-2) 0 0;
+}
+
+/* R8-6: export face slices rendered by ext/compliance.js.
+ * The bar is indeterminate by design - no width is ever written from script,
+ * so it can never imply a percentage the server did not report. The moving
+ * stripe is decoration and is dropped under reduced motion. */
+.export__format,
+.export__range {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-1);
+  color: var(--c-text-dim);
+  overflow-wrap: anywhere;
+}
+
+.export__range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.export__range-note {
+  flex: 1 0 100%;
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-1);
+  color: var(--c-text-dim);
+}
+
+.export__progress-host[data-visible="false"],
+.export__result-host[data-visible="false"] {
+  display: none;
+}
+
+.export__progress {
+  position: relative;
+  height: 6px;
+  margin: var(--space-2) 0 0;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  border: 1px dashed var(--c-border);
+  background: var(--c-surface-2);
+}
+
+/* indeterminate by construction: a flat translucent fill with no width math,
+ * no timer and no animation. The sentence under the track carries the state;
+ * the bar must never look like it knows a percentage. */
+.export__progress-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--c-pending-line);
+  opacity: 0.45;
+}
+
+.export__progress-note {
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-1);
+  color: var(--c-text-dim);
+}
+
+.export__result-host {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-2);
+}
+
+.export__result-title {
+  margin: 0 0 var(--space-1) 0;
+  font-size: var(--fs-2);
+  font-weight: 500;
+  color: var(--c-text);
+}
+
+.export__result-list {
+  margin: 0;
+  padding: 0;
+}
+
+.export__result-row {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.export__result-key {
+  flex: 0 0 auto;
+  font-size: var(--fs-1);
+  color: var(--c-text-dim);
+}
+
+.export__result-val {
+  margin: 0;
+  font-size: var(--fs-1);
+  color: var(--c-text);
+  word-break: break-all;
+}
+
+.export__result-code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-1);
+  word-break: break-all;
+}
+
+.export__result-anchor,
+.export__result-verify {
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-1);
+  color: var(--c-text-dim);
 }
 
 .audit__chips,

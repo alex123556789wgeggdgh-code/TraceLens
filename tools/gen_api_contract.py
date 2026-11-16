@@ -73,6 +73,18 @@ ROUTE_HELPERS = {
     "record_sign_route": "/api/secretariat/records/{id}/sign",
     "letter_route": "/api/secretariat/letters/{id}",
     "letter_verify_route": "/api/secretariat/letters/{id}/verify",
+    # 0.6.0：一个助手可能对应**多条**形状（同一段解析同时接住裸 id 与子动作）。
+    # `_evidence_route()` 返回 (id, action)，action 为 ""/"file"/"feedback"，
+    # 但只有一个分支体，所以此前抽取器完全看不见 `/api/evidence/*`，
+    # 常量 `API_PATH_EVIDENCE` 就被判成「声明了没人接住」。这里按形状列出来。
+    # 注意：`/feedback` 的 GET 是显式 405、POST 才服务，而 405 分支不算路由，
+    # 故不列；T16 的挂载登记在 docs/07 §5 与 docs/03 §6.5 的说明列（与 T29/T30 同例）。
+    "evidence_route": ["/api/evidence/{id}", "/api/evidence/{id}/file"],
+    # 记录子资源（`_record_sub_route(path, verb)`）：0.6.0 之前这个解析器**定义了但零调用**，
+    # 于是 T13（挂证据）与 T17（因果写回）在 HTTP 面上从未存在，契约里也因此两条都没有 ——
+    # "抽取看不见"和"路由不存在"刚好长得一样，正是这次漏了这么久的原因。
+    "record_evidence_route": "/api/records/{id}/evidence",
+    "record_causal_route": "/api/records/{id}/causal",
 }
 #: 每个助手允许的方法（与 do_* 里出现的分支一致）
 ROUTE_HELPER_VERBS = {
@@ -82,7 +94,43 @@ ROUTE_HELPER_VERBS = {
     "record_sign_route": {"POST"},
     "letter_route": {"GET"},
     "letter_verify_route": {"POST"},
+    "evidence_route": {"GET"},
+    "record_evidence_route": {"GET", "POST"},
+    "record_causal_route": {"POST"},
 }
+
+# --------------------------------------------------------------------------- #
+# 登记不修：另外五个助手族**只登记事实，不进数据表**
+# （PM-VERDICT-M2-PRE §3-1 / PM-VERDICT-R4-1 §3-3，挂 R8-1 落账；全文见 docs/07 §11.22 第 5 项）
+#
+# do_GET / do_POST 里还有一批路径解析助手，它们的族名与解析形状是：
+#
+#   evidence_route     → /api/evidence/{id}            （T14/T15：`_evidence_route`）
+#   group_route        → /api/groups/{id}/{verb}       （T19/T20/T21：`_group_route`，close 解析到但无分支）
+#   share_revoke_route → /api/shares/{id}/revoke       （T23：`_share_revoke_route`）
+#   suggestion_route   → /api/suggestions/{id}/{verb}  （T29/T30：`_suggestion_route`）
+#   compliance_route   → /api/compliance/{verb}        （T32/T33/T34：`_compliance_route`）
+#
+# 这五族的路径**已经**由同一条分支里的字面 `==` / `startswith` 条件进契约（`branch_route`
+# 的 startswith 分支）。它们**故意不**登记进上面的 `ROUTE_HELPERS`：一登记，
+# `branch_route` 就会给这些分支多产出"助手骨架"，而骨架的方法过滤是**整族**粒度
+# （`verb not in ROUTE_HELPER_VERBS[helper]`），405 归集（`method_not_allowed`）又发生在
+# 过滤**之前**——于是 `POST /api/groups/{id}/close` 这类今天实测落 404 的家族路径会被写进
+# 契约的 405 清单，成为**假事实**。
+# 放开某族的正确做法：给该助手补一个"方法→分支"的显式来源（解析器认识每条分支的方法），
+# 再登记 + `--write` 重生成；那是路由契约变更，须 PM 批准。
+#
+# 0.6.0 L1（八功能接线）对本段的修订：登记了**三个** helper，都是"每条分支只服务它自己的
+# 方法"的形状，不会产出假事实（登记后 405 组仍是 3 组，实测未变）：
+#   evidence_route         → /api/evidence/{id} + /{id}/file   （只挂 GET；/feedback 的 GET 是
+#                            显式 405，故意不入 patterns —— 一入就会造出"GET feedback 可服务"的假事实）
+#   record_evidence_route  → /api/records/{id}/evidence        （GET + POST，两条分支各自成对）
+#   record_causal_route    → /api/records/{id}/causal          （只有 POST）
+# 修订前这三个族在契约里**完全隐形**，于是「抽取看不见」与「路由不存在」长得一模一样 ——
+# 八功能里 T13/T17 两条断了这么久没被发现，根因就在这里。
+# 现状：契约 61 条路由 / 44 常量（全部挂载）/ 5 公开 / 3 组 405 / 前端 30 条全部命中，
+# 未挂载常量从 2 条降为 0 条。
+# --------------------------------------------------------------------------- #
 
 OK = "[PASS]"
 NG = "[FAIL]"
@@ -216,8 +264,11 @@ def branch_route(test: ast.expr, consts: dict[str, Any]) -> list[dict[str, Any]]
             elif isinstance(op, (ast.Is, ast.IsNot)) and isinstance(left, ast.Name) \
                     and left.id in ROUTE_HELPERS \
                     and isinstance(comp, ast.Constant) and comp.value is None:
-                out.append({"pattern": ROUTE_HELPERS[left.id], "match": "family",
-                            "helper": left.id, "trailing_slash": False})
+                # 一个助手可以声明多条形状（见 ROUTE_HELPERS 的 evidence_route）。
+                declared = ROUTE_HELPERS[left.id]
+                for pattern in ([declared] if isinstance(declared, str) else declared):
+                    out.append({"pattern": pattern, "match": "family",
+                                "helper": left.id, "trailing_slash": False})
     elif isinstance(test, ast.Call) and isinstance(test.func, ast.Attribute) \
             and test.func.attr == "startswith" and test.args:
         base = test.func.value
@@ -501,6 +552,23 @@ def matches(pattern: str, path: str) -> bool:
     return all(x == y or (x.startswith("{") and x.endswith("}")) for x, y in zip(a, b))
 
 
+def endpoint_is_served(endpoint: str, pattern: str) -> bool:
+    """界面白名单里的路径是否真有后端路由接住。
+
+    `API_ENDPOINTS` 存的是**族根前缀**（`/api/analytics`、`/api/evidence`），后端存的
+    是具体路由（`/api/analytics/dashboard`）。`matches()` 要求段数相等，于是这些前缀
+    一直被报成「界面调用了后端没有的路由」—— 那是抽取口径的错，不是界面的错
+    （界面用前缀拼子路径，`extRequest` 的路径只能由这张表派生）。
+
+    判定：段数相等按 `matches()`；否则只要具体路由落在这个前缀之下，就说明该前缀
+    确实指向一组真路由。
+    """
+    if matches(pattern, endpoint):
+        return True
+    base = endpoint.rstrip("/")
+    return pattern == base or pattern.startswith(base + "/")
+
+
 def crosscheck_doc(doc_text: str, routes: list[dict[str, Any]]) -> dict[str, Any]:
     rows = doc_rows(doc_text)
     doc_paths = sorted({p for row in rows for p in row["paths"]})
@@ -541,6 +609,30 @@ def crosscheck_doc(doc_text: str, routes: list[dict[str, Any]]) -> dict[str, Any
 # --------------------------------------------------------------------------- #
 # 组装
 # --------------------------------------------------------------------------- #
+def mounted_constants(path_constants: dict[str, Any],
+                      contract_paths: list[str]) -> dict[str, Any]:
+    """声明 vs 挂载：每个 API_PATH 常量都必须真的接进分发。
+
+    挂载判定：常量值被某条路由**精确**命中，或是某条资源族路由的前缀
+    （docs/07 的 T5"只做前缀"这类记法算合法挂载）。两条都不满足 = 声明了
+    却没有任何分支接住——这就是"声明 ≠ 挂载"（known red 的根因），
+    写进 `declared_unmounted`，`--check` 对它硬门禁。
+    """
+    unmounted: list[str] = []
+    for name, value in path_constants.items():
+        if not isinstance(value, str):
+            continue
+        normalized = normalize(value)
+        if not any(p == normalized or p.startswith(normalized + "/")
+                   for p in contract_paths):
+            unmounted.append(f"{name}={value}")
+    return {
+        "mounted": len(path_constants) - len(unmounted),
+        "declared": len(path_constants),
+        "unmounted": sorted(unmounted),
+    }
+
+
 def build_contract() -> dict[str, Any]:
     tree = parse(SERVER)
     consts = module_constants(tree)
@@ -564,19 +656,23 @@ def build_contract() -> dict[str, Any]:
     contract_paths = sorted({r["path"] for r in routes if r["path"].startswith("/")})
     endpoints["unknown_paths"] = sorted(
         path for path in endpoints["endpoints"].values()
-        if not any(matches(pattern, path) for pattern in contract_paths))
+        if not any(endpoint_is_served(path, pattern) for pattern in contract_paths))
+    declared = mounted_constants(path_constants, contract_paths)
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_by": "tools/gen_api_contract.py",
         "readme": "机器可读接口契约：唯一来源是代码（server.py 分发分支 + auth.py 权限矩阵 + "
                   "i18n_lint 的错误码口径），docs/03 §6.5 是它的人类可读核对表。"
                   "改代码后运行 `python tools/gen_api_contract.py --write`，"
-                  "CI/发布前运行 `--check`（内容漂移或与文档不一致都会非零退出）。",
+                  "CI/发布前运行 `--check`（内容漂移或与文档不一致都会非零退出）。"
+                  "`declared_unmounted` 是「声明了常量但没有任何分发分支接住」的路径："
+                  "启动自检与发版闸门都对它硬门禁，不许「声明 ≠ 挂载」再长出来。",
         "sources": {str(p.relative_to(REPO)).replace("\\", "/"): sha256_of(p)
                     for p in (SERVER, AUTH, APP_JS, DOC,
                               REPO / "tools" / "gen_api_contract.py",
                               REPO / "tools" / "i18n_lint.py")},
         "path_constants": path_constants,
+        "declared_vs_mounted": declared,
         "public_paths": sorted(set(public_paths)),
         "routes": routes,
         "verbs_by_path": {path: sorted({r["verb"] for r in routes if r["path"] == path})
@@ -637,6 +733,14 @@ def main(argv: list[str] | None = None) -> int:
                  f"{len(contract['path_constants'])} 个 API_PATH 常量，"
                  f"公开路径 {len(contract['public_paths'])} 条，"
                  f"显式 405 组 {len(contract['method_not_allowed'])} 组")
+    declared = contract["declared_vs_mounted"]
+    if declared["unmounted"]:
+        problems.append(f"声明了常量但没有任何分发分支接住的路径：{declared['unmounted']}")
+        lines.append(f"{NG} 声明 vs 挂载 —— {declared['mounted']}/{declared['declared']} 个常量挂载，"
+                     f"未挂载：{declared['unmounted']}")
+    else:
+        lines.append(f"{OK} 声明 vs 挂载 —— {declared['declared']} 个 API_PATH 常量"
+                     f"全部接进分发（声明即挂载）")
     lines.append(f"{OK} 权限矩阵 —— {len(contract['role_permissions'])} 个角色 / "
                  f"{len(contract['matrix_abilities'])} 个能力（路由用到 "
                  f"{len(contract['abilities'])} 个）：" +

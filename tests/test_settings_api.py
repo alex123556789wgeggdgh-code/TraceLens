@@ -39,11 +39,14 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+if str(ROOT / "tests") not in sys.path:   # 裸 `python -m unittest tests.<模块>` 时也能 import scratch
+    sys.path.insert(0, str(ROOT / "tests"))
 
 from agent_explainer import audit as au                      # noqa: E402
 from agent_explainer import auth as au_auth                  # noqa: E402
 from agent_explainer import explanations as ex               # noqa: E402
 from agent_explainer import server as sv                     # noqa: E402
+import http_fixture as fx                                     # noqa: E402  连接加固（tests/http_fixture.py）
 from agent_explainer import settings as st                   # noqa: E402
 
 PKG = ROOT / "agent_explainer"
@@ -110,8 +113,10 @@ def llm_of(data: object) -> dict:
 def http_request(host: str, port: int, method: str, path: str, body=None,
                  extra_headers: dict | None = None,
                  timeout: float = 8.0) -> tuple[int, dict, object]:
-    conn = http.client.HTTPConnection(host, port, timeout=timeout)
-    try:
+    # M2-PRE 4（PM-VERDICT-R1-9 裁决②）：连接生命周期交给 tests/http_fixture——
+    # 端口就绪等待 + 连接级瞬态一次性重试；POST/PUT/PATCH/DELETE 这类非幂等动词
+    # 绝不重放（服务端可能已写入），断言级失败绝不重试。请求与解析口径一行不改。
+    def once(conn: http.client.HTTPConnection) -> tuple[int, dict, object]:
         payload = body
         if isinstance(payload, (dict, list)):
             payload = json.dumps(payload, ensure_ascii=False)
@@ -131,8 +136,8 @@ def http_request(host: str, port: int, method: str, path: str, body=None,
             except (UnicodeDecodeError, json.JSONDecodeError):
                 pass
         return resp.status, {k.lower(): v for k, v in resp.getheaders()}, data
-    finally:
-        conn.close()
+
+    return fx.with_connection(host, port, once, verb=method, path=path, timeout=timeout)
 
 
 def good_transport(payload: dict) -> dict:

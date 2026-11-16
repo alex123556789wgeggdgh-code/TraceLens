@@ -25,6 +25,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
 const { startSidecar } = require('./sidecar.js');
+const { createUpdater } = require('./updater.js');
 
 const SELF_CHECK = process.argv.includes('--selfcheck')
   || process.env.TRACELENS_SELFCHECK === '1';
@@ -86,7 +87,29 @@ const state = {
   starting: true,
   lastError: null,
   logs: [],
+  updater: null,
+  rollbackTried: false,
 };
+
+/**
+ * 更新引擎（惰性创建：需要 `app.getPath('userData')`，且测试/自检模式不该碰它）。
+ *
+ * 宿主能力当前固定 `['web']`：界面层可以热更；Python 业务包要热更，需要
+ * `tools/build_sidecar.py --external-runtime` 产出的 sidecar（见 docs/21 §2）。
+ * 这里如实声明能力，**不虚报 'runtime'** —— 虚报的后果是管理端推了一个
+ * 需要 runtime 的包，装上去只更新了界面，功能半残。
+ */
+function updater() {
+  if (!state.updater) {
+    state.updater = createUpdater({
+      userDataDir: app.getPath('userData'),
+      appVersion: app.getVersion(),
+      capabilities: ['web'],
+      log: (line) => log(line),
+    });
+  }
+  return state.updater;
+}
 
 function log(line) {
   state.logs.push(String(line));
@@ -114,6 +137,15 @@ function buildMenu() {
     {
       label: '帮助',
       submenu: [{
+        label: '检查更新…',
+        click() {
+          // 不在主进程弹窗做完整交互：更新面板在界面里（有校验过程、有回滚入口、
+          // 有"需要重启"的明确提示）。菜单只负责把用户送过去。
+          if (state.win) {
+            state.win.webContents.send('tracelens:open-update');
+          }
+        },
+      }, {
         label: `关于 TraceLens ${app.getVersion()}`,
         click() {
           const info = state.sidecar ? state.sidecar.bootstrap : null;
@@ -239,9 +271,45 @@ async function runSelfCheck(win, started) {
   app.exit(ok ? 0 : 1);
 }
 
+/**
+ * 更新失败时回退到上一版并重启一次。返回 true 表示"已经回退，调用方应重新 boot"。
+ *
+ * 只回退一次（`state.rollbackTried`）：如果旧版也起不来，说明问题不在这次更新，
+ * 再退就是无限重启。这种情况老老实实弹错误框，比假装能自愈有用。
+ */
+function attemptRollback(reason) {
+  if (state.rollbackTried) {
+    return false;
+  }
+  let plan;
+  try {
+    plan = updater().planRollback(reason);
+  } catch (err) {
+    log(`回退判定失败：${err && err.message}`);
+    return false;
+  }
+  if (!plan.needed) {
+    log(`不回退：${plan.reason}`);
+    return false;
+  }
+  const res = updater().applyRollback(plan);
+  if (!res.ok) {
+    log(`回退失败：${res.reason}`);
+    return false;
+  }
+  state.rollbackTried = true;
+  log(`已回退到 ${plan.to}（原 ${plan.from}，原因 ${reason}）—— 用旧版重启一次`);
+  return true;
+}
+
 async function boot() {
   const dir = ensureDataDir();
   const started = { at: performance.now() };
+  const active = updater().activeDirs();
+  if (active.version) {
+    log(`界面版本 ${active.version}${active.pendingConfirm ? '（待确认）' : ''}`
+      + `${active.webDir ? '' : ' · 版本目录不完整，本次用内置界面'}`);
+  }
   try {
     const sidecar = await startSidecar({
       packaged: app.isPackaged,
@@ -249,6 +317,10 @@ async function boot() {
       cwd: path.join(__dirname, '..'),
       dataDir: dir,
       featuresDir: featuresDir(),
+      // 更新通道（0.6.0）：把"已激活版本"的目录交给 sidecar。
+      // 两者都为 null 时行为与之前完全一致（用 exe 内置资源）。
+      webDir: active.webDir || null,
+      runtimeDir: active.runtimeDir || null,
       mode: FLAGS.mode || process.env.TRACELENS_MODE || 'local',
       demo: FLAGS.demo || process.env.TRACELENS_DEMO || 'zh',
       port: (FLAGS.port || process.env.TRACELENS_PORT)
@@ -270,6 +342,13 @@ async function boot() {
           app.exit(1);
           return;
         }
+        // 若退出发生在"新版待确认"期间，这次更新算失败，回退到上一版再来一次。
+        // 已确认过的版本退出属于运行期问题，`planRollback` 会拒掉（already_confirmed）。
+        if (attemptRollback(`sidecar_exited: code=${info.code}`)) {
+          state.starting = true;
+          boot();
+          return;
+        }
         dialog.showErrorBox('TraceLens 起不来', `${state.lastError}\n\n`
           + '最后几行输出：\n' + state.logs.slice(-15).join('\n'));
         app.quit();
@@ -279,6 +358,16 @@ async function boot() {
     buildMenu();
     win.webContents.once('did-finish-load', () => {
       log(`界面已加载：${sidecar.bootstrap.url}`);
+      // 走到这里说明"新版真的能起来"：把待确认标记清掉，这个版本从此算稳定版。
+      // 放在 did-finish-load 而不是"进程起来了"——进程活着但界面白屏不算成功。
+      try {
+        const confirmed = updater().confirmHealthy();
+        if (confirmed.changed) {
+          log(`版本 ${confirmed.version} 已确认可用`);
+        }
+      } catch (err) {
+        log(`确认版本失败（不影响使用）：${err && err.message}`);
+      }
       if (SELF_CHECK) {
         runSelfCheck(win, started);
       }
@@ -306,6 +395,11 @@ async function boot() {
       app.exit(1);
       return;
     }
+    if (attemptRollback(`startup_failed: ${reason}`)) {
+      state.starting = true;
+      boot();
+      return;
+    }
     dialog.showErrorBox('TraceLens 起不来', reason);
     app.quit();
   }
@@ -331,6 +425,75 @@ ipcMain.handle('tracelens:status', async () => {
   return fetchHealth(state.sidecar.bootstrap.port);
 });
 ipcMain.handle('tracelens:logs', () => state.logs.slice(-200));
+
+// -- IPC：更新通道（0.6.0） ------------------------------------------------ #
+// 口径：渲染端**不能**自己指定更新源。源只能来自用户显式写进 config.json 的地址，
+// 渲染端只负责"点检查/点安装"。否则任何能跑 JS 的面（比如被注入的页面）都能把
+// 应用指向任意地址下载代码执行——那等于把更新通道变成后门。
+const UPDATE_CONFIG_KEYS = new Set(['source', 'autoCheck', 'channel']);
+
+ipcMain.handle('tracelens:update-status', () => updater().status());
+
+ipcMain.handle('tracelens:update-check', async () => updater().check());
+
+ipcMain.handle('tracelens:update-install', async (_event, options) => {
+  const opts = options && typeof options === 'object' ? options : {};
+  const request = {};
+  if (opts.allowDowngrade === true) {
+    request.allowDowngrade = true;
+  }
+  if (typeof opts.version === 'string' && /^v?\d+\.\d+(\.\d+)?(-[0-9A-Za-z.-]+)?$/.test(opts.version)) {
+    request.version = opts.version;
+  }
+  // 不传 source：一律用 config.json 里配置的那个
+  return updater().install(request);
+});
+
+ipcMain.handle('tracelens:update-config', (_event, patch) => {
+  if (!patch || typeof patch !== 'object') {
+    return updater().readConfig();
+  }
+  const clean = {};
+  for (const key of Object.keys(patch)) {
+    if (!UPDATE_CONFIG_KEYS.has(key)) {
+      continue;
+    }
+    if (key === 'source') {
+      if (patch.source === null || patch.source === '') {
+        clean.source = null;
+      } else if (typeof patch.source === 'string' && patch.source.length <= 512) {
+        const parsed = updater().parseSource(patch.source);
+        if (parsed.kind === 'file' || parsed.kind === 'http') {
+          clean.source = patch.source.trim();
+        }
+      }
+    } else if (key === 'autoCheck') {
+      clean.autoCheck = patch.autoCheck === true;
+    } else if (key === 'channel' && (patch.channel === 'stable' || patch.channel === 'beta')) {
+      clean.channel = patch.channel;
+    }
+  }
+  return updater().writeConfig(clean);
+});
+
+ipcMain.handle('tracelens:update-rollback', (_event, options) => {
+  const opts = options && typeof options === 'object' ? options : {};
+  const to = typeof opts.to === 'string' ? opts.to : undefined;
+  return updater().rollback({ to });
+});
+
+/** 安装完成后重启：relaunch + exit 是 Electron 的标准做法（不新起第二个实例）。 */
+ipcMain.handle('tracelens:update-restart', () => {
+  state.quitting = true;
+  if (state.sidecar) {
+    state.sidecar.stop();
+    state.sidecar = null;
+  }
+  app.relaunch();
+  app.exit(0);
+  return true;
+});
+
 ipcMain.handle('tracelens:quit', () => {
   state.quitting = true;
   app.quit();

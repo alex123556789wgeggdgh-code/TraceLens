@@ -1,0 +1,24 @@
+{
+  "export": {
+    "anchor.state": "存证降级态：anchor_state = unavailable（未接入锚定后端，待接入）",
+    "anchor.cid": "离线 CID 由导出字节可复算，但未锚定（no anchor）：本机无 IPFS pinning、无链上交易",
+    "anchor.tx": "eth_tx_hash 恒为 None：该值不存在，不是「待填」",
+    "anchor.deferred": "B8-3「上链 ≤2 分钟」延后而非删除：提供 RPC / 密钥后启用，届时仍是验收项",
+    "format.current": "导出格式：csv / pdf / 可打印 html（点哪个按钮就是哪种格式）",
+    "range.label": "本次导出范围：{value}",
+    "range.all_time": "全部时间",
+    "range.limit": "条数上限 {value}",
+    "range.note": "范围继承审计筛选，本面板只读展示，不改写筛选条件",
+    "progress.busy": "正在导出，请稍候",
+    "progress.aria": "正在导出",
+    "result.title": "导出结果",
+    "result.format": "格式 {value}",
+    "result.rows": "行数 {value}",
+    "result.sha": "内容指纹 sha256：{value}",
+    "result.file": "文件名 {value}",
+    "result.fallback": "PDF 不可用，已退回可打印 HTML（{value}）",
+    "result.verify": "离线验证：python tools/verify_export.py <导出文件>，逐字节复算链与列面",
+    "result.anchored": "该文件未锚定（no anchor）/ 待接入：eth_tx_hash 不存在，本机没有链上交易",
+    "result.empty": "本次会话还没有导出结果"
+  }
+}

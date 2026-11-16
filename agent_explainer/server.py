@@ -94,18 +94,28 @@ import sys
 import tempfile
 import threading
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from .explanations import ExplanationError, make_generator, render_human_readable
+from . import analytics as analytics_mod
 from . import audit as audit_mod
 from . import auth as auth_mod
+from . import compliance as compliance_mod
+from . import confidence as confidence_mod
+from . import evidence as evidence_mod
+from . import evidence_wiring as evidence_wiring_mod
+from . import groups as groups_mod
 from . import ingest as ingest_mod
+from . import intervention_history as ih_mod
+from . import rollback as rollback_mod
 from . import secretariat as sec_mod
 from . import settings as settings_mod
+from . import sharing as sharing_mod
 from . import store as store_mod
+from . import suggestions as suggestions_mod
 from . import trace_adapter as ta_mod
 from .feature_store import FeaturePaths
 
@@ -234,52 +244,68 @@ API_PATH_SECRETARIAT_SEAL = "/api/secretariat/seal"              # T10
 API_PATH_ROLLBACK = "/api/rollback"                              # T11
 API_PATH_ROLLBACK_PLAN = "/api/rollback/plan"                    # T12
 API_PATH_EVIDENCE = "/api/evidence"                              # T14（+ /{id}/file = T15、/feedback = T16）
-API_PATH_GROUPS = "/api/groups"                                  # T18（+ /{id} = T19、/close = T20、/share = T21）
+API_PATH_GROUPS = "/api/groups"                                  # T18（+ /{id} = T19、/share = T21 已挂载；/close 解析得到但**无 POST 分支**，实测落 ROUTE_NOT_FOUND=404，登记见 docs/07 §11.22）
 API_PATH_SHARES = "/api/shares"                                  # T22（+ /{id}/revoke = T23）
 API_PATH_SHARES_ACCEPT = "/api/shares/accept"                    # T24
 API_PATH_SHARES_PERMISSIONS = "/api/shares/permissions"          # T25
+# ---- R5-1（REQ-005 B5-1）：分享链接化的对外形状常量 -----------------------------
+# 落地页归 R5-4；本轮 `invite_url` 只是**后端拼好的字符串模板**（铁律 6：前端零改动）。
+SHARE_LANDING_PATH = "/share.html"                # 分享落地页（R5-4 已交付：web/share.html）
+SHARE_TOKEN_FRAGMENT = "token"                    # 明文 token 承载在 #fragment，不进 ?query
+#: 「与我共享 / 我发出的」列表逐条对外字段（R5-1 白名单投影，见 `share_list_row`）。
+#: 口径来源：docs/07 §4.9 T22 + 任务契约 §2.2；派生状态（含 ``expired``）由
+#: ``sharing.ShareService.expired()/_status_of()`` 负责，响应层零判断。
+SHARE_ROW_FIELDS = ("invite_id", "group_id", "permission", "status",
+                    "created_at", "expires_at", "inviter", "invitee")
+#: 明文 token 的可打印形状（`sharing.TOKEN_PREFIX` + 十六进制）；只用于**防御性校验**：
+#: 拼链接的入参必须是服务端自己发出来的那串，不接受带 `#` `?` `/` 空白的"token"，
+#: 免得拼出来的链接被截断或指向别处。真实校验在 `sharing._find_by_token`。
+_TOKEN_SHAPE = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+
+# ---- R5-3（REQ-005 B5-2）：写路径的协作鉴权矩阵 ----------------------------------
+# 口径来源：REQ-005 核心逻辑 1（view 只读不可干预 / approve 可审批不可改参数 /
+# manage 可审批+改参数+回滚+再分享）与 docs/07 §4.9 的权限级语义。
+# **不发明新权限级**：三级就是 `sharing.PERMISSIONS`，等级比较只走 `sharing.can()`。
+#: 干预决定 → 需要的分享权限级：`approve`/`reject` 是"审批待确认步骤"（approve 级），
+#: `modify` 是"改参数"（manage 级）。未列出的决定值按最严的那条兜住。
+COLLAB_PERMISSION_FOR_DECISION = {"approve": "approve", "reject": "approve",
+                                  "modify": "manage"}
+#: 撤销（回滚）：REQ-005 功能五把"回滚"划给 manage，approve 级不够。
+COLLAB_PERMISSION_FOR_ROLLBACK = "manage"
+#: 再分享（T21）：只有 manage 能把访问权转手给别人 —— view/approve 转手就是越权扩散。
+COLLAB_PERMISSION_FOR_SHARE = "manage"
+#: 闸门拒绝用的稳定机器码：**复用** `sharing` 已有的 `SHARE_FORBIDDEN`（403），
+#: 不新增错误码 → 错误表与 i18n 键面零增长（`tools/i18n_lint.py` 门禁不破）。
+COLLAB_DENIAL_CODE = "SHARE_FORBIDDEN"
+#: 认定书取协作事件的窗口上限（T7 接线 / PM-VERDICT-R5-2 §3.2）：只读最近 N 条，
+#: 账本更长时把"窗口未取全"登记进认定书 `verification.problems`（分页能力列 backlog）。
+LETTER_COLLAB_EVENTS_LIMIT = 500
+API_PATH_ANALYTICS = "/api/analytics"                          # 族根（前端 ext 门 PREFIX，只对它说 405）
 API_PATH_ANALYTICS_DASHBOARD = "/api/analytics/dashboard"        # T26
 API_PATH_ANALYTICS_EXPORT = "/api/analytics/export"              # T27（文件字节流）
 API_PATH_SUGGESTIONS = "/api/suggestions"                        # T28（+ /{id}/accept = T29、/dismiss = T30）
 API_PATH_PREFERENCES = "/api/preferences"                        # T31
 API_PATH_COMPLIANCE_EXPORTS = "/api/compliance/exports"          # T32（+ /{id} = T34 … T37）
 API_PATH_COMPLIANCE_EXPORT = "/api/compliance/export"            # T33
-#: 扩展数据的子目录名：`<data-dir>/features`（docs/07 §3.3 的默认根）
-EXPANSION_FEATURE_DIR = "features"
-#: 九个扩展子系统（模块名 = `agent_explainer/<name>.py`，docs/07 §4）
-EXPANSION_SUBSYSTEMS: tuple[str, ...] = (
-    "secretariat", "rollback", "confidence", "evidence", "groups", "sharing",
-    "analytics", "suggestions", "compliance",
-)
-#: 模块版本常量（写进 `/health` 的 `expansion` 块，T38）
-EXPANSION_VERSION_ATTR: dict[str, str] = {
-    "secretariat": "SECRETARIAT_VERSION", "rollback": "ROLLBACK_VERSION",
-    "confidence": "CONFIDENCE_VERSION", "evidence": "EVIDENCE_VERSION",
-    "groups": "GROUPS_VERSION", "sharing": "SHARING_VERSION",
-    "analytics": "ANALYTICS_VERSION", "suggestions": "SUGGESTIONS_VERSION",
-    "compliance": "COMPLIANCE_VERSION",
-}
-#: 5.0 新增的**可选**记录字段：导入/上报只允许这些字段从入参合并进来。
-#: 与 4.4 的 `MERGE_FIELDS` 是叠加关系（那份白名单在 ingest.py，不归本次改动）。
-#: 现状：合并器尚未实现（两张名单目前是声明，见 tests/test_merge_fields.py 的守卫断言）；
-#: 谁实现 5.0 字段合并，就必须同时消费本名单与 `EXPANSION_PROTECTED_FIELDS`。
-EXPANSION_MERGE_FIELDS: tuple[str, ...] = (
-    "group_id", "shared_users", "multimedia_evidence", "causal_explanation",
-    "rollback_ref", "rollback_state", "improvement_suggestion", "evidence_feedback",
-    "confidence_source",
-)
-#: 这些字段永不从入参合并：决定语义（决定 ≠ 生效）、来源归因、演示标记、签名材料。
-#: 签名覆盖整条记录，所以导入方带 `signature` 进来只会造出一条验不过的假签名。
-#: `intervention_history` 也在这里：干预必须每次独立成条 signed 记录，入参可伪造的
-#: 「干预历史」一旦被 Agent 签进记录，等于替伪造的责任链背书（见 docs/07 §3.2）。
-EXPANSION_PROTECTED_FIELDS: tuple[str, ...] = (
-    "user_intervention", "intervention_options", "human_readable", "source",
-    "demo_data", "synthetic", "policy", "signature", "entry_hash", "prev_hash",
-    "agent_pubkey", "approval", "tsa_timestamp", "input_hash", "output_hash",
-    "execution_receipt", "intervention_history",
-    # `human_owner` / `delegation_chain` 由 secretariat 按身份记录填（责任链的链根是真人）。
-    # 入参若自带这两个字段，等于让导入方给别人派责任：必须禁止合并。
-    "human_owner", "delegation_chain",
+# 5.1 注：这里原有一组零使用的 EXPANSION_* 常量（FEATURE_DIR / SUBSYSTEMS /
+# VERSION_ATTR），只在文档里"声明"、代码从未消费——正是"声明 ≠ 挂载"的另一种
+# 形态，已删（5.1 t-契约门禁）。扩展数据根的落点见 feature_store.FeaturePaths。
+#: 5.0 扩展字段的合并契约（需求原文，docs/07 §3.1）：
+#: - `EXPANSION_MERGE_FIELDS`：导入/上报只允许这些 5.0 可选字段从入参合并进来，
+#:   与 4.4 的 `MERGE_FIELDS` 是**叠加**关系（那份白名单在 ingest.py）。
+#: - `EXPANSION_PROTECTED_FIELDS`：这些字段永不从入参合并（决定语义、来源归因、
+#:   演示标记、签名材料、干预历史、责任链），由服务端写入。
+#: 现状（S0-2 已实现，不再是"声明 ≠ 挂载"）：两张名单的权威定义住在 `ingest.py`
+#: （与 4.4 的两张名单同一模块），消费方是 `ingest.merge_facts_full()`——
+#: 本文件的导入路径（`import_traces`）与 ingest 的上报路径（`IngestBroker`）
+#: 调同一份实现：先 4.4 白名单、再 5.0 白名单叠加合并，受保护字段在合并层剥离，
+#: 合并产物再交给 `sign_on_write_record` 签名（合并发生在签名之前）。
+#: 名单只有一份：这里是按原名 re-export，`server.EXPANSION_MERGE_FIELDS` 与
+#: `ingest.EXPANSION_MERGE_FIELDS` 是同一个对象（`tests/test_merge_fields.py` 钉这一点）。
+#: 入参校验层的闸门保持不变：`ADAPTER_OUTPUT_INVALID` / `INTERVENE_FIELD_UNKNOWN`。
+from .ingest import (  # noqa: F401  （re-export：保持 server.<name> 可解析）
+    EXPANSION_MERGE_FIELDS,
+    EXPANSION_PROTECTED_FIELDS,
 )
 #: 4.9 记录持久化：默认数据目录（`var/records.jsonl`），产品入口给这个默认值
 DEFAULT_RECORDS_STORE_SUBPATH = "records.jsonl"
@@ -313,6 +339,12 @@ RECEIPT_STATE_UNREPORTED = "unreported"
 
 LOCAL_ACTOR_ID = "local-user"
 LOCAL_ACTOR_ROLE = "local"
+#: R5-4（PM-VERDICT-R5-3 §3.1 收紧 T21 发起分享）：组长事实与 local 免登录口径的别名表。
+#: `groups.py` 写的是 `created_by = _text(actor) or "local"`，而 local 免登录的操作者 id
+#: 是 `local-user`（`_actor_id_of`）—— 同一台机器、同一个免登录身份的**两个口径**
+#: （`operator_ids` 收这对口径是先例：决定段走 username、协作层走 user_id）。
+#: 所以"组长本人"在 local 模式下必须同时认这两个写法，否则免登录单机发邀请会被自己挡死。
+GROUP_LEADER_LOCAL_ALIASES: tuple[str, ...] = ("local", LOCAL_ACTOR_ID)
 #: 03 §权限矩阵里 local 角色具备的能力（写进 /health，便于界面显示"谁能做什么"）
 LOCAL_CAPABILITIES = ("read_records", "decide", "audit_read")
 
@@ -522,6 +554,14 @@ ALLOWED_INTERVENE_FIELDS: tuple[str, ...] = (
     "action_id", "decision", "modified_params", "reason", "option_id", "idempotency_key",
 )
 
+#: `POST /api/rollback` 允许的顶层字段（R1-2b / G-31，口径逐字对照上面那份名单）：
+#: 撤销范围由服务端从依赖图算出，`actor` / 时间 / 签名 / 审计一律服务端写，
+#: 客户端自称的 `rollback_state`、`rollback_ref`、签名材料都进不来（白名单闸门 +
+#: ingest.EXPANSION_PROTECTED_FIELDS 双保险）。
+ALLOWED_ROLLBACK_FIELDS: tuple[str, ...] = (
+    "action_id", "reason", "confirm_all", "idempotency_key",
+)
+
 # ---- 5.0 扩展域错误码（docs/07 §7）：HTTP 映射 = 字段/参数 400、不存在 404、
 # 状态冲突（已回滚/已判定/已过期）409、越权 403、体积 413、存储失败 500、缺件 503。
 # 码名是契约（§4 的模块异常里原样带出来），所以服务端只做**翻译**，不重命名。
@@ -575,6 +615,20 @@ EXPANSION_ERROR_TABLE: "OrderedDict[str, tuple[int, str]]" = OrderedDict(
          "The inverse operation failed; the journal records what was attempted."),
         ("ROLLBACK_FIELD_INVALID", HTTPStatus.BAD_REQUEST,
          "A rollback field is missing or has the wrong type."),
+        # R1-2b 接线（G-19 / TP-19）：闭包成员撤销不掉 = 状态冲突，不是 500。
+        # 码名由 rollback.BLOCKER_DEPENDENTS_IRREVERSIBLE 原样带出，服务端只翻译不重命名。
+        ("ROLLBACK_DEPENDENTS_IRREVERSIBLE", HTTPStatus.CONFLICT,
+         "Dependent steps in the closure have no inverse operation; only the reversible "
+         "members can be rolled back (confirm_all=true rolls just those)."),
+        # R1-2b 接线（G-26 / TP-26）：撤销日志读不动 → 回滚状态未知，服务暂不可用。
+        # 绝不让它漏成 500 FEATURE_STORE_READ_FAILED：那等于把内部存储码当对外契约。
+        ("ROLLBACK_JOURNAL_UNREADABLE", HTTPStatus.SERVICE_UNAVAILABLE,
+         "The undo journal cannot be read, so rollback state is unknown; nothing was "
+         "planned or executed."),
+        # 幂等键口径同 /intervene（INTERVENE_IDEMPOTENCY_MISMATCH）：同一个 key 指向
+        # 另一个 action_id = 客户端把 key 用错了，409 且零写入。
+        ("ROLLBACK_IDEMPOTENCY_MISMATCH", HTTPStatus.CONFLICT,
+         "That idempotency key was already used for a different action_id."),
         # -- evidence（多模态证据）--
         ("EVIDENCE_KIND_INVALID", HTTPStatus.BAD_REQUEST,
          "kind must be one of screenshot, diagram or diff."),
@@ -1594,6 +1648,236 @@ def default_ingest_token_path(mode: str = MODE_LOCAL) -> pathlib.Path:
 
 
 # --------------------------------------------------------------------------- #
+# 回滚的读时派生视图（R1-2b / D-α + G-20；docs/07 §11.2 的门禁口径）
+# --------------------------------------------------------------------------- #
+
+#: 一次 `/api/records` 最多为多少条记录算一次"可回滚性"。计划是逐条闭包遍历，
+#: 记录多了就是 O(N²)；超上限就如实标 `complete=false`，界面照实说"这一批只核了
+#: 前 N 条"，绝不对整批宣称"全部可回滚"。
+ROLLBACK_VIEW_PLAN_MAX = 200
+
+ROLLBACK_STATE_ROLLED_BACK = "rolled_back"
+ROLLBACK_STATE_BLOCKED = "rollback_blocked"
+
+
+def derive_rollback_view(
+        records: Sequence[Mapping[str, Any]],
+        journal_rows: Sequence[Mapping[str, Any]] | None = None,
+        journal_facts: Mapping[str, Any] | None = None, *,
+        plan_limit: int = ROLLBACK_VIEW_PLAN_MAX) -> dict[str, Any]:
+    """**就地**给读侧视图行挂 ``rollback_state``，并返回 ``meta.rollback_view`` 事实块。
+
+    三条边界（铁律 1 / 裁决 D-α / docs/07 §11.2 的门禁）：
+
+    * 派生值只活在响应里：存储里的记录永远没有 ``rollback_state``/``next_ref``
+      ——已签名记录改一个字段 ``entry_hash`` 复算就失效，所以"已回滚"只能读时算，
+      调用方给的必须是读侧副本（``assemble_intervention_history`` 已深拷一层）；
+    * ``next_ref``（正向指针）由 ``action_type='rollback'`` + ``rollback_ref`` **反查**
+      得出。它不进 schema（根 ``additionalProperties:false`` 会拒自造字段）、
+      不进 api_contract 持久契约、不改 verify，所以挂在 ``meta.rollback_view.links``，
+      **不塞进记录行**；
+    * ``rollback_state="rollback_blocked"`` 就是 G-20 要的那个枚举值的唯一生产者：
+      计划里有 blocker（目标没有逆向动作 / 闭包成员撤销不掉）就是 blocked，不落盘；
+    * 来源自己声明了 ``rollback_state``（导入的 5.0 扩展字段）时**以来源为准**，派生只
+      填没说的空位，被让位的行如实列在 ``kept_declared``——与 W-03"事实以来源为准"同源。
+
+    撤销日志读不动（``journal_facts.ok=false``）时**不派生"可回滚/被阻断"**：
+    把不确定性如实摆在 ``journal`` 块里，界面据此收起回滚入口（rollback.py 的界面纪律：
+    读不动时不得显示『可回滚』）。
+    """
+    rows = [row for row in (records or []) if isinstance(row, Mapping)]
+    # 反查：谁被回滚了 → 指向那条回滚记录（多条时取时间最早的一条，正向指针只有一个）
+    links: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if str(row.get("action_type") or "") != "rollback":
+            continue
+        target = str(row.get("rollback_ref") or "")
+        own = str(row.get("id") or "")
+        if not target or not own:
+            continue
+        stamp = str(row.get("timestamp") or "")
+        known = links.get(target)
+        if known is None or (stamp, own) < (known["rolled_back_at"], known["next_ref"]):
+            links[target] = {"action_id": target, "next_ref": own, "rolled_back_at": stamp}
+    # 撤销日志在案的 id：目标 + 参与闭包的成员（成员没有自己的回滚记录，只能从这里派生）
+    # R1-4（G-15）：只有**已落终态且成功**的条目才算"在案"。``failed``（逆向动作失败、
+    # 没造成副作用）与 ``pending``（终态未落、结果未知）都绝不派生成"已回滚"——
+    # 失败目标仍可再回滚，pending 目标由 ``journal`` 块里的未解条目提示人工核对。
+    # R1-4 之前的历史行没有 ``phase`` → 缺省按成功读，派生行为与 R1-3 逐字一致。
+    logged: set[str] = set()
+    for entry in (journal_rows or []):
+        if not rollback_mod.journal_settled_success(entry):
+            continue
+        head = str(entry.get("action_id") or "")
+        if head:
+            logged.add(head)
+        for item in entry.get("affected") or []:
+            if isinstance(item, str) and item:
+                logged.add(item)
+    rolled_back = set(links) | logged
+    journal_ok = bool((journal_facts or {}).get("ok", True))
+    blocked: list[dict[str, Any]] = []
+    planned = 0
+    complete = True
+    kept: list[str] = []
+
+    def _state(row: dict[str, Any], value: str) -> None:
+        """来源自己声明的 ``rollback_state`` 一律以来源为准（与 W-03 同一口径）：
+        派生只填"来源没说"的空位，绝不把导入方声明的字面值改写成产品判定。
+        派生判定始终如实摆在 ``rolled_back`` / ``blocked`` 两个列表里，界面不缺信息。"""
+        declared = row.get("rollback_state")
+        if isinstance(declared, str) and declared.strip():
+            kept.append(str(row.get("id") or ""))
+            return
+        row["rollback_state"] = value
+
+    for row in rows:
+        key = str(row.get("id") or "")
+        if not key or str(row.get("action_type") or "") == "rollback":
+            continue                        # 补偿记录自己不在任何闭包里（D-closure）
+        if key in rolled_back:
+            _state(row, ROLLBACK_STATE_ROLLED_BACK)
+            continue
+        if not journal_ok:
+            continue                        # 日志读不动：不派生状态，只交事实
+        if planned >= plan_limit:
+            complete = False
+            continue
+        planned += 1
+        try:
+            verdict = rollback_mod.plan(rows, key, rolled_back_ids=logged)
+        except rollback_mod.RollbackError:
+            continue                        # 单条算不动不影响整批：如实少报
+        codes = [str(b.get("code") or "") for b in (verdict.get("blockers") or [])
+                 if isinstance(b, Mapping)]
+        if rollback_mod.BLOCKER_ALREADY_ROLLED_BACK in codes:
+            # 历史行里自带 rollback_state=rolled_back（α 之前的老数据）：读侧认账
+            rolled_back.add(key)
+            _state(row, ROLLBACK_STATE_ROLLED_BACK)
+            continue
+        if codes:
+            _state(row, ROLLBACK_STATE_BLOCKED)
+            members: list[str] = []
+            for blocker in verdict.get("blockers") or []:
+                if isinstance(blocker, Mapping):
+                    members.extend(str(m) for m in (blocker.get("members") or []))
+            blocked.append({"action_id": key, "codes": codes,
+                            "members": sorted(set(members)),
+                            "reason": str((verdict.get("blockers") or [{}])[0].get("reason")
+                                          or "")})
+    return {
+        "derived_at_read_time": True,
+        "journal": dict(journal_facts or {}),
+        "complete": bool(complete),
+        "planned": planned,
+        "plan_limit": int(plan_limit),
+        "rolled_back": sorted(rolled_back),
+        "links": [links[key] for key in sorted(links)],
+        "blocked": blocked,
+        "kept_declared": sorted(set(kept)),
+        "note": "rollback_state / next_ref 都是读时派生：不落盘、不进 schema、"
+                "不进 api_contract（docs/07 §11.2 门禁）；来源自己声明的 "
+                "rollback_state 以来源为准（W-03 同口径），列在 kept_declared 里；"
+                "R1-4（G-15）：只有已落终态且成功（phase=succeeded，含历史行缺省）的"
+                "撤销日志条目参与派生，failed/pending 绝不派生『已回滚』",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# 5.0（R4-1）`/api/groups` 响应层的**只读派生别名**：group_id / user_id / updated_at
+# --------------------------------------------------------------------------- #
+# 需求（`REQ-002-008-batch.md` §REQ-004 数据模型）写的 `TaskGroup` 是
+# `{group_id, user_id, title, status, created_at, updated_at}`；落盘的账本实体是
+# `groups.py:GroupService.create` 写的
+# `{id, title, objective, created_at, status, agent_ids, closed_at, created_by[, closed_by]}`。
+# `PM-PLAN-REQ-001-008.md` §6.1 的冲突口径是**账本实体不改**：零迁移、零回填、零新路由，
+# 三个名字只在**响应层**派生（只读、不落盘），与 R1-4 的 `next_ref` / `rollback_state`
+# 同一纪律（docs/07 §11.2 门禁：读时派生不进持久契约、不进 schema）。
+#
+# 三条别名的取法写死在这里，界面与验收都按这个读，不许各自解释：
+#
+# * `group_id`   = `id`（组主键的别名。它**不是**第二套归属事实：记录侧归属的唯一事实源
+#   仍是 `record["group_id"]`，见 groups.py 文件头；这里派生的是**组自己**的 id 别名。）
+# * `user_id`    = `created_by`（**建组那一刻**写进账本的操作者，R5-4 的「组长本人」用的
+#   就是这个事实；不是会话 id、不是「当前登录者」、更不是界面自己填的名字。）
+# * `updated_at` = `closed_at`（已关闭 → 账本里真实的关闭时间）
+#                  组内最后事件时间（未关闭 → 组内记录里**可解析** timestamp 的最大值，
+#                  与 `GroupService.aggregate` 的 `window.ended_at` **同一个口径**：
+#                  同一个 `groups._as_datetime` + 同一个 `groups._stamp`，不写第二套时间解析）
+#                  `created_at`（组内一条可解析时间戳都没有时 → 回落到真实落盘事实，
+#                  **绝不用服务器当前时间冒充「刚刚更新过」**：0.4 不编造时间）
+#
+# 三种取法在响应里自报 `updated_at_basis`（`closed_at` / `last_event` / `created_at_fallback`），
+# 让人一眼看出这个数字是从哪儿来的 —— 展示纪律 0.4：别名 ≠ 账本已迁移。
+#
+# 别名**不进账本**（写路径 `create` / `close` 不经过这里，`groups.jsonl` 一字不改）、
+# **不进签名域**（签名域是记录侧 `SIGNATURE_FIELDS` 11 字段，任务组账本不参与签名）、
+# **不进 schema、不进 api_contract**（与 `next_ref` 同一门禁）。
+
+#: 响应层别名清单（顺序稳定，随响应自报：界面不必猜「哪些字段是派生的」）
+GROUP_ALIAS_FIELDS: tuple[str, ...] = ("group_id", "user_id", "updated_at")
+#: `updated_at` 的三种取法（自报口径，逐字随响应出去）
+UPDATED_AT_BASIS_CLOSED = "closed_at"
+UPDATED_AT_BASIS_LAST_EVENT = "last_event"
+UPDATED_AT_BASIS_CREATED = "created_at_fallback"
+#: T18 随响应带一句人话说明，免得「响应层别名」被读成「账本已迁移」（0.4）
+GROUP_ALIAS_NOTE = ("group_id / user_id / updated_at 是 /api/groups 响应层的只读派生别名"
+                    "（账本实体未改：id / created_by / closed_at；零迁移、零回填、零新路由）")
+
+
+def group_last_event_index(records: Iterable[Mapping[str, Any]]) -> dict[str, str]:
+    """每个 `group_id` 的「组内最后事件时间」= 组内记录里**可解析** timestamp 的最大值。
+
+    口径与 :meth:`groups.GroupService.aggregate` 的 `window.ended_at` 逐字一致：同一个
+    `groups._as_datetime` 解析（解析不了的不参与）、同一个 `groups._stamp` 序列化。
+    没有第二套时间解析 = 不会出现「聚合视图说 10:00、别名说 10:03」这种自相矛盾。
+
+    没有 `group_id` 的记录**不参与**（`groups.py` 文件头：不猜归属）；
+    返回的是纯派生索引，一个字节都不写盘。
+    """
+    latest: dict[str, _dt.datetime] = {}
+    for record in records or ():
+        if not isinstance(record, Mapping):
+            continue
+        key = groups_mod._text(record.get("group_id"))
+        if not key:
+            continue
+        moment = groups_mod._as_datetime(record.get("timestamp"))
+        if moment is None:
+            # 时间戳坏掉/缺失的记录不参与：算不出「最后事件」就不许编一个
+            continue
+        previous = latest.get(key)
+        if previous is None or moment > previous:
+            latest[key] = moment
+    return {key: groups_mod._stamp(moment) for key, moment in latest.items()}
+
+
+def group_alias_view(entity: Mapping[str, Any] | None, *,
+                     last_event: str = "") -> dict[str, Any]:
+    """任务组实体的**响应层只读别名视图**：加四个键，其余逐字透传，入参一个字节不改。
+
+    `last_event` 只用于**未关闭**的组（取自 :func:`group_last_event_index`，
+    T19 直接复用 `aggregate` 的 `window.ended_at`，同一个口径不重算）。
+    """
+    view = dict(entity or {})
+    view["group_id"] = view.get("id")
+    view["user_id"] = view.get("created_by")
+    closed = view.get("closed_at")
+    if closed:
+        view["updated_at"] = closed
+        view["updated_at_basis"] = UPDATED_AT_BASIS_CLOSED
+    elif str(last_event or "").strip():
+        view["updated_at"] = str(last_event).strip()
+        view["updated_at_basis"] = UPDATED_AT_BASIS_LAST_EVENT
+    else:
+        # 组内没有任何可解析的事件时间（刚建的组 / 记录全无时间戳）：
+        # 回落到 created_at（真实落盘事实）并如实标出取法，不用 now() 冒充「刚更新过」。
+        view["updated_at"] = view.get("created_at")
+        view["updated_at_basis"] = UPDATED_AT_BASIS_CREATED
+    return view
+
+
+# --------------------------------------------------------------------------- #
 # 服务层：/intervene + 记录 + 审计 + 健康
 # --------------------------------------------------------------------------- #
 
@@ -1634,6 +1918,35 @@ class InterveneService:
         self._lock = threading.RLock()
         self.requests = 0
         self.interventions = 0
+        # S0-1 干预历史：追加出去的独立签名干预记录条数 / 构造失败次数（如实计数，不静默）
+        self.intervention_records = 0
+        self.intervention_record_failures = 0
+        self.intervention_record_problem: dict[str, Any] | None = None
+        # R7-1（REQ-007 B7-1）自动化建议接线：消费掉的事件数 / 产出建议数 / 接线失败次数。
+        # 建议是分析面，绝不让 /intervene 变成 500，所以这里"如实计数 + 留证"，不静默吞。
+        self.suggestion_wiring_events = 0
+        self.suggestion_wiring_created = 0
+        self.suggestion_wiring_skips = 0
+        self.suggestion_wiring_failures = 0
+        self.suggestion_wiring_problem: dict[str, Any] | None = None
+        # R3-1（REQ-003 B3-1/B3-3）多模态证据生成接线：分母/分子台账的**唯一落点在
+        # `evidence_wiring.EvidenceWiring`**（attempts/successes/degraded/failures/skips），
+        # 这里只记"落账"这一侧：真的更新并落盘了几条记录、落账失败几次、失败长什么样。
+        # 范式沿用 S0-1 的 `intervention_records/_failures/_problem`（如实计数，不静默）。
+        self.evidence_wiring_records = 0
+        self.evidence_wiring_records_failed = 0
+        self.evidence_wiring_problem: dict[str, Any] | None = None
+        # R3-2（REQ-003 B3-2 前置）因果解释落账：生成侧台账在
+        # `evidence_wiring.causal_facts()`（attempts/generated/skips/failures/truncated），
+        # 这里只记"落账"这一格，分工与证据侧逐字一致。落账异常在两侧**各计一格**：
+        # 各自数的是"自己那一侧这次落账有没有成"，不是把同一次成功重复计两次。
+        self.causal_wiring_records = 0
+        self.causal_wiring_records_failed = 0
+        self._evidence_wiring: evidence_wiring_mod.EvidenceWiring | None = None
+        # R1-2b 回滚端点（G-1/G-2）：成功执行次数 / 真的落盘的回滚记录条数。
+        # 如实计数，不静默：journal 写完但记录落盘失败时 executions>records 就是证据。
+        self.rollback_executions = 0
+        self.rollback_records = 0
         self.rejects = 0
         self.secure_cookies = bool(secure_cookies)
         # ---- 4.2b（t18）审计后端：内存链预览 + 追加式 JSONL 文件链 ----------------
@@ -1706,6 +2019,16 @@ class InterveneService:
         # 服务启动就在仓库 var/ 下落一份密钥库。
         self._secretariat = secretariat
         self._features_root = features_root
+        # ---- 6.0（T11–T37）八大扩展：服务层懒装配 --------------------------------
+        # 与总裁办同一条纪律：不碰扩展端点的调用方（含既有全部单测）不会因为服务
+        # 启动就在数据目录里落 groups.jsonl / shares.jsonl 等扩展账本。
+        self._feature_paths_cache: FeaturePaths | None = None
+        self._rollback_service: rollback_mod.RollbackService | None = None
+        self._group_service: groups_mod.GroupService | None = None
+        self._share_service: sharing_mod.ShareService | None = None
+        self._evidence_service: evidence_mod.EvidenceService | None = None
+        self._suggestion_service: suggestions_mod.SuggestionService | None = None
+        self._compliance_service: compliance_mod.ComplianceService | None = None
         # ---- 5.0（R4 集成）入库即签名 -------------------------------------------
         # 产品入口默认开（--no-secretariat 关）；库默认关，测试/嵌入方显式选择。
         # 只在 local 模式启用：team 模式的 owner 归属需要 actor→DID 映射，属后续批次。
@@ -1732,6 +2055,9 @@ class InterveneService:
     #: `GET /api/secretariat/letters?limit=` 的上限（与 `secretariat.letters()` 的
     #: 500 封上限一致）：坏值 400，超上限如实截断，不静默放大响应。
     LETTER_LIST_MAX = 500
+    #: T7 取协作事件的窗口上限（口径见模块常量 `LETTER_COLLAB_EVENTS_LIMIT`）：
+    #: 认定书只带得动最近 N 条事件，账本更长时**如实登记**"窗口未取全"。
+    LETTER_COLLAB_EVENTS_LIMIT = LETTER_COLLAB_EVENTS_LIMIT
 
     @property
     def secretariat(self) -> sec_mod.Secretariat:
@@ -1740,6 +2066,73 @@ class InterveneService:
             paths = FeaturePaths(self._features_root) if self._features_root else None
             self._secretariat = sec_mod.default_secretariat(paths, mode=self.mode)
         return self._secretariat
+
+    # -- 6.0 八大扩展（T11–T37）：服务层懒装配（docs/07 §4.5-§4.12）--------
+    # 与总裁办同一条纪律；错误码已在 EXPANSION_ERROR_TABLE 注册，HTTP 层只翻译。
+    def _features(self) -> FeaturePaths:
+        """扩展账本的共同根：``<数据根>/var/features``（与总裁办同根）。"""
+        if self._feature_paths_cache is None:
+            self._feature_paths_cache = (FeaturePaths(self._features_root)
+                                         if self._features_root else FeaturePaths(None))
+        return self._feature_paths_cache
+
+    @property
+    def rollback_service(self) -> rollback_mod.RollbackService:
+        if self._rollback_service is None:
+            self._rollback_service = rollback_mod.RollbackService(self._features())
+        return self._rollback_service
+
+    @property
+    def group_service(self) -> groups_mod.GroupService:
+        if self._group_service is None:
+            self._group_service = groups_mod.GroupService(self._features())
+        return self._group_service
+
+    @property
+    def share_service(self) -> sharing_mod.ShareService:
+        if self._share_service is None:
+            # group_lookup：邀请时校验组真实存在（docs/07 §4.9 的可选注入点）
+            self._share_service = sharing_mod.ShareService(
+                self._features(), group_lookup=self.group_service.get)
+        return self._share_service
+
+    @property
+    def evidence_service(self) -> evidence_mod.EvidenceService:
+        if self._evidence_service is None:
+            self._evidence_service = evidence_mod.EvidenceService(self._features())
+        return self._evidence_service
+
+    @property
+    def evidence_wiring(self) -> evidence_wiring_mod.EvidenceWiring:
+        """R3-1 证据生成接线 + B3-1 分母台账的懒装配（与 `evidence_service` 同一账本）。
+
+        懒装配纪律与其它扩展一致：不调证据端点的调用方（含既有全部单测）不会因为
+        服务启动就在数据目录里多出一个 `evidence/` 账本。
+        """
+        if self._evidence_wiring is None:
+            self._evidence_wiring = evidence_wiring_mod.EvidenceWiring(self.evidence_service)
+        return self._evidence_wiring
+
+    @property
+    def suggestion_service(self) -> suggestions_mod.SuggestionService:
+        if self._suggestion_service is None:
+            self._suggestion_service = suggestions_mod.SuggestionService(self._features())
+        return self._suggestion_service
+
+    @property
+    def compliance_service(self) -> compliance_mod.ComplianceService:
+        if self._compliance_service is None:
+            # 导出前双验的审计链钩子（B8-4 前半）：注入既有只读复算，强制点落在服务层，
+            # 任何调用面（HTTP / 脚本 / 单测）都绕不过建包前的验链。
+            self._compliance_service = compliance_mod.ComplianceService(
+                self._features(), audit_verifier=self.compliance_audit_verdict)
+        return self._compliance_service
+
+    def _actor_id_of(self, session: Mapping[str, Any] | None) -> str:
+        """扩展族统一口径的操作者 id：team 用会话用户，local 用 local-user。"""
+        if session and str(session.get("user_id") or "").strip():
+            return str(session["user_id"])
+        return LOCAL_ACTOR_ID
 
     def sign_on_write_record(self, record: Mapping[str, Any],
                              previous: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -1769,6 +2162,160 @@ class InterveneService:
             return data
         self.signed_on_write += 1
         return signed
+
+    # -- S0-1 干预历史：写入侧（每次干预独立成条 signed ActionRecord） ----------
+    def _append_intervention_record(self, decided: Mapping[str, Any], *,
+                                    decision: str, actor_id: str, actor_role: str,
+                                    request_id: str | None = None,
+                                    audit_entry_hash: str | None = None) -> dict[str, Any] | None:
+        """把这次干预追加成一条**独立签名**的 ActionRecord（`action_type=intervention`）。
+
+        * 构造范式照 `rollback._build_rollback_record`（见 `intervention_history.py`）：
+          `parent_action_id` 指向被干预记录，`user_intervention.audit_entry_hash` 接住
+          刚写下的那条 `intervention.decision` 审计事件 → 记录 ↔ 审计双向可追；
+        * 签名沿用 `sign_on_write_record` 这条既有路（local 模式 + `allow_unapproved=True`）：
+          `prev_hash` 由 `secretariat.sign_record` 取该 Agent 的链头，`entry_hash` 链连续；
+          签不上就如实计数、原样入库，不丢数据；
+        * **绝不往被干预记录上追加数组字段**：那条记录已签名，追加会破坏 `entry_hash`
+          （铁律 2）；`intervention_history` 永不落盘（铁律 3），只在 `records_payload` 组装。
+
+        构造失败（上游脏数据：如 `decision=modify` 却没有非空参数）→ 计数 + 留证，
+        不静默造一条语义对不上的记录；决定本身此时已经落盘，所以不反手把 200 变成 500。
+        """
+        try:
+            built = ih_mod.build_intervention_record(
+                decided, decision=decision, actor_id=actor_id, actor_role=actor_role,
+                request_id=request_id, audit_entry_hash=audit_entry_hash)
+        except (ValueError, TypeError) as exc:
+            self.intervention_record_failures += 1
+            self.intervention_record_problem = {
+                "code": "INTERVENTION_RECORD_BUILD_FAILED",
+                "reason": str(exc)[:200],
+                "action_id": str(decided.get("id") or "")}
+            return None
+        saved = self.store.put(self.sign_on_write_record(built))
+        self.intervention_records += 1
+        return saved
+
+    # -- R7-1 自动化建议接线：S0-1 干预事件 → 建议引擎（docs/07 §11.13） ----------
+    def _observe_intervention_event(self, intervention_record: Mapping[str, Any] | None, *,
+                                    session: Mapping[str, Any] | None = None
+                                    ) -> dict[str, Any] | None:
+        """把刚写下的那条 S0-1 干预事件递给建议引擎（B7-1 的接线单点，零新路由零新依赖）。
+
+        * **取数口径不在这里**：`suggestions.intervention_event_view` 是唯一出口，
+          REQ-006 的预聚合消费同一个形状（任务 §2.5「不二次实现」）；
+        * **计在谁名下**：用 `self._actor_id_of(session)`，与 T28 读侧
+          `suggestions_payload` 同一身份口径。决定段的 `actor_id` 在 team 模式是
+          `username`，T28 读的是 `user_id`——跟读侧对齐才不会"计在 A 名上、B 名查不到"
+          （§11.12 登记过的身份分裂，本轮不扩大，也不新造第三套身份口径）；
+        * **建议不得反噬决定**：引擎异常只如实计数 + 留证（`suggestion_wiring_problem`），
+          决定此时已落盘、审计已锚定，绝不把 200 变成 500，也不静默吞掉。
+        """
+        if intervention_record is None:
+            # 干预记录构造失败（S0-1 已计数留证）：没有事件可消费，登记，不静默
+            self.suggestion_wiring_skips += 1
+            return None
+        enabled = self.suggestion_service.enabled
+        try:
+            created = self.suggestion_service.observe_intervention(
+                intervention_record, user_id=self._actor_id_of(session))
+        except Exception as exc:      # noqa: BLE001 - 分析面失败不许改写决定流的结局
+            self.suggestion_wiring_failures += 1
+            self.suggestion_wiring_problem = {
+                "code": "SUGGESTION_WIRING_FAILED",
+                "reason": f"{type(exc).__name__}: {exc}"[:200],
+                "intervention_id": str(intervention_record.get("id") or "")}
+            return None
+        # 关掉引擎时"消费"这个动作根本没发生（引擎侧 events_observed 也是 0），
+        # 所以这里同样不计数——两处口径必须一致，不造出一个凭空涨的计数器。
+        if enabled:
+            self.suggestion_wiring_events += 1
+        if created:
+            self.suggestion_wiring_created += 1
+        return created
+
+    # -- R3-1 证据 + R3-2 因果解释接线：决策完成 → 生成 → 经既有重签通道落账（docs/07 §11.18/§11.19） --
+    def _attach_decision_evidence(self, decided: Mapping[str, Any], *,
+                                  session: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """决策步骤完成时证据与因果解释的落账**单点**（触发口径在 `evidence_wiring` 里）。
+
+        R3-2 把因果解释**并进这同一个点**（PM 裁决 TASK-R3-2 §2.1「共点或紧邻」，选了共点）：
+        两者读的是**同一份决定产物** `decided`，触发条件高度重叠（参数差异 ⇔ 被拒参数、
+        候选 ≥2 ⇔ 有被拒备选），而落账要走的是**同一条**「记录更新 + 重签」通道 ——
+        分成两点就会在同一份 body 上签两次，链尾多出一格，B3-3 那套链锚点用例当场红。
+        现在是一次 `store.put`、一次重签、一帧广播，`multimedia_evidence` 与
+        `causal_explanation` 落在**同一个签名 body** 里，被同一个 `entry_hash` 盖住。
+
+        五步，全部走既有通道，零新机制：
+
+        1. **因果解释取数 + 生成**：`evidence_wiring.causal(decided)` 判"有没有被拒的备选 /
+           有没有明确 before→after 参数变化"，成立就调**既有** `EvidenceService.counterfactual()`
+           （T17 同款模板）产出文案，`llm` 钩子传 ``None``（0.6 不接真模型，落账的 ``model``
+           一律如实是 ``template``）；取数与裁剪全在 `evidence_wiring` 一处。
+        2. **证据触发判定 + 生成**：`evidence_wiring.generate(decided)` 判"有没有
+           参数差异 / 有没有计划候选"，成立就调 `add_diff` / `add_diagram`
+           （内部经 `EvidenceService._store_payload` 落盘，sha256 由同一次字节算出）；
+           256KB 超限在那一层降级为文本摘要证据。生成侧的异常由 `generate` / `causal`
+           自己登记台账，这里不会拿到半个未记账的产物。
+        3. **落账 = 一次更新**：证据条目形状由 `evidence_wiring.record_item` 收敛在
+           schema 1175 的封闭形状之内（**只追加、不删除**既有条目，超过 `maxItems=50`
+           时截尾部并如实计数）；解释按 schema 1257 的封闭形状**覆盖写**
+           （它是单个解释对象，不是数组：一条记录只留最近一次决定的反事实，
+           决定历史由 S0-1 那条独立签名记录自己说话）。
+        4. **重签 = D-resign 既有通道**：`store.put(sign_on_write_record(updated, decided))`
+            —— 与决定流里 D-resign 那句（`PM-VERDICT-R1-2a §3.1` 定案的
+            `sign_on_write_record(merged, before)`）同一口径：`previous` = 改前那条，
+            `prev_hash` 接上旧 `entry_hash`，责任链连续。**这不是改历史**：追加的
+            `multimedia_evidence` 与覆盖写的 `causal_explanation` 让旧 `entry_hash`
+            自然失效，新签名盖住新 body，两者随 `entry_hash` 进入签名范围
+            （schema 1090 明文，B3-3 由测试证明）。
+        5. **广播**：带证据时 `reason="evidence_attached"`（与 T13 挂证据同名单，既有值）；
+           只落了因果解释（证据生成失败的边界情形）时 `reason="causal_written"`
+           ——T17 早就在用的那个 reason 值，**零新事件类型**。
+
+        证据与解释都是分析面：**绝不反噬决定**。落账异常只计数 + 留证
+        （`evidence_wiring_problem` / 两侧 `*_records_failed`），返回改前那份记录；
+        决定此时已落盘、审计已锚定，绝不把 200 变成 500。
+        """
+        explanation: dict[str, Any] | None = None
+        try:
+            plan_causal = self.evidence_wiring.causal(decided)
+            if isinstance(plan_causal.get("explanation"), dict):
+                explanation = plan_causal["explanation"]
+            plan = self.evidence_wiring.generate(decided)
+            items = list(plan.get("items") or [])
+            if not items and explanation is None:
+                return dict(decided)
+            updated = copy.deepcopy(dict(decided))
+            if items:
+                merged = list(updated.get("multimedia_evidence") or [])
+                merged.extend(items)
+                if len(merged) > evidence_wiring_mod.MAX_EVIDENCE_ITEMS:
+                    # 截的是**新追加的尾部**，既有条目一条不动（历史零改写），并如实登记
+                    plan["truncated"] = len(merged) - evidence_wiring_mod.MAX_EVIDENCE_ITEMS
+                    merged = merged[:evidence_wiring_mod.MAX_EVIDENCE_ITEMS]
+                updated["multimedia_evidence"] = merged
+            if explanation is not None:
+                updated["causal_explanation"] = explanation
+            saved = self.store.put(self.sign_on_write_record(updated, decided))
+            if items:
+                self.evidence_wiring_records += 1
+            if explanation is not None:
+                self.causal_wiring_records += 1
+            self._publish_record_updated(
+                saved, reason="evidence_attached" if items else "causal_written")
+            return saved
+        except Exception as exc:            # noqa: BLE001 - 分析面失败不许改写决定流的结局
+            self.evidence_wiring_records_failed += 1
+            self.evidence_wiring_problem = {
+                "code": "EVIDENCE_WIRING_PERSIST_FAILED",
+                "reason": f"{type(exc).__name__}: {exc}"[:200],
+                "record_id": str(decided.get("id") or "")}
+            if explanation is not None:
+                # 解释已生成出来却没落进记录：这一格只数"有解释要落账"的那些次
+                self.causal_wiring_records_failed += 1
+            return dict(decided)
 
     def secretariat_status_payload(self) -> dict[str, Any]:
         return {"ok": True, "secretariat": self.secretariat.status()}
@@ -1876,13 +2423,26 @@ class InterveneService:
                        message="有记录不在库里：认定书不能引用不存在的动作")
         head = str((self.audit_chain_status() or {}).get("head") or "")
         period = body.get("period") if isinstance(body.get("period"), Mapping) else None
+        # T7 接线（R5-3 / PM-VERDICT-R5-2 §3.1 批准的 L1 事项）：把协作事件递进认定书，
+        # 「由 X 代行 Y 行使权限，最终责任归 Y（human_owner）」那一行才会出现在 actions[] 上。
+        # 取数口径（§3.2）：只读最近 LETTER_COLLAB_EVENTS_LIMIT 条；账本比这更长时，把
+        # "窗口未取全"作为事实递给 build_letter，由它登记进 verification.problems ——
+        # 认定书不得让读者以为"这份认定书看过了全部协作记录"。事件是**只读**消费：
+        # 认定书零改写记录、零写协作账本，signature 域（SIGNATURE_FIELDS）一字不动。
+        cap = int(self.LETTER_COLLAB_EVENTS_LIMIT)
+        collab = self.share_service.events(limit=cap)
+        total = int(((self.share_service.facts() or {}).get("events") or {}).get("items") or 0)
+        window = {"limit": cap, "total": total, "returned": len(collab),
+                  "complete": total <= len(collab)}
         letter = self.secretariat.build_letter(
             subject=str(body.get("subject") or ""),
             records=records,
             responsibility=str(body.get("responsibility") or "technical"),
             period=period,
             note=str(body.get("note") or ""),
-            audit_head=head)
+            audit_head=head,
+            collab_events=collab,
+            collab_window=window)
         return {"ok": True, "letter": letter,
                 "verification": self.secretariat.verify_letter(letter)}
 
@@ -1920,6 +2480,1180 @@ class InterveneService:
             reason=str(body.get("reason") or ""))
         return {"ok": True, "seal": seal,
                 "verification": {"ok": self.secretariat.verify_seal(seal)}}
+
+    # -- 6.0 八大扩展（T11–T37）：服务端能力面 ------------------------------
+    # 与总裁办同一条纪律：这一层只做"取数据 / 校验形状 / 调服务 / 落盘"，
+    # 权限与 CSRF 在 handler 里（服务端强制点）。扩展账本本身就是各自域的
+    # 审计（rollback journal / collab events / exports ledger），这里不复写审计链。
+    def rollback_plan_payload(self, action_id: str) -> dict[str, Any]:
+        """T12：回滚计划（只读，不执行）。
+
+        R1-2b / G-6 最后一公里：走 :attr:`rollback_service` 的 ``plan``，不再调模块级
+        纯函数——后者不读撤销日志，于是"计划说可以、点下去吃 409"。日志在案的 id 作为
+        ``rolled_back_ids`` 进 plan，计划层与执行层共用同一条幂等屏障
+        （``ROLLBACK_ALREADY_ROLLED_BACK``，TP-20 同码）。日志读不动 →
+        ``ROLLBACK_JOURNAL_UNREADABLE``（503）由 handler 翻译，绝不退化成"当作没回滚过"。
+        """
+        if not str(action_id or "").strip():
+            raise _bad("ROLLBACK_FIELD_INVALID", field="action_id",
+                       message="查看回滚计划必须带 action_id")
+        plan = self.rollback_service.plan(self.store.all(), action_id)
+        return {"ok": True, "plan": plan}
+
+    def _rollback_journal_rows(self) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """读撤销日志（读侧专用）：目录/文件不存在就是"没有一笔回滚"，**不 ensure() 建目录**
+        ——读一次记录列表绝不能在数据根里造出 ``var/features/rollback``。
+
+        返回 ``(行, 事实)``：``事实`` 如实说这份日志在不在、几条、读不动的码，
+        读不动时 ``ok=false``，派生视图据此**拒绝显示"可回滚"**（rollback.py 的界面纪律）。
+
+        R1-4（G-13 / G-15）纯增量事实：``phases`` 逐相位计数（``succeeded`` /
+        ``failed`` / ``pending``；R1-4 之前的历史行缺省计入 ``succeeded``），
+        ``pending_log`` 指出两阶段日志的旁路 WAL 在哪。计数只用在已读进内存的行上，
+        不额外开文件（``/api/records`` 是热路径）。
+        """
+        path = self._features().rollback_journal
+        pending_log = str(self._features().rollback_dir / rollback_mod.JOURNAL_PENDING_FILE_NAME)
+        if not path.exists():
+            return [], {"present": False, "ok": True, "entries": 0, "path": str(path),
+                        "phases": dict(rollback_mod.JOURNAL_PHASE_EMPTY),
+                        "pending_log": pending_log}
+        if not path.is_file():
+            # 路径被目录之类的东西占住：这份日志**读不动**，绝不能当成"没有一笔回滚"
+            return [], {"present": True, "ok": False,
+                        "code": rollback_mod.CODE_JOURNAL_UNREADABLE,
+                        "reason": "撤销日志路径不是普通文件，读不出来", "path": str(path)}
+        try:
+            store = rollback_mod.open_store(path)
+            store.load()
+            rows = [row for row in store.items() if isinstance(row, dict)]
+        except rollback_mod.RollbackError as exc:
+            return [], {"present": True, "ok": False, "code": exc.code,
+                        "reason": str(exc.reason or exc), "path": str(path)}
+        except Exception as exc:  # 存储层没翻成 RollbackError 的意外：同样不许当空表
+            return [], {"present": True, "ok": False,
+                        "code": rollback_mod.CODE_JOURNAL_UNREADABLE,
+                        "reason": str(exc), "path": str(path)}
+        phases = dict(rollback_mod.JOURNAL_PHASE_EMPTY)
+        for row in rows:
+            key = rollback_mod.journal_phase(row)
+            phases[key] = phases.get(key, 0) + 1
+        return rows, {"present": True, "ok": True, "entries": len(rows), "path": str(path),
+                      "phases": phases, "pending_log": pending_log,
+                      "note": "phases 只数终态日志（journal.jsonl）：failed 条目不参与"
+                              "『已回滚』派生，目标仍可再回滚（G-15）；两阶段前态在 "
+                              "pending_log 里"}
+
+    def _rollback_replay(self, action_id: str, request_id: str | None
+                         ) -> dict[str, Any] | None:
+        """幂等重放（口径同 ``/intervene``）：用**已落盘**的撤销日志 + 回滚记录重建响应，
+        绝不二次执行（journal 是 append-only，二次 execute 只会 409）。
+
+        返回 ``None`` = 幂等键在案但补偿事实找不到（例如记录被 reset 清掉）：
+        不谎称重放，落回真实 execute，由真实状态回答。
+        """
+        rows, _facts = self._rollback_journal_rows()
+        entry: Mapping[str, Any] | None = None
+        for row in reversed(rows):
+            # R1-4（G-15）：幂等重放只认**已落终态且成功**的条目。``failed``（逆向动作
+            # 失败、无副作用）绝不能被重放成"上次已回滚"的成功响应；``pending`` 结果未知，
+            # 同样不许冒充成功。历史行缺省 = succeeded → 与 R1-3 行为逐字一致。
+            if not rollback_mod.journal_settled_success(row):
+                continue
+            if str(row.get("action_id") or "") == action_id:
+                entry = row
+                break
+        record: Mapping[str, Any] | None = None
+        if isinstance(entry, Mapping) and entry.get("rollback_record_id"):
+            record = self.store.get(str(entry["rollback_record_id"]))
+        if record is None:      # 老数据/未落盘：由 rollback_ref 反查补偿记录
+            record = next((row for row in self.store.all()
+                           if str(row.get("action_type") or "") == "rollback"
+                           and str(row.get("rollback_ref") or "") == action_id), None)
+        if record is None:
+            return None
+        affected = list(entry.get("affected") or []) if isinstance(entry, Mapping) else []
+        return {"ok": True,
+                "rollback_record": record,
+                "persisted": True,
+                "replay": True,
+                "affected": affected,
+                "inverse": entry.get("result") if isinstance(entry, Mapping) else None,
+                "order": affected,
+                "journal_id": (str(entry.get("id") or "") if isinstance(entry, Mapping) else ""),
+                "snapshot_sha256": (str(entry.get("snapshot_sha256") or "")
+                                    if isinstance(entry, Mapping) else ""),
+                "blocked_members": (list(entry.get("blocked_members") or [])
+                                    if isinstance(entry, Mapping) else []),
+                "notices": [],
+                "signing": {"enabled": bool(self.sign_on_write and self.mode == MODE_LOCAL),
+                            "signed": 0, "failures": 0,
+                            "last_problem": self.sign_last_problem or None,
+                            "note": "replay：签名事实在第一次落盘时已记账，本条不重签"},
+                "request_id": request_id,
+                "effect_notice": EFFECT_NOTICE_KEY}
+
+    def rollback_execute(self, payload: Any, *, actor_id: str,
+                         actor_role: str = "",
+                         request_id: str | None,
+                         operator_ids: Sequence[str] | None = None) -> dict[str, Any]:
+        """T11：执行回滚（R1-2b 挂载，G-1）。权限与 CSRF 在 handler（服务端强制点）。
+
+        口径 α（裁决 D-α，铁律 1）：**原记录零改写**。execute 返回的 ``records`` 是
+        逐字段等于原记录的副本，本方法**不落盘它们**——落盘就是"把历史行原地改写"的老路
+        （写一个字段 ``entry_hash`` 复算就失效）。"已回滚"由读侧从
+        ``action_type='rollback'`` + ``rollback_ref`` 派生（见 :meth:`records_payload`）。
+
+        唯一落盘的新行 = 回滚记录本身（G-2）：先过 :meth:`sign_on_write_record` 再
+        ``store.put``，于是撤销日志里的 ``rollback_record_id`` 不再悬空；它的
+        ``execution_receipt.state`` 仍是 ``unreported``（外部系统没有回执，不写"已恢复"）。
+        """
+        body = self._json_object(payload)
+        for key in body:
+            if key not in ALLOWED_ROLLBACK_FIELDS:
+                # 白名单闸门（对照 /intervene 的 ALLOWED_INTERVENE_FIELDS 风格）：
+                # 撤销范围由服务端从依赖图算出，客户端自称的状态/签名一律进不来。
+                raise _bad("ROLLBACK_FIELD_INVALID", status=400, field=str(key),
+                           detail={"field": str(key),
+                                   "allowed": list(ALLOWED_ROLLBACK_FIELDS),
+                                   "hint": "身份/时间/签名/rollback_state/rollback_ref "
+                                           "由服务端写入，回滚请求不接受自造字段"},
+                           message=f"回滚请求带了不允许的字段：{key}")
+        action_id = str(body.get("action_id") or "").strip()
+        if not action_id:
+            raise _bad("ROLLBACK_FIELD_INVALID", field="action_id",
+                       message="执行回滚必须带 action_id")
+        # R5-3（B5-2）：撤销是写路径 → 闸门在幂等重放与任何落盘之前。
+        # `manage` 才可回滚（REQ-005 功能五）；队长本人 / local 免登录不经 can() 判定。
+        gate_record = self.store.get(action_id)      # 只读：只取 group_id，不改写任何东西
+        self.collab_guard(
+            group_id=str((gate_record or {}).get("group_id") or ""),
+            required=COLLAB_PERMISSION_FOR_ROLLBACK,
+            endpoint="POST /api/rollback", action_id=action_id,
+            operator_ids=operator_ids, actor_id=actor_id,
+            actor_role=actor_role, request_id=request_id)
+        idem_key = str(body.get("idempotency_key") or "")   # 口径同 /intervene：空串=不启用
+        if idem_key:
+            prior = self.store.idempotency_lookup(idem_key)
+            if prior is not None and prior[0] != action_id:
+                raise _bad("ROLLBACK_IDEMPOTENCY_MISMATCH", field="idempotency_key",
+                           detail={"idempotency_key": idem_key, "action_id": action_id,
+                                   "used_for": prior[0],
+                                   "hint": "同一个幂等键只能指向同一个 action_id；"
+                                           "换一次回滚就换一把 key"},
+                           message="这个幂等键已经用于另一个 action_id")
+            if prior is not None:
+                replay = self._rollback_replay(action_id, request_id)
+                if replay is not None:
+                    return replay
+        with self._lock:
+            signed_before = self.signed_on_write
+            failures_before = self.sign_failures
+            outcome = self.rollback_service.execute(
+                self.store.all(), action_id, actor=actor_id,
+                reason=str(body.get("reason") or ""),
+                confirm_all=bool(body.get("confirm_all")))
+            self.rollback_executions += 1
+            record = outcome.get("rollback_record")
+            saved = self.store.put(self.sign_on_write_record(record)) \
+                if isinstance(record, Mapping) else None
+            if saved is not None:
+                self.rollback_records += 1
+            if idem_key:
+                self.store.idempotency_store(idem_key, action_id,
+                                             str(outcome.get("journal_id") or ""))
+            self.requests += 1
+            # 广播的是新落盘的回滚记录（补偿记录自己是一条记录，动它 = 新增一行）
+            self._publish_record_updated(saved if saved is not None else record,
+                                         reason="rollback")
+            # R1-3（G-13）：journal 锚定入审计链。载荷 = journal 条目 id + 前态快照的
+            # 规范 JSON sha256 + 回滚记录 id + 目标 id（``action_id`` 是 build_event
+            # 的原生字段，`query(action_id=…)` 直接反查）。走 ``build_event`` +
+            # ``_append_durable_strict`` 标准通道：决定类事件，链断 → 500
+            # ``AUDIT_CHAIN_BROKEN``，绝不"回滚完成但锚没记"；``audit.verify()`` 照常
+            # 复算这条。
+            # R1-4（PM-VERDICT-R1-3 §3.1 批准的 L1 事项）：``audit.EVENTS`` 已加入原生
+            # 事件名 ``rollback.anchored``，于是持久链事件不再借 ``note``——持久链与内存链
+            # 同名，``query(event="rollback.anchored")`` 在落盘文件里也查得到。
+            # 兼容口径：R1-3 的历史行仍是 ``note`` + ``fields.rollback_event``（不改写、
+            # 不迁移），``fields.rollback_event="rollback.anchored"`` 这个标记**继续写**，
+            # 老取证的过滤条件照用。``extra`` 的自定义键落盘进 ``fields`` 桶（同
+            # ``fields.auth_event`` 形状）。
+            anchor_record = saved if isinstance(saved, Mapping) else (
+                record if isinstance(record, Mapping) else {})
+            anchor_fields = {
+                "rollback_event": "rollback.anchored",
+                "journal_id": str(outcome.get("journal_id") or ""),
+                "snapshot_sha256": str(outcome.get("snapshot_sha256") or ""),
+                "rollback_record_id": str(anchor_record.get("id") or ""),
+                # R1-4（G-15）：锚定事件只落在"终态已落盘"之后，相位如实入链。
+                "journal_phase": str(outcome.get("journal_phase") or ""),
+            }
+            durable_role = self.auth.audit_actor_role(actor_role)
+            self.audit.append("rollback.anchored", action_id=action_id,
+                              actor_id=actor_id, actor_role=durable_role,
+                              mode=self.audit_mode(), request_id=request_id,
+                              record_status="rollback",
+                              idempotency_key=(idem_key or None),
+                              extra=dict(anchor_fields))
+            self._append_durable_strict(audit_mod.build_event(
+                "rollback.anchored", actor_id=actor_id, actor_role=durable_role,
+                mode=self.audit_mode(), action_id=action_id, request_id=request_id,
+                idempotency_key=(idem_key or None),
+                reason=str(body.get("reason") or ""),
+                extra=dict(anchor_fields)))
+            return {"ok": True,
+                    "rollback_record": saved if saved is not None else record,
+                    "persisted": saved is not None,
+                    "replay": False,
+                    "affected": outcome.get("affected"),
+                    "inverse": outcome.get("inverse"),
+                    "order": outcome.get("order"),
+                    "journal_id": outcome.get("journal_id"),
+                    # R1-3（G-13）：与 journal 条目同值的快照摘要（取证直读）
+                    "snapshot_sha256": outcome.get("snapshot_sha256"),
+                    "blocked_members": outcome.get("blocked_members"),
+                    "notices": outcome.get("notices"),
+                    "signing": {"enabled": bool(self.sign_on_write and
+                                                self.mode == MODE_LOCAL),
+                                "signed": self.signed_on_write - signed_before,
+                                "failures": self.sign_failures - failures_before,
+                                "last_problem": self.sign_last_problem or None,
+                                "note": "local 模式：回滚记录入库即由该 Agent 私钥签名；"
+                                        "team 模式待 actor→DID 映射（后续批次）"},
+                    "request_id": request_id,
+                    "effect_notice": EFFECT_NOTICE_KEY}
+
+    def evidence_attach(self, action_id: str, payload: Any,
+                        *, actor_id: str) -> dict[str, Any]:
+        """T13：附加证据 → 证据账本 + 记录本体 multimedia_evidence 挂引用。
+
+        **L1 微修（TASK-R8-1 §2.3 / T13 硬缺陷，`BOSS-REPLY-M7` §2 第 3 项）**：
+        挂完证据的写回走 D-resign 那条**既有**重签通道
+        ``store.put(sign_on_write_record(updated, record))``——与 T17 因果解释写回
+        （``evidence_causal``）、决定流 D-resign（``PM-VERDICT-R1-2a §3.1``）、
+        R3-1/R3-2 自动接线落账（``_attach_decision_evidence``）四条既有路径同一口径：
+        ``previous`` = 改前那条，``prev_hash`` 接上旧 ``entry_hash``，新签名盖住新 body。
+        修之前这里是裸 ``store.put(updated)``：追加证据让旧 ``entry_hash`` 当场失效，
+        ``secretariat.verify_record`` 报 MISMATCH（``signature`` / ``entry_hash``
+        两条都对不上），凡走过这条端点的记录在取证时一律是红
+        （修前/修后取证探针：``.scratch/r34/probe_t13.py``）。
+        广播一并换成落盘后的那份：界面收到的帧与账本里那条逐字相同，
+        不再出现「广播带未签 body、账本带旧签名」的分裂。
+        签名域（``SIGNATURE_FIELDS`` 11 字段）一字未动；响应只**追加**一个
+        ``signing`` 块（T17 既有口径），``evidence`` / ``evidence_hash`` 原样保留。
+        """
+        body = self._json_object(payload)
+        record = self.store.get(action_id)
+        if record is None:
+            raise _bad("EVIDENCE_NOT_FOUND", field="action_id",
+                       detail={"action_id": action_id},
+                       message="找不到这条记录：先让它入库，再挂证据")
+        provided_by = str(body.get("provided_by") or "user")
+        view = self.evidence_service.add(
+            action_id, kind=str(body.get("kind") or ""),
+            payload=body.get("payload"), caption=str(body.get("caption") or ""),
+            provided_by=provided_by)
+        updated = copy.deepcopy(dict(record))
+        view["provided_by"] = provided_by
+        evidence_list = list(updated.get("multimedia_evidence") or [])
+        evidence_list.append({k: v for k, v in view.items() if k != "feedback"})
+        updated["multimedia_evidence"] = evidence_list
+        signed_before = self.signed_on_write
+        failures_before = self.sign_failures
+        saved = self.store.put(self.sign_on_write_record(updated, record))
+        self._publish_record_updated(saved, reason="evidence_attached")
+        return {"ok": True, "evidence": view,
+                "evidence_hash": self.evidence_service.sign_range(saved),
+                "signing": {"enabled": bool(self.sign_on_write and
+                                            self.mode == MODE_LOCAL),
+                            "signed": self.signed_on_write - signed_before,
+                            "failures": self.sign_failures - failures_before,
+                            "last_problem": self.sign_last_problem or None,
+                            "note": "local 模式：挂证据即重签（D-resign 既有通道）；"
+                                    "team 模式待 actor→DID 映射（后续批次）"}}
+
+    def evidence_causal(self, action_id: str, payload: Any) -> dict[str, Any]:
+        """T17：因果解释写回记录（``causal_explanation``）。
+
+        **L1 前置微修（PM-VERDICT-R3-2 §3.1 裁决 1）**：写回走 D-resign 那条**既有**
+        重签通道 ``store.put(sign_on_write_record(updated, record))``——与决定流里
+        D-resign 那句（``PM-VERDICT-R1-2a §3.1``）以及 R3-1/R3-2 自动接线落账那句
+        （``_attach_decision_evidence``）同一口径：``previous`` = 改前那条，
+        ``prev_hash`` 接上旧 ``entry_hash``，新签名盖住新 body。
+        修之前这里是裸 ``store.put(updated)``：追加解释让旧 ``entry_hash`` 当场失效，
+        账本验签 MISMATCH（``signature`` / ``entry_hash`` 都对着不上），
+        这条端点写过的记录在取证时一律是红。
+        **自动接线通道零改动**（那边从 R3-1 起就一直在重签），签名域一字未动。
+        响应只**追加**一个 ``signing`` 块（与回滚端点同一既有口径：签了几条、
+        失败几条、最后一个问题是什么都如实报），``causal_explanation`` 原样保留。
+        """
+        body = self._json_object(payload or {})
+        record = self.store.get(action_id)
+        if record is None:
+            raise _bad("EVIDENCE_NOT_FOUND", field="action_id",
+                       detail={"action_id": action_id},
+                       message="找不到这条记录：先让它入库，再补因果解释")
+        candidates = body.get("candidates") if isinstance(body.get("candidates"), list) else []
+        explanation = self.evidence_service.counterfactual(
+            record, candidates, lang=str(body.get("lang") or "zh"))
+        updated = copy.deepcopy(dict(record))
+        updated["causal_explanation"] = explanation
+        signed_before = self.signed_on_write
+        failures_before = self.sign_failures
+        saved = self.store.put(self.sign_on_write_record(updated, record))
+        self._publish_record_updated(saved, reason="causal_written")
+        return {"ok": True, "causal_explanation": explanation,
+                "signing": {"enabled": bool(self.sign_on_write and
+                                            self.mode == MODE_LOCAL),
+                            "signed": self.signed_on_write - signed_before,
+                            "failures": self.sign_failures - failures_before,
+                            "last_problem": self.sign_last_problem or None,
+                            "note": "local 模式：写回即重签（D-resign 既有通道）；"
+                                    "team 模式待 actor→DID 映射（后续批次）"}}
+
+    def evidence_file_response(self, evidence_id: str) -> dict[str, Any]:
+        """T15：文件字节流（server 层负责 Content-Type 与 no-store 头）。"""
+        found = self.evidence_service.get(evidence_id)
+        if found is None:
+            raise _bad("EVIDENCE_NOT_FOUND", field="evidence_id",
+                       detail={"evidence_id": evidence_id},
+                       message="找不到这条证据")
+        target = self.evidence_service.file_path(evidence_id)
+        if target is None:
+            raise _bad("EVIDENCE_NOT_FOUND", field="evidence_id",
+                       detail={"evidence_id": evidence_id},
+                       message="证据文件本体不在磁盘上（索引还在）：按取证流程核对数据目录")
+        data = target.read_bytes()
+        return {"body": data, "content_type": str(found.get("media_type") or "application/octet-stream"),
+                "sha256": str(found.get("sha256") or "")}
+
+    def record_evidence(self, action_id: str) -> dict[str, Any]:
+        """T13 读侧：某条记录挂过的证据清单（docs/07 §5：`ok, record_id, evidence[], count`）。
+
+        **0.6.0 L1 挂载**：服务层 `evidence_service.list()` 早就实现，`_record_sub_route()`
+        也早就写好，但全文件没有任何调用点 —— 所以 `/api/records/<id>/evidence`
+        这条路径在 HTTP 面上从未存在。读取侧因此只能靠 `/api/evidence/<id>` 单条取，
+        拿不到"这条记录一共有哪些证据"。这里只做包装，不新增语义。
+        """
+        record = self.store.get(action_id)
+        if record is None:
+            raise _bad("EVIDENCE_NOT_FOUND", field="action_id",
+                       detail={"action_id": action_id},
+                       message="找不到这条记录：先让它入库，再看它的证据")
+        items = self.evidence_service.list(action_id)
+        return {"ok": True, "record_id": action_id,
+                "evidence": items, "count": len(items)}
+
+    def group_create(self, payload: Any, *, actor_id: str) -> dict[str, Any]:
+        """T18 写侧：建任务组（**0.6.0 L1 挂载**）。
+
+        docs/07 §5 的冻结行：读 `records.read`；写 `data.write`。
+        请求体 `{title, agent_ids[], objective?, group_id?}`，响应 `{ok, group}`。
+
+        服务层 `GroupService.create()` 的口径一字未改：Agent 超过 `MAX_AGENTS`
+        **直接报错、不截断不静默丢**；`agent_ids` 按首次出现去重并保持调用方顺序。
+        之前 HTTP 面缺这一格，导致"组内协作"连第一个组都造不出来 ——
+        GET 能列出 0 个组，POST 却 404，界面上的聚合视图永远是空的。
+        """
+        body = self._json_object(payload)
+        try:
+            group = self.group_service.create(
+                title=body.get("title"),
+                agent_ids=body.get("agent_ids") or [],
+                objective=str(body.get("objective") or ""),
+                actor=actor_id,
+                group_id=(str(body["group_id"]) if body.get("group_id") else None))
+        except groups_mod.GroupError as exc:
+            raise _bad(exc.code, field=exc.field, detail=exc.detail,
+                       message=exc.reason) from exc
+        return {"ok": True, "group": group}
+
+    def evidence_feedback(self, evidence_id: str, payload: Any,
+                          *, actor_id: str) -> dict[str, Any]:
+        """T16：队长对一条证据点赞/点踩（**0.6.0 L1 挂载**）。
+
+        docs/07 §5 冻结行：权限 `intervene.decide`；请求体 `{vote:"like"|"dislike"}`；
+        响应 `{ok, evidence}`。计数只增不改（`evidence.feedback()` 既有语义），
+        投票人的身份由会话决定，请求体里没有 actor 可传。
+        """
+        body = self._json_object(payload)
+        try:
+            evidence = self.evidence_service.feedback(
+                evidence_id, vote=str(body.get("vote") or ""), actor=actor_id)
+        except evidence_mod.EvidenceError as exc:
+            raise _bad(exc.code, field=exc.field, detail=exc.detail,
+                       message=exc.reason) from exc
+        return {"ok": True, "evidence": evidence}
+
+    def groups_payload(self, *, status: str | None = None) -> dict[str, Any]:
+        """T18 读侧：任务组清单（R4-1：响应层补三个**只读派生别名**，账本一字未动）。
+
+        `updated_at` 的「组内最后事件时间」要扫一遍记录（`store.all()`，与 T19 同一个
+        数据源）：只有**存在未关闭的组**时才扫——已关闭的组一律取账本里的 `closed_at`，
+        扫不扫都不改变结果（省掉纯内存的白扫，不改变任何口径）。
+        """
+        items = self.group_service.list(status=status)
+        last_events = (group_last_event_index(self.store.all())
+                       if any(not item.get("closed_at") for item in items) else {})
+        groups = [group_alias_view(item, last_event=last_events.get(str(item.get("id") or "")))
+                  for item in items]
+        return {"ok": True, "groups": groups, "count": len(groups),
+                "alias_fields": list(GROUP_ALIAS_FIELDS),
+                "note": GROUP_ALIAS_NOTE,
+                "facts": self.group_service.facts()}
+
+    def group_aggregate(self, group_id: str) -> dict[str, Any]:
+        """T19：聚合视图（记录按声明分组、进度、资源、卡住判定）。
+
+        R4-1：`group` 段同样只读派生三个别名；未关闭组的「组内最后事件时间」**直接复用**
+        聚合已经算好的 `window.ended_at`（同一个 `groups._as_datetime` 口径，不重算第二遍，
+        也不会出现「视图说 10:00、别名说 10:03」）。
+        """
+        group = self.group_service.get(group_id)
+        if group is None:
+            raise _bad("GROUP_NOT_FOUND", field="group_id",
+                       detail={"group_id": group_id},
+                       message="找不到这个任务组")
+        report = self.group_service.aggregate(group_id, self.store.all())
+        window = report.get("window") or {}
+        return {"ok": True,
+                "group": group_alias_view(report.get("group"),
+                                          last_event=str(window.get("ended_at") or "")),
+                "records": report.get("records"), "agents": report.get("agents"),
+                "progress": report.get("progress"), "resources": report.get("resources"),
+                "window": report.get("window"), "stuck": report.get("stuck"),
+                "generated_at": report.get("generated_at"),
+                "alias_fields": list(GROUP_ALIAS_FIELDS),
+                "note": GROUP_ALIAS_NOTE}
+
+    # -- 6.0（T21/T22）R5-1：分享链接化 +「与我共享」列表组装（REQ-005 B5-1）----
+    def invite_base_url(self, base: Any = None) -> dict[str, Any]:
+        """把"服务端知道的 base"收敛成能拼前缀的形状；拿不到就如实回落相对路径。
+
+        取值顺序（PM 裁决 §2.1，实测口径写进 REPORT）：
+
+        1. **显式传入的 ``base``** —— 只该由路由层从**请求 Host 头**拼出
+           （``LOOPBACK_SCHEME`` + Host，运行时装配：包内不得出现 URL 字面量，
+           见 tests/test_trace_adapter.py 的离线纯度扫描）。**绝不**从请求体或
+           查询串取 base：那等于让调用方决定邀请链接落到谁的域名（钓鱼站点）。
+        2. **没有 base** → 返回空串，``invite_url`` 落成相对路径
+           ``/share.html#token=…``（同源部署的默认形态，也是最不容易被污染的形态）。
+
+        base 的形状校验复用**既有**的 ``settings.parse_base_url``（同一条"只用字符串
+        切分、不引 URL 解析模块"的离线纯度纪律，且已带 ``https`` 强制：非本机回环不许
+        明文 ``http``）。校验不过**不猜、不改写**：回落相对路径，``reason`` 如实带上
+        被拒的码（``SETTINGS_URL_INSECURE`` 之类），调用方与测试都看得见。
+        """
+        raw = str(base or "").strip()
+        if not raw:
+            return {"base": "", "source": "relative", "reason": "base_missing"}
+        try:
+            parsed = settings_mod.parse_base_url(raw)
+        except settings_mod.SettingsError as exc:
+            return {"base": "", "source": "relative", "reason": exc.code}
+        #: ``display`` 是既有归一形态（协议+主机[显式端口]+路径前缀，无尾斜杠；
+        #: 默认端口不展开）：拼链接直接用，不在这里二次加工 URL（少一处自己解析、少一处出错）。
+        return {"base": str(parsed.get("display") or "").rstrip("/"),
+                "source": "explicit", "reason": ""}
+
+    def share_base_url(self) -> str:
+        """R5-4 定档：路由装配层递给 T21 的 base 只从 **settings** 取（PM-VERDICT-R5-1 §3.2）。
+
+        配置项 = ``server.base_url``（``settings.py`` 的既有读写通道，**不另起存储**）：
+
+        * 配好 → 返回它的规范形态（``parse_base_url`` 的 ``display``，
+          含 ``SETTINGS_URL_INSECURE`` 那条"非本机回环不许明文 http"）；
+        * 没配 → 返回空串，``invite_base_url`` 走 ``base_missing`` 回落相对路径，
+          与 R5-1 的现状**逐字节相同**（这是"不破坏现状"的落点）。
+
+        为什么不用请求的 ``Host`` 头：``Host`` 是调用方说什么就是什么，
+        邀请链接的落点域名不能由调用方决定（钓鱼站点口径，见 ``invite_base_url`` §2.1）。
+        本方法零 URL 字面量：包内离线纯度扫描（tests/test_trace_adapter.py）照旧绿。
+        """
+        doc = self.settings.effective()
+        server = doc.get("server") if isinstance(doc.get("server"), Mapping) else {}
+        return str(server.get("base_url") or "")
+
+    def invite_link(self, token: Any, *, base: Any = None) -> dict[str, Any]:
+        """拼一次性邀请链接：``<base>/share.html#token=<明文 token>``（B5-1 的"链接"）。
+
+        **为什么是** ``#fragment`` **而不是** ``?query``（安全口径，写死在这里）：
+        浏览器不把 fragment 发给服务器 → 它不进访问日志；落地页加载第三方资源时
+        ``Referer`` 也不带 fragment → 明文 token 少两条外泄路径。落地页（R5-4）
+        从 ``location.hash`` 读它。
+
+        返回 ``{"url", "base", "base_source", "reason"}``：``url`` 为空串表示
+        这条链接拼不出来（token 形状不对），**不返回半截 URL、不抛异常**——
+        响应装配层抛异常会把一次成功的邀请变成 500。``reason`` 如实说明回落原因
+        （``base_missing`` / 被拒的 ``SETTINGS_URL_*`` 码 / ``token_invalid``），
+        回落这件事永远看得见，不静默。
+
+        明文纪律（铁律 2/3，与 ``sharing.py`` 头注释同一口径）：``url`` 含明文 token，
+        所以它与明文 token **同生共死**——只在邀请创建那一刻随响应出现一次，
+        列表 / 详情 / 事件 / 撤销响应一律不回显（列表侧由 ``share_list_row``
+        的白名单投影结构性挡死）。
+        """
+        resolved = self.invite_base_url(base)
+        text = str(token or "").strip()
+        if not text or not set(text) <= _TOKEN_SHAPE:
+            return {"url": "", "base": resolved["base"],
+                    "base_source": resolved["source"], "reason": "token_invalid"}
+        url = (f"{resolved['base']}{SHARE_LANDING_PATH}"
+               f"#{SHARE_TOKEN_FRAGMENT}={text}")
+        return {"url": url, "base": resolved["base"],
+                "base_source": resolved["source"], "reason": resolved["reason"]}
+
+    def share_invite(self, group_id: str, payload: Any, *, actor_id: str,
+                     base_url: Any = None) -> dict[str, Any]:
+        """T21：发邀请（明文 token 只出现这一次，与 ingest 令牌同一纪律）。
+
+        R5-1（B5-1）新增**一次性** ``invite_url``（形状与安全口径见 ``invite_link``）。
+        ``base_url`` 是**服务端**入参（路由层给请求 Host 头拼的串），故意**不**从
+        ``payload`` 读：邀请链接的落点域名不能由被邀请方/调用方指定。
+        """
+        body = self._json_object(payload)
+        invitation = self.share_service.invite(
+            group_id=group_id, inviter_did=actor_id,
+            permission=str(body.get("permission") or ""),
+            invitee_did=str(body.get("invitee_did") or ""),
+            ttl_seconds=body.get("ttl_seconds"))
+        self.share_service.record_event(actor=actor_id, action="invite",
+                                        target=group_id,
+                                        detail={"invite_id": invitation.get("id"),
+                                                "permission": invitation.get("permission")})
+        link = self.invite_link(invitation.get("token"), base=base_url)
+        return {"ok": True, "share": {k: v for k, v in invitation.items() if k != "token"},
+                "token": invitation.get("token"),
+                "invite_url": link["url"],
+                "note": "明文链接只显示这一次（token 走 #fragment：不进服务器访问日志、"
+                        "也不进 Referer）；接受用 POST /api/shares/accept {token}"}
+
+    def share_list_row(self, view: Mapping[str, Any]) -> dict[str, Any]:
+        """列表逐条的**白名单投影**（R5-1：「与我共享」列表组装的响应层）。
+
+        输入必须是 ``ShareService.list_for()`` / ``get()`` 的**公开视图**
+        （``sharing._public`` 已剔掉 ``SECRET_FIELDS`` 并派生好 ``status`` / ``expired``）。
+        输出只含 :data:`SHARE_ROW_FIELDS` 这 8 个键：
+
+        * ``invite_id`` ← 记录的 ``id``；``inviter`` / ``invitee`` ← ``*_did``
+          （对外叫名字，不叫 did 字段名，前端 R5-4 直接摆）；
+        * ``status`` 逐字取公开视图的派生值：``revoked`` > ``expired`` > ``accepted``
+          > ``pending``——"过期即失效（含已接受者）"由 ``sharing.expired()`` 判定，
+          **本层不加任何时间判断**（两处判过期 = 两套口径）；
+        * 白名单是**结构性**防泄漏：``token`` / ``salt`` / ``token_hash`` 与一次性
+          ``invite_url`` 根本不在键表里，靠"记得删"防泄漏的写法一个都没有。
+        """
+        source = view if isinstance(view, Mapping) else {}
+        return {
+            "invite_id": source.get("id"),
+            "group_id": source.get("group_id"),
+            "permission": source.get("permission"),
+            "status": source.get("status"),
+            "created_at": source.get("created_at"),
+            "expires_at": source.get("expires_at"),
+            "inviter": source.get("inviter_did"),
+            "invitee": source.get("invitee_did"),
+        }
+
+    def shares_payload(self, *, actor_id: str) -> dict[str, Any]:
+        """T22：我发出的 / 分享给我的（R5-1：逐条组装「与我共享」列表）。
+
+        消费既有 ``ShareService.list_for``，逐条过 ``share_list_row`` 的白名单投影。
+        响应顶层形状按 docs/07 §4.9 T22 冻结为 ``ok, issued, shared_with_me, count``
+        （不塞 ``actor``、不塞 ``facts``：docs 口径在先，多一个键就多一处契约漂移）。
+        """
+        listing = self.share_service.list_for(actor_id)
+        issued = [self.share_list_row(item) for item in (listing.get("issued") or [])]
+        shared = [self.share_list_row(item) for item in (listing.get("shared_with_me") or [])]
+        return {"ok": True, "issued": issued,
+                "shared_with_me": shared, "count": len(issued) + len(shared)}
+
+    def share_accept(self, payload: Any, *, actor_id: str) -> dict[str, Any]:
+        """T24：接受邀请 → 权限绑定当前 actor。"""
+        body = self._json_object(payload)
+        invitation = self.share_service.accept(token=str(body.get("token") or ""),
+                                               invitee_did=actor_id)
+        self.share_service.record_event(actor=actor_id, action="accept",
+                                        target=str(invitation.get("group_id") or ""),
+                                        detail={"invite_id": invitation.get("id")})
+        return {"ok": True, "share": invitation}
+
+    def share_permissions(self, group_id: str, *, actor_id: str) -> dict[str, Any]:
+        """T25：当前 actor 对这个组的有效权限（含"经由哪条邀请"）。"""
+        if not str(group_id or "").strip():
+            raise _bad("GROUP_NOT_FOUND", field="group_id",
+                       message="查看权限必须带 group_id")
+        can_view = self.share_service.can(actor_id, "view", group_id)
+        can_approve = self.share_service.can(actor_id, "approve", group_id)
+        can_manage = self.share_service.can(actor_id, "manage", group_id)
+        group = self.group_service.get(group_id)
+        if group is None and not can_view.get("allowed"):
+            raise _bad("GROUP_NOT_FOUND", field="group_id",
+                       detail={"group_id": group_id},
+                       message="找不到这个任务组")
+        via = (can_view or {}).get("via") or (can_approve or {}).get("via") \
+            or (can_manage or {}).get("via")
+        return {"ok": True, "group_id": group_id,
+                "can_view": bool(can_view.get("allowed")),
+                "can_approve": bool(can_approve.get("allowed")),
+                "can_manage": bool(can_manage.get("allowed")),
+                "via": via}
+
+    # -- R5-3（REQ-005 B5-2）：写路径的协作鉴权闸门 ------------------------------
+    def operator_ids(self, session: Mapping[str, Any] | None = None, *,
+                     actor_id: str = "") -> list[str]:
+        """这次请求的**操作者身份集**（去重、按出现顺序）。
+
+        为什么要一个"集"：同一个登录人在本仓有**两个 id 口径** —— 决定段与审计走
+        ``audit_actor`` 的 ``username``（4.1 冻结），分享与协作层走会话的 ``user_id``
+        （``_actor_id_of``）。只拿一个 id 去问授权，就会出现"用 ``user_id`` 接受的邀请、
+        用 ``username`` 干预时被当成无邀请者"这种自相矛盾（= 越权放行）。
+        local 免登录的两个口径（``local-user`` / ``local``）一并收进来。
+        """
+        out: list[str] = []
+
+        def add(value: Any) -> None:
+            text = str(value or "").strip()
+            if text and text not in out:
+                out.append(text)
+
+        add(actor_id)
+        data = session if isinstance(session, Mapping) else {}
+        if data.get("local") or not data:
+            add(LOCAL_ACTOR_ID)                  # 决定段/审计口径（4.1 冻结的 local-user）
+        add(data.get("username"))
+        add(data.get("user_id"))
+        return out
+
+    def collab_verdict(self, *, group_id: str, required: str, endpoint: str = "",
+                       operator_ids: Sequence[str] | None = None,
+                       session: Mapping[str, Any] | None = None,
+                       actor_id: str = "") -> dict[str, Any]:
+        """B5-2 的判定事实（**只读、不抛异常**）：``{engaged, allowed, reason, ...}``。
+
+        放行口径（铁律「无邀请者不受影响」的实现选择，PM-PLAN §7.5 最高优先级）：
+
+        1. 记录不属于任何任务组（``group_id`` 为空）→ 不判定，原样放行；
+        2. 这个组里**一条邀请都没有**（``invites_for_group`` 为空）→ 不判定，
+           **连** ``can()`` **都不调用**：结构级保证"零邀请 = 零新代码路径"；
+        3. 操作者的每个身份在这个组都**从未接受过邀请**（``can()`` 回答 ``no_grant``）
+           → 这就是队长本人与 local 免登录路径，原样放行（不经等级比较）；
+        4. 有身份在这个组接受过邀请 → 判定生效；任一身份的授权够级就放行
+           （等级比较只用 ``sharing.can()``，本层不抄一份等级表）；
+        5. 都不够级 → 拒绝。**已过期 / 已撤销的邀请也算"接受过"**：收回去的权必须真收回去，
+           否则"撤销"只是把协作者打回越权状态。
+        """
+        ids = list(operator_ids) if operator_ids else self.operator_ids(session,
+                                                                        actor_id=actor_id)
+        unique: list[str] = []
+        for item in ids:
+            text = str(item or "").strip()
+            if text and text not in unique:
+                unique.append(text)
+        group = str(group_id or "").strip()
+        facts: dict[str, Any] = {"engaged": False, "allowed": True, "reason": "no_group",
+                                 "required": required, "granted": None, "invite_id": None,
+                                 "group_id": group, "actor_ids": unique,
+                                 "endpoint": endpoint}
+        if not group:
+            return facts                      # 不属于任务组：协作层无从判定
+        if not unique:
+            facts["reason"] = "actor_missing"
+            return facts
+        if not self.share_service.invites_for_group(group):
+            facts["reason"] = "no_invites"    # 零邀请：零行为变化
+            return facts
+        verdicts = [self.share_service.can(identity, required, group) for identity in unique]
+        if all(str(item.get("reason")) == "no_grant" for item in verdicts):
+            # 每个身份都没在这组被邀请过 = 队长本人 / local 免登录，不是"权限不足"
+            facts["reason"] = "no_inviter_binding"
+            return facts
+        facts["engaged"] = True
+        for item in verdicts:
+            if item.get("allowed"):
+                facts.update({"allowed": True, "reason": "ok",
+                              "granted": item.get("granted"),
+                              "invite_id": item.get("invite_id")})
+                return facts
+        order = {"level_too_low": 3, "grant_expired": 2, "grant_revoked": 1}
+        best = verdicts[0]
+        for item in verdicts:
+            if order.get(str(item.get("reason")), 0) > order.get(str(best.get("reason")), 0):
+                best = item
+        facts.update({"allowed": False, "reason": best.get("reason"),
+                      "granted": best.get("granted"), "invite_id": best.get("invite_id")})
+        return facts
+
+    def collab_guard(self, *, group_id: str, required: str, endpoint: str,
+                     action_id: str = "", operator_ids: Sequence[str] | None = None,
+                     session: Mapping[str, Any] | None = None, actor_id: str = "",
+                     actor_role: str = "",
+                     request_id: str | None = None) -> dict[str, Any]:
+        """闸门本体：放行就返回事实，越权就抛 403（错误码复用 ``SHARE_FORBIDDEN``）。
+
+        审计口径沿用既有 ``ROLE_FORBIDDEN`` 那一条：拒绝时追加一条 ``auth.denied``
+        （取证要回答"谁在什么时候被哪条邀请挡在门外"）；**业务账本零写入** ——
+        记录、协作事件、撤销日志、签名计数一个字节都不多（用例逐条钉住）。
+        """
+        facts = self.collab_verdict(group_id=group_id, required=required,
+                                    endpoint=endpoint, operator_ids=operator_ids,
+                                    session=session, actor_id=actor_id)
+        if facts.get("allowed"):
+            return facts
+        granted = facts.get("granted") or "none"
+        self.audit.append("auth.denied", action_id=action_id, actor_id=actor_id,
+                          actor_role=self.auth.audit_actor_role(actor_role),
+                          mode=self.audit_mode(), request_id=request_id,
+                          extra={"auth_event": "auth.denied", "username": actor_id,
+                                 "ok": False, "reason": "share_permission",
+                                 "detail": {"group_id": facts.get("group_id"),
+                                            "required": required, "granted": granted,
+                                            "verdict": facts.get("reason"),
+                                            "endpoint": endpoint}})
+        raise _bad(COLLAB_DENIAL_CODE, status=403, field="group_id",
+                   message=(f"你在这个任务组的分享权限是 {granted}，"
+                            f"不能执行 {endpoint}（需要 {required}）"),
+                   detail={"group_id": facts.get("group_id"),
+                           "invite_id": facts.get("invite_id"),
+                           "granted": granted,
+                           "required": required,
+                           "reason": facts.get("reason"),
+                           "actor_ids": facts.get("actor_ids"),
+                           "endpoint": endpoint,
+                           "action_id": action_id,
+                           "hint": "分享权限级联 manage>approve>view："
+                                   "view 只读、approve 只审批、改参数与回滚要 manage"})
+
+    def share_leader_facts(self, group_id: str, *,
+                           operator_ids: Sequence[str] | None = None,
+                           session: Mapping[str, Any] | None = None,
+                           actor_id: str = "") -> dict[str, Any]:
+        """组长事实（**只读、不抛异常**）：这个组的 ``created_by`` 是不是操作者本人。
+
+        不新增"组长表"：谁是组长由**建组那一刻**的事实（``groups.py`` 的 ``created_by``）
+        决定，本轮不碰 groups.py、不写新账本。比较口径：
+        ``created_by`` 与操作者身份集**字符串事实相等**（不做前缀、不做模糊匹配）；
+        操作者集里有 ``local-user`` 时补上 ``GROUP_LEADER_LOCAL_ALIASES`` 那两个写法。
+        """
+        ids = list(operator_ids) if operator_ids else self.operator_ids(session,
+                                                                        actor_id=actor_id)
+        unique: list[str] = []
+        for item in ids:
+            text = str(item or "").strip()
+            if text and text not in unique:
+                unique.append(text)
+        group = self.group_service.get(str(group_id or "").strip())
+        created_by = str((group or {}).get("created_by") or "").strip()
+        known = set(unique)
+        if LOCAL_ACTOR_ID in known:
+            known.update(GROUP_LEADER_LOCAL_ALIASES)
+        return {"group_id": str(group_id or "").strip(),
+                "known": isinstance(group, Mapping),
+                "created_by": created_by,
+                "leader": bool(created_by) and created_by in known,
+                "actor_ids": unique}
+
+    def share_initiate_guard(self, *, group_id: str, endpoint: str,
+                             operator_ids: Sequence[str] | None = None,
+                             session: Mapping[str, Any] | None = None,
+                             actor_id: str = "", actor_role: str = "",
+                             request_id: str | None = None) -> dict[str, Any]:
+        """T21 发起分享的收紧闸门（R5-4 / PM-VERDICT-R5-3 §3.1 批准的 L1 事项）。
+
+        收紧前的现状（R5-3）：路由层只查 ``data.write`` + ``collab_guard``；组里**零邀请**
+        时闸门整个不接电（``no_invites`` 直接放行）→ 任何有 ``data.write`` 的无关 team
+        用户都能对**任意组**发邀请。收紧后只放过两种身份：
+
+        1. **组长本人** —— 组的 ``created_by`` 与操作者身份事实相等（含 local 免登录，
+           见 ``share_leader_facts``）；
+        2. **组内** ``manage`` **协作者** —— ``collab_guard`` 的等级判定真放行了
+           （``engaged=True``，即"这个人在组里接受过邀请且够级"）。
+
+        其余一律 403 ``SHARE_FORBIDDEN``：**复用既有码**，零新错误码、零 i18n 键面增长。
+
+        「无邀请者不受影响」这条边界为什么没被破坏（PM-VERDICT-R5-3 §3.1 的放行理由）：
+        组长本人走的是第 1 条，和收紧前一样"闸门不接电 + 直接过"，**零行为变化**；
+        新增的拒绝只落在"从未参与过这个组"的人身上 —— 他们本来就没有在这里发邀请的资格。
+        拒绝侧的账本纪律与 ``collab_guard`` 完全同一条：业务账本零写入，
+        只多一条 ``auth.denied`` 取证（谁在什么时候被哪个组挡在门外）。
+
+        找不到的组（``known=False``）**不在这里**报 404：交回既有路径，由
+        ``share_invite`` → ``sharing._require_group`` 出它既有的码，本轮不动那条口径。
+        """
+        facts = self.collab_guard(group_id=group_id, required=COLLAB_PERMISSION_FOR_SHARE,
+                                  endpoint=endpoint, operator_ids=operator_ids,
+                                  session=session, actor_id=actor_id,
+                                  actor_role=actor_role, request_id=request_id)
+        if facts.get("engaged"):
+            return facts                      # 组内 manage：等级判定已经真放行了
+        leader = self.share_leader_facts(group_id, operator_ids=facts.get("actor_ids"),
+                                         actor_id=actor_id)
+        if leader.get("leader") or not leader.get("known"):
+            return facts                      # 组长本人 = 收紧前后同一条路；查无此组交回既有 404
+        created_by = str(leader.get("created_by") or "") or "未知"
+        self.audit.append("auth.denied", action_id="", actor_id=actor_id,
+                          actor_role=self.auth.audit_actor_role(actor_role),
+                          mode=self.audit_mode(), request_id=request_id,
+                          extra={"auth_event": "auth.denied", "username": actor_id,
+                                 "ok": False, "reason": "share_initiator",
+                                 "detail": {"group_id": leader.get("group_id"),
+                                            "required": COLLAB_PERMISSION_FOR_SHARE,
+                                            "granted": "none",
+                                            "verdict": "not_group_leader",
+                                            "created_by": created_by,
+                                            "endpoint": endpoint}})
+        raise _bad(COLLAB_DENIAL_CODE, status=403, field="group_id",
+                   message=(f"发起分享只开放给任务组组长本人与组内 manage 协作者："
+                            f"这个组由 {created_by} 创建，你既不是组长，"
+                            f"这个组里也没有给你的 manage 邀请（不能执行 {endpoint}）"),
+                   detail={"group_id": leader.get("group_id"),
+                           "created_by": created_by,
+                           "granted": "none",
+                           "required": COLLAB_PERMISSION_FOR_SHARE,
+                           "reason": "not_group_leader",
+                           "actor_ids": leader.get("actor_ids"),
+                           "endpoint": endpoint,
+                           "hint": "组长本人发邀请不需要邀请；组内协作者要 manage 级才能再分享"})
+
+    def _collab_gate_for_intervene(self, payload: Any, *,
+                                   session: Mapping[str, Any] | None = None,
+                                   request_id: str | None = None) -> dict[str, Any]:
+        """``POST /intervene`` 的闸门（B5-2；D-resign 写回路径也在它后面才会发生）。
+
+        为什么放在参数校验**之前**：闸门只读 ``payload`` 里的 ``action_id`` / ``decision``
+        两个原始字符串（不校验、不写盘）。放在校验之后 = 先把越权请求的合法性审一遍再说；
+        放在写路径入口才能保证"拒绝时账本一个字节都不多"。
+        没有 ``action_id`` / 记录不存在 → 不判定，交给既有 400 / 404 口径（不发明新码）。
+        """
+        raw = payload if isinstance(payload, Mapping) else {}
+        action_id = str(raw.get("action_id") or "").strip()
+        if not action_id:
+            return {}
+        record = self.store.get(action_id)                 # 只读
+        if not isinstance(record, Mapping):
+            return {}
+        decision = str(raw.get("decision") or "").strip()
+        required = (COLLAB_PERMISSION_FOR_DECISION.get(decision)
+                    or COLLAB_PERMISSION_FOR_DECISION["modify"])
+        actor_id, actor_role = self.audit_actor(session)
+        return self.collab_guard(
+            group_id=str(record.get("group_id") or ""), required=required,
+            endpoint="POST /intervene", action_id=action_id,
+            operator_ids=self.operator_ids(session, actor_id=actor_id),
+            actor_id=actor_id, actor_role=actor_role, request_id=request_id)
+
+    def share_revoke(self, invite_id: str, payload: Any, *, actor_id: str,
+                     operator_ids: Sequence[str] | None = None) -> dict[str, Any]:
+        """T23：撤销邀请（R5-3 补的服务方法：路由前缀解析早有，装配此前是空的）。
+
+        鉴权**不在这里复制一份**，由 :meth:`sharing.ShareService.revoke` 单点判定
+        （它同时是"撤销必须写协作事件"的单点：两处判定将来必然分叉）。它的口径正好是
+        任务书要的三条：**发起人本人** / **队长的身份**（组长 ``created_by`` 与操作者身份
+        事实相等时自然命中，不做角色推断）/ **该组持 manage 的协作者**。
+
+        本层只补路由层该做的两件事：
+
+        * 把操作者的**身份集**（``username`` 与 ``user_id`` 两个口径）交给
+          ``revoke(trusted_ids=...)`` —— 只传一个 id 就会出现"用 ``user_id`` 接受的
+          邀请、用 ``username`` 撤销时被当成局外人"；
+        * 响应形状 ``{ok, invite}``（docs/07 §5 T23 的响应列，不多塞键）。
+        """
+        body = self._json_object(payload)
+        invitation = self.share_service.revoke(
+            invite_id, actor=actor_id,
+            trusted_ids=list(operator_ids or ([actor_id] if actor_id else [])),
+            reason=str(body.get("reason") or ""))
+        return {"ok": True, "invite": invitation}
+
+    def analytics_dashboard_payload(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """T26：仪表盘（指标全部可从记录逐条复算，算不出就如实 0）。
+
+        R6-1（B6-2/D-5）：挂上预聚合账本——命中区间从 ``agg_daily.jsonl`` 读聚合值
+        （``analytics.pre_aggregated=true``），未预聚合区间流式扫描并在元数据如实标注
+        （UI 的「未预聚合，加载较慢」降级标注 = R6-4 消费这个数据面）。路径唯一来源
+        ``FeaturePaths.agg_ledger``；零新路由、零签名域改动。
+
+        R6-4 前置（L1 已批，PM-VERDICT-R6-3 §3.1 遗留 1）：分析域 ``AnalyticsError``
+        在**路由层**翻成统一错误体（400 ``{code, message, detail, request_id}``，与
+        ``analytics_export`` 侧逐字同款），不再让手滑的日期漏成 500。**成功形状与读数
+        一字不变**：本函数返回的 ``{ok, analytics}`` 就是 T26 冻结的那一份，
+        ``tests/test_analytics_dashboard_http.py`` 钉着它。
+        """
+        report = analytics_mod.dashboard(
+            self.store.all(),
+            range_from=params.get("from"), range_to=params.get("to"),
+            agent=params.get("agent"),
+            granularity=str(params.get("granularity") or "day"),
+            agg=self._features().agg_ledger)
+        return {"ok": True, "analytics": report}
+
+    def analytics_export(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """T27：仪表盘导出（csv / pdf；pdf 拿不到 reportlab 退**可打印 HTML**并如实标注）。
+
+        R6-1 挂上预聚合路径（与 dashboard 同一个数），R6-3 把导出面接完：
+
+        * **消费预聚合合并视图**：走 ``analytics.dashboard(agg=FeaturePaths.agg_ledger)``
+          这一条数据面，界面与导出**同一个数**，不分两套口径；
+        * **元数据进产物**：CSV 末尾的 ``meta`` 段、HTML 的元数据表、PDF 的
+          ``meta …`` 行写的就是"这份文件怎么来的"（预聚合命中 / 流式扫描 / 回退原因码），
+          产物离开设服务端这句话还在；
+        * **实发格式如实**：请求 ``pdf`` 而 reportlab 不可用（或构建失败）时，出门的是
+          可打印 HTML——文件名后缀、``Content-Type``、``X-TraceLens-Export-Format``
+          全部写 ``html``，绝不穿着 ``.pdf`` 的外衣发一份别的格式（与
+          ``audit_export`` 既有降级口径逐字一致：HTML 零外链零脚本，Ctrl+P 可存 PDF）；
+        * **导出只读**：本端点不写任何账本（不追加审计导出记录、不推进签名链）——
+          这是 REQ-006 R6-3 铁律的口径，与审计导出 M6「先记账再交文件」是两条明确
+          分开的规则，登记在 docs/07 §11.16。
+
+        参数形状与 T27 冻结契约一致：``format=csv|pdf``（大小写不敏感、先 ``strip``；
+        其余值 400 ``ANALYTICS_FORMAT_INVALID``）、``from/to/agent/granularity``
+        与 T26 同一批键；``lang`` 只影响导出件标题（与审计导出同款，默认 zh）。
+        """
+        wanted = str(params.get("format") or "csv").strip().lower()
+        if wanted not in ("csv", "pdf"):
+            raise _bad("ANALYTICS_FORMAT_INVALID", field="format",
+                       detail={"received": params.get("format"),
+                               "allowed": ["csv", "pdf"]})
+        lang = str(params.get("lang") or "zh").strip().lower()
+        try:
+            report = analytics_mod.dashboard(
+                self.store.all(),
+                range_from=params.get("from"), range_to=params.get("to"),
+                agent=params.get("agent"),
+                granularity=str(params.get("granularity") or "day"),
+                agg=self._features().agg_ledger)
+        except analytics_mod.AnalyticsError as exc:
+            # 分析域错误码是契约（analytics.py 头注：HTTP 层照表翻译）。导出端点先把
+            # 「参数不合法」如实翻成统一错误体（400 + detail.field），不把用户的
+            # 一个手滑的日期变成 500；R6-4 前置把同一翻译补到 T26 dashboard 侧
+            # （L1 已批：PM-VERDICT-R6-3 §3.1 遗留 1），两个面从此是同一句人话。
+            raise _bad(exc.code, field=exc.field, detail=dict(exc.detail),
+                       message=exc.reason) from exc
+        pdf_outcome: dict[str, Any] = {}
+        fallback: str | None = None      # 只有真降级才写原因；正常路径如实为空
+        if wanted == "csv":
+            # BOM 由调用方决定（export_csv 出规范文本）：审计 CSV 同口径带 BOM，
+            # Excel 才认得工具名/参数名里的中文。
+            body = ("\ufeff" + analytics_mod.export_csv(report)).encode("utf-8")
+            artifact = "csv"
+            content_type = "text/csv; charset=utf-8"
+            note = ("CSV：指标全部来自记录事实，可逐条复算；"
+                    "末尾 meta 段如实标注预聚合命中/回退原因")
+        else:
+            pdf = analytics_mod.export_pdf(report, lang=lang, outcome=pdf_outcome)
+            if pdf is None:
+                reason = str(pdf_outcome.get("reason") or "reportlab_unavailable")
+                fallback = reason
+                body = analytics_mod.export_html(
+                    report, lang=lang,
+                    extra_note=f"{reason}：已按设计生成可打印 HTML，浏览器 Ctrl+P 即可存 "
+                               f"PDF；HTML 零外链零脚本，指标与元数据一个不少").encode("utf-8")
+                artifact = "html"
+                content_type = "text/html; charset=utf-8"
+                note = f"{reason}：已按设计降级为可打印 HTML（不是坏掉），实发格式如实标注"
+            else:
+                body = pdf
+                artifact = "pdf"
+                content_type = "application/pdf"
+                note = "PDF：reportlab 生成（ASCII 指标行 + 如实元数据行，中文标题见界面）"
+        stamp = audit_mod.iso_utc(audit_mod.utc_now()).replace(":", "").replace("-", "")
+        # 指纹按实发字节算（latin-1 逐字节映射，与 audit_export 同一口径）：
+        # 接收方拿到文件后能证明"这就是当时导出的那份"。
+        digest = audit_mod.sha256_ref(body.decode("latin-1"))
+        return {"body": body, "content_type": content_type, "note": note,
+                "filename": f"tracelens-analytics-{stamp}.{artifact}",
+                "artifact": artifact, "requested_format": wanted,
+                "fallback": fallback, "sha256": digest,
+                "pre_aggregated": bool(report.get("pre_aggregated")),
+                "scanned": int(report.get("scanned") or 0),
+                "snapshot": analytics_mod.report_snapshot(report)}
+
+    def suggestions_payload(self, *, actor_id: str, status: str | None = None) -> dict[str, Any]:
+        """T28：建议清单 + 引擎开关（enabled 如实，不假绿）。"""
+        items = self.suggestion_service.list(user_id=actor_id, status=status)
+        return {"ok": True, "suggestions": items, "count": len(items),
+                "enabled": self.suggestion_service.enabled,
+                "threshold": suggestions_mod.DEFAULT_THRESHOLD,
+                "cooldown_days": suggestions_mod.COOLDOWN_DAYS}
+
+    def preferences_payload(self, *, actor_id: str) -> dict[str, Any]:
+        """T31 读侧：当前用户的偏好（manual/suggestion 来源分开可查）。"""
+        items = self.suggestion_service.preferences(user_id=actor_id)
+        return {"ok": True, "preferences": items, "count": len(items)}
+
+    def preference_set(self, payload: Any, *, actor_id: str) -> dict[str, Any]:
+        """T31 写侧：手动偏好（source=manual；value 只收标量）。"""
+        body = self._json_object(payload)
+        preference = self.suggestion_service.set_preference(
+            user_id=actor_id, tool=str(body.get("tool") or ""),
+            param=str(body.get("param") or ""), value=body.get("value"),
+            source="manual")
+        return {"ok": True, "preference": preference}
+
+    def suggestion_action(self, suggestion_id: str, action: str, payload: Any, *,
+                          actor_id: str) -> dict[str, Any]:
+        """R7-2（T29/T30 写侧）：原样消费 ``accept`` / ``dismiss``，服务端不复制判定。
+
+        判定全在 ``suggestions.SuggestionService``（采纳→``source="suggestion"`` 的偏好、
+        拒绝→7 天冷却），本方法只补两件对外要说清的事：
+
+        * 回读一次当下的 ``enabled``——设置页那个开关的对外视图就是 T28 的 ``enabled``
+          字段（``suggestions.py`` 的 ``observe`` 注释写死了这条口径），决定后如实带上；
+        * ``action`` 回显 + 阈值/冷却天数：界面不许自己写死「3 次 / 7 天」这种常量。
+
+        ``user_id=actor_id`` 与 T28 读侧**同一身份口径**（R7-1 遗留 §4 的读写同口径），
+        actor 由会话决定，请求体里没有任何 actor/owner 字段可传。
+        """
+        body = self._json_object(payload if payload is not None else {})
+        # **挂载侧的越权收口（本轮新增，如实登记）**：服务层的 ``accept``/``dismiss``
+        # 只按 id 取行、不校验归属（R7-1 交付时这两个方法只在进程内可达）。挂成 HTTP
+        # 之后就必须在这一层补上「只许动自己名下的建议」——判据用服务自己的 ``get``
+        # 读一次归属，不改建议引擎的语义。回答是 **404 SUGGESTION_NOT_FOUND**：
+        # 读侧 ``list(user_id=...)`` 本来就查不到别人的行，404 与读侧口径一致，
+        # 也不向调用方泄露「别人名下确实有这一条」。
+        owned = self.suggestion_service.get(suggestion_id)
+        if not isinstance(owned, dict) or str(owned.get("user_id") or "") != str(actor_id):
+            raise suggestions_mod.SuggestionError(
+                "SUGGESTION_NOT_FOUND", f"建议 {suggestion_id} 不存在或不属于当前用户",
+                detail={"suggestion_id": suggestion_id})
+        preference: dict[str, Any] | None = None
+        if action == "accept":
+            result = self.suggestion_service.accept(suggestion_id, user_id=actor_id)
+            suggestion = dict(result.get("suggestion") or {})
+            preference = dict(result.get("preference") or {})
+        elif action == "dismiss":
+            suggestion = dict(self.suggestion_service.dismiss(
+                suggestion_id, user_id=actor_id,
+                reason=str(body.get("reason") or "")))
+        else:
+            # 只有 accept/dismiss 两条子动作是写路由（`_suggestion_route` 也只解析这两种）：
+            # 裸 id 的 POST 说 405，不顺手改 GET 侧那条 405 的口径。
+            raise _bad("METHOD_NOT_ALLOWED",
+                       detail={"method": "POST",
+                               "path": f"{API_PATH_SUGGESTIONS}/{suggestion_id}/{action}",
+                               "hint": "only /accept and /dismiss are POST routes"})
+        out: dict[str, Any] = {"ok": True, "action": action, "suggestion": suggestion,
+                               "enabled": self.suggestion_service.enabled,
+                               "threshold": suggestions_mod.DEFAULT_THRESHOLD,
+                               "cooldown_days": suggestions_mod.COOLDOWN_DAYS}
+        if preference:
+            out["preference"] = preference
+        return out
+
+    def suggestion_enable(self, payload: Any, *, actor_id: str) -> dict[str, Any]:
+        """R7-2（开关落点）：``POST /api/suggestions {"enabled": bool}`` → ``set_enabled``。
+
+        **为什么挂在 T28 这条路径上**（任务 §2.2 给的「set_enabled 专用入口」选项）：
+        ``suggestions_payload`` 已经把引擎开关作为 ``enabled`` 字段对外暴露，
+        读写同一形状最不容易说谎；``POST /api/preferences`` 则逐字沿用 T31 既有形状
+        （``{tool, param, value}`` 写手动偏好），一个端点只讲一种形状，不造双语义端点。
+
+        **诚实登记两条边界**（界面文案与 docs/07 §11.14 同步登记，不假装）：
+
+        1. ``set_enabled`` 只改服务实例的内存开关（``suggestions.py`` 的
+           ``set_enabled``/``enabled``），**不落盘**——进程重启回到默认「开」；
+           本方法回读的 ``enabled`` 就是这个真实值，回读与写入同源于服务实例，不编。
+        2. 它**没有 user 维度**：这是服务级引擎开关，team 模式下所有用户共享一格。
+           所以挂载点的权限位取 ``settings.write``（与 ``PUT /api/settings`` 同格），
+           而不是 per-user 的 ``records.read``——「谁都能替全站关掉建议」不是安全形状。
+        """
+        body = self._json_object(payload)
+        if not isinstance(body.get("enabled"), bool):
+            raise _bad("SUGGESTION_FIELD_INVALID", field="enabled",
+                       detail={"received": body.get("enabled")},
+                       message="enabled 需要 true / false")
+        self.suggestion_service.set_enabled(body["enabled"])
+        return {"ok": True,
+                "enabled": self.suggestion_service.enabled,
+                "threshold": suggestions_mod.DEFAULT_THRESHOLD,
+                "cooldown_days": suggestions_mod.COOLDOWN_DAYS,
+                "durable": False,
+                "note": "开关是服务级、进程内生效：重启回默认开（不落盘）"}
+
+    def compliance_exports_payload(self) -> dict[str, Any]:
+        """T32：导出记录清单（含如实 anchor_state）。"""
+        items = self.compliance_service.list()
+        return {"ok": True, "exports": items, "count": len(items),
+                "anchor_state": compliance_mod.ANCHOR_STATE,
+                "note": "0.6.0 无锚定后端：anchor_state 恒为 unavailable，不是待填"}
+
+    def compliance_audit_verdict(self) -> dict[str, Any]:
+        """把**既有的**审计链复算包成只读判据，注入合规导出闸门（TASK-R8-1 §2.1）。
+
+        零新机制：durable 模式复用的就是 ``verify_audit_chain()``（``GET /api/audit``
+        与 T21 导出走的那一条），内存模式复用的就是 ``audit.verify()``。
+        判据只带 ``ok / count / head / problems[{code,index,reason}]``：
+        **不带文件路径、不带参数原文、不带密钥**（docs/03 §13 脱敏口径）。
+        复算本身抛异常时不吞：如实报成一条 ``audit_verify_error`` 断点，
+        「验不了」永远不算「验过了」。
+        """
+        try:
+            status = (self.verify_audit_chain() if self.audit_log is not None
+                      else self.audit.verify())
+        except Exception as exc:                                   # noqa: BLE001
+            return {"ok": False, "count": None, "head": "",
+                    "problems": [{"code": "audit_verify_error", "index": None,
+                                  "reason": f"{type(exc).__name__}: {exc}"[:200]}]}
+        problems = [{"code": str(item.get("code") or "audit_problem"),
+                     "index": item.get("index"),
+                     "reason": str(item.get("reason") or "")[:200]}
+                    for item in list(status.get("problems") or [])
+                    if isinstance(item, Mapping)]
+        return {"ok": bool(status.get("ok")), "count": status.get("count"),
+                "head": str(status.get("head") or ""), "problems": problems}
+
+    def compliance_export(self, payload: Any, *, actor_id: str,
+                          request_id: str | None) -> dict[str, Any]:
+        """T33：打包证据（records + audit + letters → root_hash + 文件）。
+
+        两道闸门（B8-4 前半，TASK-R8-1 §2.1 的取法说明）：
+        1. 路由面既有闸门**原样保留**——先 ``require_audit_chain()`` / ``audit.verify()``，
+           审计链断了就是既有的 500 ``AUDIT_CHAIN_BROKEN``，一个字都不改（零回归面）；
+        2. 服务层强制闸门在 ``compliance_service.export()`` 里**不可绕过**：建包之前
+           双验审计链 + 导出账本链（``audit_verifier`` 钩子就是本方法第 1 条用的那条链）。
+           绕过路由面直接调服务层（单测、脚本、未来新调用面）也一样被拦。
+        """
+        body = self._json_object(payload or {})
+        period_from = str(body.get("from") or "")
+        period_to = str(body.get("to") or "")
+        records = self.store.all()
+        # 0.6.0 L1 修复：这里原本写的是 `audit_mod.AUDIT_QUERY_LIMIT_MAX`，但该常量
+        # 定义在**本模块**（server.py:364），audit 模块里没有这个名字 —— 于是 T33
+        # 一被真正调用就 AttributeError → 500 INTERNAL_ERROR。因为这条路由此前从未挂载，
+        # 这个错从来没机会暴露；接线时被实测抓出来。口径不变：仍是 500 条上限。
+        audit_entries = (self.audit_log.query(limit=AUDIT_QUERY_LIMIT_MAX,
+                                              offset=0, reverse=False)
+                         if self.audit_log is not None else self.audit.entries(limit=None))
+        chain = (self.require_audit_chain() if self.audit_log is not None
+                 else self.audit.verify())
+        letters = self.secretariat.letters() if hasattr(self.secretariat, "letters") else []
+        entry = self.compliance_service.export(
+            records=records, audit_entries=audit_entries, letters=letters,
+            period={"from": period_from or None, "to": period_to or None},
+            format=str(body.get("format") or "csv"), lang=str(body.get("lang") or "zh"),
+            user_id=actor_id, chain_ok=bool(chain.get("ok")))
+        self.requests += 1
+        return {"ok": True, "export": entry, "request_id": request_id}
+
+    def compliance_file_response(self, export_id: str) -> dict[str, Any]:
+        """T35：证据包字节流。"""
+        entry = self.compliance_service.get(export_id)
+        if entry is None:
+            raise _bad("COMPLIANCE_NOT_FOUND", field="export_id",
+                       detail={"export_id": export_id},
+                       message="找不到这份导出记录")
+        target = self.compliance_service.file_path(export_id)
+        if target is None:
+            raise _bad("COMPLIANCE_NOT_FOUND", field="export_id",
+                       detail={"export_id": export_id},
+                       message="证据包文件不在磁盘上（记录还在）：按取证流程核对数据目录")
+        content_type = {"csv": "text/csv; charset=utf-8",
+                        "chain": "application/x-ndjson",
+                        "pdf": "application/pdf"}.get(str(entry.get("format") or ""),
+                                                      "application/octet-stream")
+        return {"body": target.read_bytes(), "content_type": content_type,
+                "sha256": str(entry.get("sha256") or "")}
 
     # -- 鉴权结果落审计（docs/03 §5.3）------------------------------------
     def flush_auth_events(self) -> int:
@@ -2321,6 +4055,19 @@ class InterveneService:
             "request_id": request_id, "record": dict(record),
             "effect_notice": EFFECT_NOTICE_KEY}, record_id=action_id)
 
+    def _publish_record_updated(self, record: Mapping[str, Any] | None,
+                                *, reason: str) -> None:
+        """扩展域动了记录（回滚 / 挂证据 / 写因果）也广播一帧，别让界面干等 4 秒轮询。"""
+        if not isinstance(record, Mapping):
+            return
+        action_id = str(record.get("id") or "")
+        if not action_id:
+            return
+        self.stream_hub.publish(ingest_mod.EVENT_UPDATED, {
+            "action_id": action_id, "reason": reason,
+            "status": record.get("status"), "record": dict(record)},
+            record_id=action_id)
+
     # -- 4.5（t15）设置中心：掩码视图 / 保存 / 测连接 --------------------------
     def settings_scope(self, session: Mapping[str, Any] | None) -> dict[str, Any]:
         """这位访问者与设置有关的权限口径。
@@ -2617,7 +4364,15 @@ class InterveneService:
         }
 
     def records_payload(self) -> dict[str, Any]:
-        records = self.store.all()
+        # S0-1 读时组装：按 parent_action_id 把独立的干预记录归组为目标记录的
+        # `intervention_history` 视图（时间序、上限 50）。这只在响应里挂：
+        # 存储里的记录本体永远没有这个字段（铁律 3），入参也伪造不进来（protected 名单）。
+        records = ih_mod.assemble_intervention_history(self.store.all())
+        # R1-2b（G-3 / G-20 / 裁决 D-α）：回滚状态是**读时派生**的视图字段——只挂在
+        # 这次响应里，存储里的记录一个字段都不多（改一个字段 entry_hash 就复算失效）。
+        # 撤销日志在这里只读不建：没有日志文件就是"没有一笔回滚"，绝不在数据根造目录。
+        journal_rows, journal_facts = self._rollback_journal_rows()
+        rollback_view = derive_rollback_view(records, journal_rows, journal_facts)
         kinds = [str((r.get("source") or {}).get("kind") or "")
                  for r in records if isinstance(r, Mapping) and not r.get("demo_data")]
         realtime = sum(1 for k in kinds if k in ("webhook", "sdk"))
@@ -2645,6 +4400,9 @@ class InterveneService:
                          "records_durable": bool(facts.get("durable")),
                          "records_store": facts,
                          "stream_head_seq": self.stream_hub.seq,
+                         # R1-2b：派生的回滚视图（rolled_back / next_ref 反查 / blocked）。
+                         # 契约里没有任何持久字段叫这些名字——它只是这次响应的解释层。
+                         "rollback_view": rollback_view,
                          "note": note}}
 
     def audit_payload(self, limit: int = AUDIT_QUERY_LIMIT_DEFAULT, *,
@@ -2768,6 +4526,7 @@ class InterveneService:
                                "hint": "event/decision must be a known audit value"}) from exc
         stamp = audit_mod.iso_utc(audit_mod.utc_now())
         summary = self.audit_export_summary(chosen, cap)
+        provenance = self.audit_export_provenance(rows, lang=lang)
         served = wanted
         fallback: str | None = None
         font_note = ""
@@ -2781,7 +4540,7 @@ class InterveneService:
             note = "CSV：参数列是规范 JSON 文本，敏感值写盘前已脱敏"
         elif wanted == "html":
             text = self.render_audit_html(rows, status, stamp=stamp, summary=summary,
-                                          actor=actor, lang=lang)
+                                          actor=actor, lang=lang, provenance=provenance)
             data = text.encode("utf-8")
             digest = audit_mod.sha256_ref(text)
             note = "可打印 HTML：零外链零脚本，浏览器 Ctrl+P 可存 PDF"
@@ -2790,12 +4549,14 @@ class InterveneService:
                 payload_pdf, built = audit_mod.render_pdf_bytes(
                     rows, title=self.audit_export_title(stamp, lang),
                     status=status,
-                    notes=self.audit_export_notes(stamp, summary, actor, lang))
+                    notes=self.audit_export_notes(stamp, summary, actor, lang,
+                                                  provenance=provenance))
             except audit_mod.AuditExportError as exc:
                 served = "html"
                 fallback = str(exc.detail.get("reason") or exc.code)
                 text = self.render_audit_html(
                     rows, status, stamp=stamp, summary=summary, actor=actor, lang=lang,
+                    provenance=provenance,
                     extra_note=f"{exc.render()}；已改出可打印 HTML，浏览器 Ctrl+P 即可存 PDF"
                 )
                 data = text.encode("utf-8")
@@ -2864,8 +4625,43 @@ class InterveneService:
         parts.append(f"limit={cap}")
         return ";".join(parts)
 
+    def audit_export_provenance(self, rows: Any, lang: str = "zh") -> str:
+        """导出证据的数据来源标记（0.5.1 收口 README 已知限制 #3）。
+
+        审计条目的 ``action_id`` 关联回记录存储，按界面同一条口径判定演示
+        （``demo_data=true``、``synthetic=true``、``source.kind=demo`` 三者同时
+        命中才计为演示——横幅与徽标用的就是这条）。导出件离开页面就看不到
+        横幅了，所以这条来源说明写进文件本体：HTML 页脚 + HTML/PDF 说明区。
+        拿不出证据之外的结论：不关联任何记录的条目如实报"系统事件"。
+        """
+        demo = real = other = 0
+        seen: set[str] = set()
+        for row in rows:
+            action_id = str((row or {}).get("action_id") or "").strip()
+            if not action_id or action_id in seen:
+                continue
+            seen.add(action_id)
+            record = self.store.get(action_id)
+            if record is None:
+                other += 1
+                continue
+            source = record.get("source") if isinstance(record.get("source"), Mapping) else {}
+            if (record.get("demo_data") is True and record.get("synthetic") is True
+                    and source.get("kind") == "demo"):
+                demo += 1
+            else:
+                real += 1
+        if str(lang) == "en":
+            return (f"Data source: {demo} entries relate to synthetic demo records, "
+                    f"{real} to non-demo records, {other} are system events "
+                    f"(login/export etc., no Agent action record). The demo banner "
+                    f"exists only in the UI; judge the exported file by this line.")
+        return (f"数据来源：{demo} 条关联演示（合成）记录 · {real} 条关联非演示记录 · "
+                f"其余 {other} 条为系统事件（登录/导出等，未关联 Agent 行为记录）。"
+                "「演示数据」横幅与徽标只在界面里，导出件以本行说明为准。")
+
     def audit_export_notes(self, stamp: str, summary: str, actor: str,
-                           lang: str) -> list[str]:
+                           lang: str, provenance: str | None = None) -> list[str]:
         base = list(audit_mod.DEFAULT_HTML_NOTES)
         if str(lang) == "en":
             base = ["This page is generated from the append-only TraceLens audit log: "
@@ -2875,17 +4671,21 @@ class InterveneService:
                     "A recorded decision means what the user chose, not what the "
                     "execution side did: check execution_receipt for that."]
         base.append(f"Generated by {actor} at {stamp}; filters: {summary}")
+        if provenance:
+            base.append(provenance)
         return base
 
     def render_audit_html(self, rows: Any, status: Mapping[str, Any], *, stamp: str,
                           summary: str, actor: str, lang: str = "zh",
-                          extra_note: str | None = None) -> str:
-        notes = self.audit_export_notes(stamp, summary, actor, lang)
+                          extra_note: str | None = None,
+                          provenance: str | None = None) -> str:
+        notes = self.audit_export_notes(stamp, summary, actor, lang, provenance=provenance)
         if extra_note:
             notes.append(extra_note)
         path = str(self.audit_log.path) if self.audit_log is not None else "(memory chain)"
         return audit_mod.render_html(list(rows), title=self.audit_export_title(stamp, lang),
-                                     status=status, notes=notes, log_path=path)
+                                     status=status, notes=notes, log_path=path,
+                                     footer_note=provenance)
 
     def _filter_memory_entries(self, filters: Mapping[str, str],
                                cap: int) -> list[dict[str, Any]]:
@@ -3065,8 +4865,14 @@ class InterveneService:
         1. **格式不猜、也不换**：`format` 留空时交给 `trace_adapter.detect` 认 Langfuse /
            OTel / MCP / 原生四种；认不出来就 400 说清认成了什么、为什么不行，
            绝不静默换一种格式硬解析（t3 定的口径）。
-        2. **决定 ≠ 生效**：导入只写事实字段，合并复用 4.4 的 `merge_facts`，
-           `user_intervention` / `execution_receipt` 是受保护字段，导入覆盖不掉用户的决定。
+        2. **决定 ≠ 生效**：导入只写事实字段，合并走 `ingest.merge_facts_full`
+           （4.4 `MERGE_FIELDS` 与 5.0 `EXPANSION_MERGE_FIELDS` 叠加，同一份实现），
+           `user_intervention` / `execution_receipt` 等受保护字段在合并层剥离，
+           导入覆盖不掉用户的决定；新建与合并产物都在签名之前由 confidence.fixate_for_import
+           固化置信度与来源，并做低置信联动（R2-1：confidence 在签名域里，只能签名前写；
+           R2-2：confidence < 0.5 → requires_action + 三条决定选项，数据进既有「需要我」面板，
+           不新增端点；已有决定 / 已结束的步骤不翻），固化 / 联动之后才对齐事实指纹、签名入库
+           （合并在签名之前）。
         3. **审计只记账不记正文**：原始 JSON 里可能有邮箱、密钥、内部路径，
            所以审计里只有格式 / 条数 / 来源 / 文件名 / 统计，正文一个字都不进。
         4. **写了就要落盘**：4.9 的持久模式下写不进去就 500，
@@ -3120,6 +4926,38 @@ class InterveneService:
                 action_id = str(record.get("id"))
                 before = self.store.get(action_id)
                 if before is None:
+                    # 5.1 R2-1 固化 + R2-2 联动：`confidence` 在 `SIGNATURE_FIELDS` 里，所以只能在
+                    # 签名之前写死（本行就是那个"之前"）；合并产物同理（见下面 merged 那一步）。
+                    # R2-3 前置微修（PM-VERDICT-R2-2 §3 第 1 条，批准的 L1）：新建路径也按
+                    # **固化后的最终事实**重算文案。低置信联动把 `status` 打成
+                    # pending_confirmation 时，界面角标说「等你确认」、l1 还写着「进行中」
+                    # 正是 `READABLE_FACT_FIELDS` 要防的自相矛盾；合并路径一直有这个环节，
+                    # 新建路径缺它。口径逐字对齐 `IngestBroker` 新建路径
+                    # （ingest.py:1127-1138）：快照 → 固化 → 记账 → 只在固化碰到
+                    # READABLE_FACT_FIELDS 时重算 → 对齐事实指纹 → 签名；固化没碰事实字段时
+                    # 一个字都不动（幂等）。跨模块复用私有函数有先例（explanations.py:59）。
+                    # 合并路径行为零改动。
+                    pre_fixate = copy.deepcopy(record)
+                    record = confidence_mod.fixate_for_import(record)
+                    fixation = ingest_mod.account_fixation_changes(pre_fixate, record)
+                    if {str(c.get("field")) for c in fixation} & ingest_mod.READABLE_FACT_FIELDS:
+                        rebuilt = ingest_mod._rebuilt_readable(
+                            record, pre_fixate.get("human_readable"), language)
+                        # 导入面落盘的必须是一条 v1.1 合法记录，所以只带文案、不带上报面的
+                        # 口径外壳：`generated_by` 说真话（这段文字确实由 ingest 的模板拼装
+                        # ⇒ "template"，schema 的枚举里没有 "sdk.v1"）；`template_id` 留着，
+                        # 它指的就是真正写出这句话的那个模板。指纹守护栏 P3：
+                        # 上报方声明过就带上、交给下一行 resync 对齐最终事实，
+                        # 没声明过就不发明（与 `resync_facts_hash` 的三条边界同口径）。
+                        prior_readable = pre_fixate.get("human_readable")
+                        if isinstance(prior_readable, Mapping) and \
+                                isinstance(prior_readable.get("source_facts_hash"), str):
+                            rebuilt["source_facts_hash"] = prior_readable["source_facts_hash"]
+                        rebuilt["generated_by"] = "template"
+                        record["human_readable"] = rebuilt
+                    # 固化 / 联动改了事实字段（非法数打成 null、联动把 status 打成待确认）
+                    # → 声明的事实指纹跟着对齐最终落盘事实（幂等：没改事实时一个字都不动）
+                    ingest_mod.resync_facts_hash(record)
                     record = self.sign_on_write_record(record)
                     self.store.put(record)
                     created.append(action_id)
@@ -3132,14 +4970,27 @@ class InterveneService:
                     duplicates.append({"action_id": action_id,
                                        "reason": "id 已存在，mode=create 不覆盖已有记录"})
                     continue
-                merged, changed = ingest_mod.merge_facts(before, record)
+                merged, changed, stripped = ingest_mod.merge_facts_full(before, record)
+                # 合并 → **固化 + 联动** → 对齐事实指纹 → 签名（与 IngestBroker 同款顺序：
+                # 固化在签名之前，落盘记录的 source_facts_hash 必须对应最终固化后的事实）。
+                # 合并器零改动（两张白名单已覆盖 confidence / confidence_source），
+                # 策略层只接在"合并产物 → 签名"这一段，走既有「需要我」面板、零新增端点。
+                pre_fixate = copy.deepcopy(merged)
+                fixated = confidence_mod.fixate_for_import(merged)
+                fixation = ingest_mod.account_fixation_changes(pre_fixate, fixated)
+                merged = fixated
+                ingest_mod.resync_facts_hash(merged)
+                if fixation:
+                    changed = list(changed) + fixation
                 merged = self.sign_on_write_record(merged, before)
                 self.store.put(merged)
                 updated.append(action_id)
                 frames.append(self.stream_hub.publish(
                     ingest_mod.EVENT_UPDATED,
                     {"record": merged, "action_id": action_id, "changed_fields": changed,
-                     "source_kind": kind, "token_id": f"import:{kind}"}))
+                     "source_kind": kind, "token_id": f"import:{kind}",
+                     # 入参里被合并层剥掉的受保护字段，如实随帧上报（不改记录）
+                     "stripped_fields": stripped}))
             batch_frame = self.stream_hub.publish(ingest_mod.EVENT_BATCH, {
                 "accepted": len(created) + len(updated), "created": len(created),
                 "updated": len(updated), "duplicates": len(duplicates),
@@ -3254,6 +5105,10 @@ class InterveneService:
         * **记录级 `policy.min_role_to_decide`**（docs/03 §5.4）：某条记录要求 editor
           以上时，viewer 即使角色能力里有 `intervene.decide` 也过不了这一关。
         """
+        # ---- R5-3（REQ-005 B5-2）：鉴权闸门写在参数校验与任何账本写入之前 ----
+        # 拒绝的那一次：记录零改写、决定段零变化、协作/撤销账本零写入（用例逐条钉住）。
+        # 无邀请的人（队长本人、local 免登录、不属于任何任务组的记录）在这里原样通过。
+        self._collab_gate_for_intervene(payload, session=session, request_id=request_id)
         clean = self._parse_body(payload)
         action_id = clean["action_id"]
         decision = clean["decision"]
@@ -3331,9 +5186,42 @@ class InterveneService:
                                           (updated.get("user_intervention") or {}).get("modified_fields", [])]})
             # 审计哈希写回记录，形成 记录 ↔ 审计 双向可追（02 §审计）
             updated["user_intervention"]["audit_entry_hash"] = entry["entry_hash"]
-            saved = self.store.put(updated)
+            # D-resign（PM-VERDICT-R1-2a §3.1 定案 + §3.2 并入 R1-2b）：这条记录被
+            # **服务端授权的决定流**改了（status / user_intervention / human_readable），
+            # 旧签名盖不住新 body，于是被干预的目标记录在 verify 里当场复算失效——
+            # P-3 的根因就在这一行之前（不是回滚，回滚是零改写）。这条改写不是导入方自称，
+            # 审计事件 `intervention.decision` 已在案锚定它，所以按导入合并路径
+            # （`sign_on_write_record(merged, before)`）的同一口径重签：previous = 改前
+            # 那条，prev_hash 接上旧 entry_hash，责任链连续。幂等重走在上面提前返回的
+            # 路径，**绝不重签**——同一次决定只签一次，签名计数不撒谎。
+            saved = self.store.put(self.sign_on_write_record(updated, record))
             if idem_key:
                 self.store.idempotency_store(idem_key, action_id, entry["entry_hash"])
+            # R3-1（REQ-003 B3-1/B3-3 / docs/07 §11.18）：证据生成接线的**单点接线**。
+            # R3-2（REQ-003 B3-2 前置 / docs/07 §11.19）：因果解释**并进这同一个点**
+            # （同一份 `saved`、同一次重签、同一帧广播），所以这里不新增第二个接线点。
+            # 位置与 R7-1 同款「事件源头」哲学，且**必须排在 S0-1 干预记录之前**：
+            # 决定已落盘并 D-resign（`saved` 在手）、审计已锚定（`audit_entry_hash` 已写回），
+            # 此刻才产证据；证据落账走同一条重签通道（`previous = saved`），于是紧随其后的
+            # 那条独立签名干预记录的 `prev_hash` 接的就是**带证据的 body**，链尾仍是干预记录
+            # —— R1 验收 TP-13 钉住的「干预记录是当时的链头」这条不变量不被接线打断
+            # （全量首跑就是被这个顺序撞出来的：证据放后面 → 回滚记录的 prev_hash 变成证据版
+            # 目标记录，两条既有链锚点用例当场红）。触发口径（status ∈ 决策完成集 +
+            # 参数差异/计划候选）、256KB 降级、分母计数全在 `evidence_wiring` 一处；
+            # 因果解释的触发口径（被拒备选 / before→after 参数变化）与取数也在同一模块一处。
+            # 幂等重走在上面提前返回，够不到这一行，所以"一次真实决定 = 一次生成尝试"，分母不撒谎。
+            saved = self._attach_decision_evidence(saved, session=session)
+            # S0-1：干预历史 = 每次干预独立成条 signed ActionRecord（铁律 2/3：不往被干预
+            # 记录上追加数组字段，`intervention_history` 只在读时组装）。replay 已在上面
+            # 提前返回，所以命中幂等绝不会重复追加。
+            intervention = self._append_intervention_record(
+                saved, decision=decision, actor_id=actor_id, actor_role=actor_role,
+                request_id=request_id, audit_entry_hash=entry["entry_hash"])
+            # R7-1（REQ-007 B7-1 / docs/07 §11.13）：S0-1 干预事件 = 自动化建议的唯一取数口。
+            # 接线点在事件源头（那条独立签名记录刚落盘），取数口径在 suggestions 侧单点实现；
+            # 幂等重走在上面的路径提前返回，所以同一次决定只计一次，导入侧 user_intervention
+            # 不参与（PM 裁决 R7-1 §2.1）。建议是分析面：引擎失败绝不把决定流变成 500。
+            self._observe_intervention_event(intervention, session=session)
             self.interventions += 1
             self.requests += 1
             # 4.4（t14）：决定也广播出去 —— 界面立刻看到"谁拍过板"（决定 ≠ 生效）
@@ -4037,6 +5925,99 @@ class TraceLensHandler(BaseHTTPRequestHandler):
             return None
         return parts[0]
 
+    # -- 6.0 八大扩展：族路由解析（形状与秘书处族一致）---------------------
+    @staticmethod
+    def _record_sub_route(path: str, verb: str) -> str | None:
+        """`/api/records/<id>/<verb>` → 记录 id（T13 evidence / T17 causal）。"""
+        prefix = API_PATH_RECORDS + "/"
+        if not path.startswith(prefix):
+            return None
+        parts = unquote(path[len(prefix):]).strip("/").split("/")
+        if len(parts) != 2 or parts[1] != verb or not parts[0]:
+            return None
+        return parts[0]
+
+    @staticmethod
+    def _evidence_route(path: str) -> tuple[str, str] | None:
+        """`/api/evidence/<id>[</file|/feedback>]` → (id, 动作)（T14/T15/T16）。"""
+        prefix = API_PATH_EVIDENCE + "/"
+        if not path.startswith(prefix):
+            return None
+        parts = unquote(path[len(prefix):]).strip("/").split("/")
+        if not parts[0]:
+            return None
+        if len(parts) == 1:
+            return parts[0], ""
+        if len(parts) == 2 and parts[1] in ("file", "feedback"):
+            return parts[0], parts[1]
+        return None
+
+    @staticmethod
+    def _group_route(path: str) -> tuple[str, str] | None:
+        """`/api/groups/<id>[</close|/share>]` → (id, 动作)（T19/T20/T21）。"""
+        prefix = API_PATH_GROUPS + "/"
+        if not path.startswith(prefix):
+            return None
+        parts = unquote(path[len(prefix):]).strip("/").split("/")
+        if not parts[0]:
+            return None
+        if len(parts) == 1:
+            return parts[0], ""
+        if len(parts) == 2 and parts[1] in ("close", "share"):
+            return parts[0], parts[1]
+        return None
+
+    @staticmethod
+    def _share_revoke_route(path: str) -> str | None:
+        """`/api/shares/<id>/revoke` → 邀请 id（T23；accept/permissions 走精确分支）。"""
+        prefix = API_PATH_SHARES + "/"
+        if not path.startswith(prefix):
+            return None
+        parts = unquote(path[len(prefix):]).strip("/").split("/")
+        if len(parts) != 2 or parts[1] != "revoke" or not parts[0]:
+            return None
+        return parts[0]
+
+    @staticmethod
+    def _suggestion_route(path: str) -> tuple[str, str] | None:
+        """`/api/suggestions/<id>[</accept|/dismiss>]` → (id, 动作)（T29/T30）。"""
+        prefix = API_PATH_SUGGESTIONS + "/"
+        if not path.startswith(prefix):
+            return None
+        parts = unquote(path[len(prefix):]).strip("/").split("/")
+        if not parts[0]:
+            return None
+        if len(parts) == 1:
+            return parts[0], ""
+        if len(parts) == 2 and parts[1] in ("accept", "dismiss"):
+            return parts[0], parts[1]
+        return None
+
+    @staticmethod
+    def _compliance_route(path: str) -> tuple[str, str] | None:
+        """`/api/compliance/exports/<id>[</file|/attest|/verify>]` → (id, 动作)。"""
+        prefix = API_PATH_COMPLIANCE_EXPORTS + "/"
+        if not path.startswith(prefix):
+            return None
+        parts = unquote(path[len(prefix):]).strip("/").split("/")
+        if not parts[0]:
+            return None
+        if len(parts) == 1:
+            return parts[0], ""
+        if len(parts) == 2 and parts[1] in ("file", "attest", "verify"):
+            return parts[0], parts[1]
+        return None
+
+    def _send_expansion_error(self, exc) -> None:
+        """扩展域异常 → 统一错误体：HTTP 状态照 `ERROR_TABLE` 翻译，不重命名码。"""
+        self.service.flush_auth_events()
+        self.service.rejects += 1
+        status, message = EXPANSION_ERROR_TABLE.get(
+            exc.code, (HTTPStatus.INTERNAL_SERVER_ERROR, "Internal error."))
+        wrapped = InterveneError(exc.code, field=exc.field, detail=exc.detail,
+                                 message=exc.reason, status=status)
+        self.send_json(status, wrapped.as_dict(self._request_id()))
+
     # -- 路由 --------------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802 - 标准库命名
         self._new_request_id()
@@ -4069,6 +6050,18 @@ class TraceLensHandler(BaseHTTPRequestHandler):
                 self.send_json(HTTPStatus.OK, self.service.records_payload())
                 return
             if path.startswith(API_PATH_RECORDS + "/"):
+                # T13 读侧（0.6.0 L1 挂载）：`/api/records/<id>/evidence` 必须在
+                # 「把 /api/records/ 之后整段当 action_id 查单条」这条兜底分支**之前**判断，
+                # 否则 `evidence` 会被当成记录 id 的一部分，服务端只会回
+                # INTERVENE_ACTION_NOT_FOUND（实测踩到：挂上路由后仍然 404，
+                # 但码是"记录不存在"而不是"路径不存在"，正是这个顺序问题）。
+                record_evidence_route = self._record_sub_route(path, "evidence")
+                if record_evidence_route is not None:
+                    self._require("records.read")
+                    self.service.flush_auth_events()
+                    self.send_json(HTTPStatus.OK,
+                                   self.service.record_evidence(record_evidence_route))
+                    return
                 self._require("records.read")
                 action_id = unquote(path[len(API_PATH_RECORDS) + 1:]).strip("/")
                 record = self.service.store.get(action_id)
@@ -4179,6 +6172,170 @@ class TraceLensHandler(BaseHTTPRequestHandler):
                 self.service.flush_auth_events()
                 self.send_json(HTTPStatus.OK, self.service.secretariat_letter(letter_route))
                 return
+            # ---- 6.0 八大扩展（T11–T37 读侧；docs/07 §5）----------------------
+            if path == API_PATH_ROLLBACK:
+                raise _bad("METHOD_NOT_ALLOWED",
+                           detail={"method": "GET", "path": path,
+                                   "hint": "rollback is POST only; use GET /api/rollback/plan "
+                                          "to preview the plan"})
+            if path == API_PATH_ROLLBACK_PLAN:
+                self._require("records.read")
+                self.service.flush_auth_events()
+                action_id = self._query_value("action_id") or ""
+                self.send_json(HTTPStatus.OK, self.service.rollback_plan_payload(action_id))
+                return
+            # T13 读侧的分发在 `/api/records/<id>` 兜底分支里（见上），这里不再重复判断。
+            evidence_route = self._evidence_route(path)
+            if evidence_route is not None:
+                evidence_id, action = evidence_route
+                if action == "feedback":
+                    raise _bad("METHOD_NOT_ALLOWED",
+                               detail={"method": "GET", "path": path,
+                                       "hint": "feedback is POST only"})
+                self._require("records.read")
+                self.service.flush_auth_events()
+                if action == "file":
+                    payload = self.service.evidence_file_response(evidence_id)
+                    self._send(HTTPStatus.OK, payload["body"], payload["content_type"],
+                               {"Cache-Control": "no-store",
+                                "X-TraceLens-Evidence-Sha256": payload["sha256"]})
+                    return
+                found = self.service.evidence_service.get(evidence_id)
+                if found is None:
+                    raise _bad("EVIDENCE_NOT_FOUND", field="evidence_id",
+                               detail={"evidence_id": evidence_id},
+                               message="找不到这条证据")
+                self.send_json(HTTPStatus.OK, {"ok": True, "evidence": found})
+                return
+            if path == API_PATH_GROUPS:
+                self._require("records.read")
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK, self.service.groups_payload())
+                return
+            group_route = self._group_route(path)
+            if group_route is not None:
+                group_id, action = group_route
+                if action in ("close", "share"):
+                    raise _bad("METHOD_NOT_ALLOWED",
+                               detail={"method": "GET", "path": path,
+                                       "hint": f"{action} is POST only"})
+                self._require("records.read")
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK, self.service.group_aggregate(group_id))
+                return
+            if path == API_PATH_SHARES:
+                session = self._require("records.read")
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK, self.service.shares_payload(
+                    actor_id=self.service._actor_id_of(session)))
+                return
+            if path == API_PATH_SHARES_ACCEPT:
+                raise _bad("METHOD_NOT_ALLOWED",
+                           detail={"method": "GET", "path": path,
+                                   "hint": "accept is POST only"})
+            if path == API_PATH_SHARES_PERMISSIONS:
+                session = self._require("records.read")
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK, self.service.share_permissions(
+                    str(self._query_value("group_id") or ""),
+                    actor_id=self.service._actor_id_of(session)))
+                return
+            if path == API_PATH_ANALYTICS:
+                raise _bad("METHOD_NOT_ALLOWED",
+                           detail={"method": "GET", "path": path,
+                                   "hint": "use GET /api/analytics/dashboard or "
+                                          "GET /api/analytics/export"})
+            if path == API_PATH_ANALYTICS_DASHBOARD:
+                self._require("audit.read")
+                self.service.flush_auth_events()
+                try:
+                    payload = self.service.analytics_dashboard_payload(self._query_params())
+                except analytics_mod.AnalyticsError as exc:
+                    # R6-4 前置（L1 已批：PM-VERDICT-R6-3 §3.1 遗留 1）：T26 侧把分析域
+                    # 错误码翻成统一错误体，与导出端点逐字同款（400 + detail.field，
+                    # ANALYTICS_RANGE_INVALID 走 ERROR_TABLE 既有行）。前端要吃这个
+                    # 数据面，用户手滑的日期不能是 500 堆栈。T26 成功形状与读数一字未动。
+                    raise _bad(exc.code, field=exc.field, detail=dict(exc.detail),
+                               message=exc.reason) from exc
+                self.send_json(HTTPStatus.OK, payload)
+                return
+            if path == API_PATH_ANALYTICS_EXPORT:
+                session, _channel = self._session_and_permission("audit.export")
+                self.service.flush_auth_events()
+                payload = self.service.analytics_export(self._query_params())
+                # 只读导出：不追加审计记录、不推进任何链（R6-3 铁律；与审计导出 M6
+                # 「先记账再交文件」是两条明确分开的规则，登记在 docs/07 §11.16）。
+                # 响应头如实登记**实发**格式与降级原因——界面不用解析文件body 就知道
+                # 自己拿到的是 pdf 还是降级后的 html（R6-4 的导出按钮吃这个数据面）。
+                served = str(payload["artifact"])
+                disposition = "attachment" if served == "csv" else "inline"
+                headers = {
+                    "Content-Disposition": f'{disposition}; filename="{payload["filename"]}"',
+                    "X-TraceLens-Export-Format": served,
+                    "X-TraceLens-Export-Sha256": header_safe(payload["sha256"]),
+                    "X-TraceLens-Export-Pre-Aggregated":
+                        "true" if payload.get("pre_aggregated") else "false",
+                    "X-TraceLens-Export-Scanned": str(payload.get("scanned") or 0),
+                    "X-TraceLens-Export-Note": header_safe(payload["note"]),
+                    "X-TraceLens-Request-Id": self._request_id(),
+                    "Cache-Control": "no-store",
+                }
+                if payload.get("fallback"):
+                    headers["X-TraceLens-Export-Fallback"] = header_safe(payload["fallback"])
+                self._send(HTTPStatus.OK, payload["body"], payload["content_type"], headers)
+                return
+            if path == API_PATH_SUGGESTIONS:
+                session = self._require("records.read")
+                self.service.flush_auth_events()
+                status = self._query_value("status")
+                self.send_json(HTTPStatus.OK, self.service.suggestions_payload(
+                    actor_id=self.service._actor_id_of(session), status=status))
+                return
+            suggestion_route = self._suggestion_route(path)
+            if suggestion_route is not None:
+                raise _bad("METHOD_NOT_ALLOWED",
+                           detail={"method": "GET", "path": path,
+                                   "hint": "accept/dismiss are POST only"})
+            if path == API_PATH_PREFERENCES:
+                session = self._require("records.read")
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK, self.service.preferences_payload(
+                    actor_id=self.service._actor_id_of(session)))
+                return
+            if path == API_PATH_COMPLIANCE_EXPORT:
+                raise _bad("METHOD_NOT_ALLOWED",
+                           detail={"method": "GET", "path": path,
+                                   "hint": "export is POST only"})
+            if path == API_PATH_COMPLIANCE_EXPORTS:
+                session, _channel = self._session_and_permission("audit.export")
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK, self.service.compliance_exports_payload())
+                return
+            compliance_route = self._compliance_route(path)
+            if compliance_route is not None:
+                export_id, action = compliance_route
+                if action == "attest":
+                    raise _bad("METHOD_NOT_ALLOWED",
+                               detail={"method": "GET", "path": path,
+                                       "hint": "attest is POST only (and honestly 503 in 0.6.0)"})
+                self._session_and_permission("audit.export")
+                self.service.flush_auth_events()
+                if action == "file":
+                    payload = self.service.compliance_file_response(export_id)
+                    self._send(HTTPStatus.OK, payload["body"], payload["content_type"],
+                               {"Cache-Control": "no-store",
+                                "X-TraceLens-Export-Sha256": payload["sha256"]})
+                    return
+                if action == "verify":
+                    self.send_json(HTTPStatus.OK, self.service.compliance_service.verify(export_id))
+                    return
+                found = self.service.compliance_service.get(export_id)
+                if found is None:
+                    raise _bad("COMPLIANCE_NOT_FOUND", field="export_id",
+                               detail={"export_id": export_id},
+                               message="找不到这份导出记录")
+                self.send_json(HTTPStatus.OK, {"ok": True, "export": found})
+                return
             self.serve_static(path)
         except ingest_mod.IngestError as exc:
             # 4.4 的 ingest 域异常用自己的错误码表（E1/F1），对外形状与干预域一致
@@ -4194,6 +6351,10 @@ class TraceLensHandler(BaseHTTPRequestHandler):
             self.send_json(exc.status, exc.as_dict(self._request_id()))
         except sec_mod.SecretariatError as exc:
             self._send_secretariat_error(exc)
+        except rollback_mod.RollbackError as exc:
+            # R1-2b（G-26 / TP-26）：撤销日志读不动 → 503 `ROLLBACK_JOURNAL_UNREADABLE`，
+            # 计划/执行/派生视图都从这里出口，绝不让 FeatureStoreError 漏成 500。
+            self._send_expansion_error(exc)
         except InterveneError as err:
             self.send_json(err.http_status, err.as_dict(self._request_id()))
         except BrokenPipeError:                                        # 客户端提前断开
@@ -4210,6 +6371,18 @@ class TraceLensHandler(BaseHTTPRequestHandler):
             if key == name:
                 return unquote(value)
         return None
+
+    def _query_params(self) -> dict[str, str]:
+        """整张 query 表（扩展族 T26/T27 的 from/to/agent/granularity 用）。"""
+        out: dict[str, str] = {}
+        target = str(self.path or "")
+        query = target.split("?", 1)[1] if "?" in target else ""
+        for chunk in query.split("&"):
+            if not chunk:
+                continue
+            key, _, value = chunk.partition("=")
+            out[key] = unquote(value)
+        return out
 
     def _query_int(self, name: str, default: int) -> int:
         """审计分页参数：非数字/负数一律 400，不静默按默认值截断。"""
@@ -4337,6 +6510,29 @@ class TraceLensHandler(BaseHTTPRequestHandler):
                     "X-Intervene-Mode": str(meta.get("mode") or self.service.mode),
                     "X-Intervene-Audit-Hash": str(meta.get("audit_entry_hash") or ""),
                     "X-Intervene-Actor": str(meta.get("actor_id") or ""),
+                })
+                return
+            if path == API_PATH_ROLLBACK:
+                # R1-2b（G-1 / TP-30）：`/api/rollback` 从"声明了常量、没有分支接住"
+                # 变成真路由。权限位与 `/intervene` 同一条矩阵能力 `intervene.decide`：
+                # 能拍板的人才有权撤销自己拍过的板；CSRF 双提交同口径（cookie 通道才要）。
+                session, channel = self._session_and_permission("intervene.decide")
+                self._csrf_guard(session, channel)
+                payload = self.read_json_body()
+                result = self.service.rollback_execute(
+                    payload, actor_id=self.service._actor_id_of(session),
+                    actor_role=str((session or {}).get("role") or ""),
+                    request_id=self._request_id(),
+                    operator_ids=self.service.operator_ids(
+                        session, actor_id=self.service._actor_id_of(session)))
+                self.service.flush_auth_events()
+                record = result.get("rollback_record")
+                self.send_json(HTTPStatus.OK, result, {
+                    "X-Rollback-Replay": "true" if result.get("replay") else "false",
+                    "X-Rollback-Record-Id": str((record or {}).get("id") or ""),
+                    "X-Rollback-Signed": "true" if (record or {}).get("signature") else "false",
+                    "X-Rollback-Affected": str(len(result.get("affected") or [])),
+                    "X-Rollback-Journal-Id": str(result.get("journal_id") or ""),
                 })
                 return
             if path == API_PATH_RESET:
@@ -4484,6 +6680,218 @@ class TraceLensHandler(BaseHTTPRequestHandler):
                 self.service.flush_auth_events()
                 self.send_json(HTTPStatus.OK, self.service.secretariat_seal(payload))
                 return
+            # ---- 0.6.0 L1 接线：八功能里「服务层写完、HTTP 面没挂」的五个入口 ----
+            # 这五格全部是**只接线不改语义**：服务方法逐字调用既有实现，权限位逐字取
+            # docs/07 §5 的冻结行，CSRF/actor 与相邻端点同款。此前它们的共同症状是
+            # `ROUTE_NOT_FOUND`，界面点下去只会看到"功能不存在"。
+            if path == API_PATH_GROUPS:
+                # T18 写侧（建组）。§5：读 records.read；写 data.write。
+                # 响应 {ok, group}，创建语义 → 201（与 T21 发邀请、T20 建用户同款）。
+                session, channel = self._session_and_permission("data.write")
+                self._csrf_guard(session, channel)
+                payload = self.read_json_body()
+                actor_id = self.service._actor_id_of(session)
+                body = self.service.group_create(payload, actor_id=actor_id)
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.CREATED, body)
+                return
+            record_evidence_route = self._record_sub_route(path, "evidence")
+            if record_evidence_route is not None:
+                # T13 写侧（挂证据）。§5：写 data.write。
+                # 响应 {ok, evidence, record}（外加 T13 既有的 signing 块）。
+                session, channel = self._session_and_permission("data.write")
+                self._csrf_guard(session, channel)
+                payload = self.read_json_body()
+                # 证据域异常在这里翻成统一错误体：服务层抛的是 EvidenceError
+                # （如 `EVIDENCE_KIND_INVALID` / `EVIDENCE_PAYLOAD_INVALID`），
+                # 不接住就会冒到 do_* 的兜底 except 变成 500 —— "参数不对"和
+                # "服务器坏了"必须区分开。
+                try:
+                    body = self.service.evidence_attach(
+                        record_evidence_route, payload,
+                        actor_id=self.service._actor_id_of(session))
+                except evidence_mod.EvidenceError as exc:
+                    raise _bad(exc.code, field=exc.field, detail=exc.detail,
+                               message=exc.reason) from exc
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.CREATED, body)
+                return
+            record_causal_route = self._record_sub_route(path, "causal")
+            if record_causal_route is not None:
+                # T17（因果解释写回）。§5：data.write。响应 {ok, causal_explanation, record}。
+                session, channel = self._session_and_permission("data.write")
+                self._csrf_guard(session, channel)
+                payload = self.read_json_body()
+                try:
+                    body = self.service.evidence_causal(record_causal_route, payload)
+                except evidence_mod.EvidenceError as exc:
+                    raise _bad(exc.code, field=exc.field, detail=exc.detail,
+                               message=exc.reason) from exc
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK, body)
+                return
+            evidence_post_route = self._evidence_route(path)
+            if evidence_post_route is not None and evidence_post_route[1] == "feedback":
+                # T16（队长点赞/点踩）。§5：intervene.decide —— 能拍板的人才有资格
+                # 评价"这个解释好不好"，与 T29/T30 同一格。响应 {ok, evidence}。
+                evidence_id, _action = evidence_post_route
+                session, channel = self._session_and_permission("intervene.decide")
+                self._csrf_guard(session, channel)
+                payload = self.read_json_body()
+                body = self.service.evidence_feedback(
+                    evidence_id, payload,
+                    actor_id=self.service._actor_id_of(session))
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK, body)
+                return
+            if path == API_PATH_COMPLIANCE_EXPORT:
+                # T33（合规导出的独立入口）。§5：audit.export；body
+                # {format, from?, to?, scope?, lang?}；响应 {ok, export}。
+                # 这是契约里 `API_PATH_COMPLIANCE_EXPORT`「声明了常量没人接住」的那一格，
+                # 也是发版门禁「声明 vs 挂载」那项 FAIL 的来源。服务层原本就能跑，只缺分发。
+                session, channel = self._session_and_permission("audit.export")
+                self._csrf_guard(session, channel)
+                payload = self.read_json_body()
+                # 合规域异常同样在路由层翻成 4xx（与 T13/T17 同款）：
+                # 服务层抛 ComplianceError（`COMPLIANCE_FORMAT_INVALID` /
+                # `COMPLIANCE_CHAIN_BROKEN` / `COMPLIANCE_BUNDLE_EMPTY`），
+                # 不接住就会变成 500 —— 实测就是这里先 500 才发现的。
+                try:
+                    body = self.service.compliance_export(
+                        payload, actor_id=self.service._actor_id_of(session),
+                        request_id=self._request_id())
+                except compliance_mod.ComplianceError as exc:
+                    raise _bad(exc.code, field=exc.field, detail=exc.detail,
+                               message=exc.reason,
+                               status=exc.http_status) from exc
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.CREATED, body)
+                return
+            group_route = self._group_route(path)
+            if group_route is not None and group_route[1] == "share":
+                # R5-3（T21 挂载）：POST /api/groups/<id>/share → 发邀请，响应含一次性
+                # invite_url。权限位 docs/07 §5 = data.write（能写数据的人才谈得上分享）；
+                # B5-2 在这条写路径上的口径是"再分享要 manage"——view/approve 转手访问权
+                # 就是越权扩散。队长本人与 local 免登录不经 can()（组里零邀请时连查都不查）。
+                # R5-4 收紧（PM-VERDICT-R5-3 §3.1 批准的 L1 事项）：闸门换成
+                # share_initiate_guard = "collab_guard 原样 + 未被判定时必须证明是组长"。
+                # 于是"有 data.write 的无关用户可对任意组发邀请"这一格被关掉，
+                # 组长本人（含 local 免登录）走的路径逐字未变。
+                # R5-4 定档（PM-VERDICT-R5-1 §3.2）：base 从 settings 的 server.base_url 取，
+                # 未配置 = 空串 = 相对路径回落（R5-1 现状逐字不变）。
+                # 其余 action（close / 裸 id）今天没有 POST 分支：原样落到 ROUTE_NOT_FOUND，
+                # 不在这里顺手改别人的 404 口径（本轮只挂 T21）。
+                group_id, _action = group_route
+                session, channel = self._session_and_permission("data.write")
+                self._csrf_guard(session, channel)
+                actor_id = self.service._actor_id_of(session)
+                self.service.share_initiate_guard(
+                    group_id=group_id,
+                    endpoint="POST /api/groups/<id>/share",
+                    operator_ids=self.service.operator_ids(session, actor_id=actor_id),
+                    session=session, actor_id=actor_id,
+                    actor_role=str((session or {}).get("role") or ""),
+                    request_id=self._request_id())
+                payload = self.read_json_body()
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.CREATED,
+                               self.service.share_invite(group_id, payload,
+                                                         actor_id=actor_id,
+                                                         base_url=self.service.share_base_url()))
+                return
+            if path == API_PATH_SHARES_ACCEPT:
+                # R5-4b（T24 挂载）：POST /api/shares/accept → 接受邀请并绑定当前 actor。
+                # 权限位取 docs/07 §5 已冻结的那一格：**records.read**（不是 T21/T23 的
+                # data.write）——接受邀请是"拿到访问权"的动作，不是"写业务数据"：
+                # 一个连 records.read 都没有的人本来也不该出现在受邀名单里。
+                #
+                # 「token 即凭证」≠「可以没有会话」（PM 要我如实说明的取舍）：
+                # `sharing.accept(token, invitee_did)` 的既有语义是 **token 证明这条邀请、
+                # invitee_did 证明是谁在接受**——`invitee_did` 为空服务层直接
+                # `SHARE_FORBIDDEN`（sharing.py:444），身份在这个方法的契约里是必需项。
+                # 于是"无会话放行"就必须在 team 模式下替匿名请求**编一个** actor：
+                # 权限会绑到 `local-user` 头上、邀请被烧成 accepted、事件账本的 actor
+                # 是编出来的身份——受邀的人反而拿不到权，可追责性也破了。
+                # 结论：team 模式要求受邀者**先登录**（页面已有 `state.auth` 这一态，
+                # 文案如实指向登录，见 web/share.html 的 hint.signin）；
+                # local 单机（产品默认形态）`auth.required=False` → 会话即 local，
+                # `_actor_id_of` 实测落到 `"local"`（会话的 user_id；决定段/审计另有
+                # `"local-user"` 口径，`operator_ids()` 两个都收——R5-3 既有事实），
+                # 零登录、落地页直接可用。GET 侧那条显式 405 逐字未动。
+                # CSRF 与 T23 同款：只有被 Cookie 证明身份的写请求要双提交头，
+                # `X-TraceLens-Token` 通道（桌面 / CLI / 测试）与 local 免登录天然豁免。
+                session, channel = self._session_and_permission("records.read")
+                self._csrf_guard(session, channel)
+                payload = self.read_json_body()
+                actor_id = self.service._actor_id_of(session)
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK,
+                               self.service.share_accept(payload, actor_id=actor_id))
+                return
+            share_revoke_route = self._share_revoke_route(path)
+            if share_revoke_route is not None:
+                # R5-3（T23）：POST /api/shares/<id>/revoke → 撤销邀请（服务方法本轮补齐）。
+                # 鉴权归 sharing.revoke：inviter / 队长 / 该组 manage 三者之一，越权 403。
+                session, channel = self._session_and_permission("data.write")
+                self._csrf_guard(session, channel)
+                payload = self.read_json_body()
+                actor_id = self.service._actor_id_of(session)
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK,
+                               self.service.share_revoke(
+                                   share_revoke_route, payload, actor_id=actor_id,
+                                   operator_ids=self.service.operator_ids(
+                                       session, actor_id=actor_id)))
+                return
+            suggestion_route = self._suggestion_route(path)
+            if suggestion_route is not None:
+                # R7-2（T29/T30 挂载，PM-VERDICT-R7-1 §3.1 预批的 L1）：
+                # POST /api/suggestions/<id>/accept|dismiss → 逐条决定一条自动化建议。
+                # 权限位**照 docs/07 §5 的冻结行逐字取 `intervene.decide`**（:461-462 那两格）：
+                # 采纳/拒绝一条建议就是"对自动化产出的东西做一个决定"，与 §5 的声明同义；
+                # 不自行降格成 records.read（R5-4 的 T24 先例：契约 abilities 必须等于 §5
+                # 声明的那一格，测试 `test_the_permission_bit_is_the_one_docs_07_declares` 钉过）。
+                # 守门三件套与 T21/T23/T24 逐字同款：会话 + CSRF + actor 由会话决定；
+                # 请求体里没有 actor/owner 可传，服务端只认会话身份。
+                suggestion_id, action = suggestion_route
+                session, channel = self._session_and_permission("intervene.decide")
+                self._csrf_guard(session, channel)
+                actor_id = self.service._actor_id_of(session)
+                payload = self.read_json_body()
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK,
+                               self.service.suggestion_action(suggestion_id, action,
+                                                              payload, actor_id=actor_id))
+                return
+            if path == API_PATH_SUGGESTIONS:
+                # R7-2（开关落点，任务 §2.2 的「set_enabled 专用入口」选项）：
+                # POST /api/suggestions {"enabled": bool} → 引擎开关（关＝observe 静默）。
+                # docs/07 §5 的 T28 行只声明 GET（:460），这一格是本轮新增、无冻结行可比，
+                # 权限位取 **settings.write**：`set_enabled` 没有 user 维度，它是服务级
+                # 引擎开关（team 模式下全站共享一格），挂在 records.read 上等于
+                # 「任何只读角色都能替所有人关掉建议」——那不是安全形状。
+                # 与 PUT /api/settings 同格（t13 权限表里只有 local/admin 有这一项），
+                # 免登录单机天然可用，team 的 viewer/editor 拿 403 显码。
+                session, channel = self._session_and_permission("settings.write")
+                self._csrf_guard(session, channel)
+                payload = self.read_json_body()
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.OK, self.service.suggestion_enable(
+                    payload, actor_id=self.service._actor_id_of(session)))
+                return
+            if path == API_PATH_PREFERENCES:
+                # R7-2（T31 写侧挂载）：POST /api/preferences {tool, param, value} →
+                # 手动偏好（source=manual）。形状逐字沿用既有 `preference_set`
+                # （本轮没动它一行），`PREFERENCE_INVALID` 一族码原样出，零新码名。
+                # 权限位照 docs/07 §5 的 T31 行逐字（:463「读 records.read；写 intervene.decide」）：
+                # 读侧原样不动，写侧用 intervene.decide，与 T29/T30 同一格。
+                session, channel = self._session_and_permission("intervene.decide")
+                self._csrf_guard(session, channel)
+                payload = self.read_json_body()
+                self.service.flush_auth_events()
+                self.send_json(HTTPStatus.CREATED, self.service.preference_set(
+                    payload, actor_id=self.service._actor_id_of(session)))
+                return
             if path in (API_PATH_HEALTH, API_PATH_RECORDS, API_PATH_AUDIT,
                         API_PATH_AUDIT_EXPORT, API_PATH_STREAM,
                         API_PATH_INGEST_STATUS, API_PATH_SETTINGS,
@@ -4510,6 +6918,20 @@ class TraceLensHandler(BaseHTTPRequestHandler):
             self._send_auth_error(exc)
         except sec_mod.SecretariatError as exc:
             self._send_secretariat_error(exc)
+        except sharing_mod.ShareError as exc:
+            # R5-3（T21/T23 挂载）：分享域异常查同一张 EXPANSION_ERROR_TABLE 翻成统一错误体
+            # （403 越权 / 404 不存在 / 409 过期·已用 / 400 参数），绝不漏成裸 500。
+            self._send_expansion_error(exc)
+        except rollback_mod.RollbackError as exc:
+            # R1-2b（G-19/G-26 / TP-19+TP-26）：回滚域的错误一律查 EXPANSION_ERROR_TABLE
+            # 翻成统一错误体——闭包成员不可逆 409、撤销日志读不动 503，
+            # 绝不让它们漏成一句带内部存储码的 500。
+            self._send_expansion_error(exc)
+        except suggestions_mod.SuggestionError as exc:
+            # R7-2（T29/T30/T31 挂载）：建议域异常查同一张 EXPANSION_ERROR_TABLE
+            # （SUGGESTION_NOT_FOUND 404 / SUGGESTION_STATE_INVALID 409 /
+            # SUGGESTION_FIELD_INVALID·PREFERENCE_INVALID 400），零新码名、绝不漏成裸 500。
+            self._send_expansion_error(exc)
         except InterveneError as err:
             self.service.rejects += 1
             self.send_json(err.http_status, err.as_dict(self._request_id()))
@@ -4592,7 +7014,11 @@ class TraceLensHandler(BaseHTTPRequestHandler):
                                  detail={"path": path, "hint": type(exc).__name__})
             return
         self._send(HTTPStatus.OK, body, content_type,
-                   {"Last-Modified": self.date_time_string(int(target.stat().st_mtime))})
+                   {"Last-Modified": self.date_time_string(int(target.stat().st_mtime)),
+                    # 界面走热更通道（docs/21），所以静态资源一律不许落缓存：
+                    # 只给 Last-Modified 时 Chromium 会按启发式新鲜度直接复用磁盘缓存，
+                    # 换版本后仍可能显示旧界面（尤其 `--port` 固定端口时同一 origin）。
+                    "Cache-Control": "no-store"})
 
     @staticmethod
     def resolve_static(root: pathlib.Path, path: str) -> "pathlib.Path | InterveneError | None":
@@ -4765,6 +7191,61 @@ def start_background_server(host: str = "127.0.0.1", port: int = 0, **kwargs: An
     return server, thread
 
 
+def declared_api_paths() -> dict[str, Any]:
+    """本模块此刻声明的全部 API_PATH* 常量（live 值，不读源码、不做 AST）。
+
+    口径与 `tools/gen_api_contract.py` 一致：`API_PATH` 前缀（含 tuple 形的
+    `API_PATHS_PUBLIC` 白名单），这样"契约过期"比对才不会两边数不对齐。
+    """
+    return {name: value for name, value in sorted(globals().items())
+            if name.startswith("API_PATH")}
+
+
+def contract_selfcheck(contract_path: pathlib.Path | str | None = None) -> dict[str, Any]:
+    """启动自检：「声明 ≠ 挂载」与「契约过期」两件事各答各的。
+
+    * **挂载判定**：每个 live `API_PATH_*` 常量值，都要被随仓库发布的契约 JSON
+      里的某条路由精确命中或是某条资源族的前缀。只需 live 常量 + JSON，不读
+      源码文件，所以在 PyInstaller 冻结包里也能跑；JSON 不在（冻结包不带 docs/）
+      时如实报 `absent`，由发版闸门负责把关。
+    * **过期判定**：live 常量表与契约 JSON 的 `path_constants` 逐条比对——
+      代码改了没跑 `gen_api_contract.py --write` 会在这里被点名。
+
+    自检不拦启动（发版硬门禁在打包闸门上），但启动横幅会把结论打出来，
+    让"声明 ≠ 挂载"在第一眼就看得见。
+    """
+    path = pathlib.Path(contract_path) if contract_path is not None else \
+        pathlib.Path(__file__).resolve().parent.parent / "docs" / "api_contract.json"
+    declared = declared_api_paths()
+    facts: dict[str, Any] = {"declared": len(declared), "path": str(path),
+                             "unmounted": [], "stale": [], "routes": 0}
+    if not path.exists():
+        facts["status"] = "absent"
+        return facts
+    try:
+        contract = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        facts.update(status="unreadable", error=f"{type(exc).__name__}: {exc}")
+        return facts
+    patterns = [str(r.get("path") or "") for r in contract.get("routes", [])
+                if str(r.get("path") or "").startswith("/")]
+    patterns += [str(p) for p in contract.get("public_paths", ())]
+    facts["routes"] = len(contract.get("routes", []))
+    facts["unmounted"] = sorted(
+        f"{name}={value}" for name, value in declared.items()
+        if isinstance(value, str)
+        and not any(p == value or p.startswith(value + "/") for p in patterns))
+    on_disk = contract.get("path_constants", {})
+    facts["stale"] = sorted(
+        {f"{name}={value}（契约里是 {on_disk[name]}）" for name, value in declared.items()
+         if isinstance(value, str) and name in on_disk and on_disk[name] != value}
+        | {f"{name}（契约里没有）" for name, value in declared.items()
+           if name not in on_disk}
+        | {f"契约里有 {name}，代码已删" for name in on_disk if name not in declared})
+    facts["status"] = "drift" if (facts["unmounted"] or facts["stale"]) else "ok"
+    return facts
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m agent_explainer.server",
@@ -4882,6 +7363,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"  realtime : GET  {API_PATH_STREAM} (SSE) · GET {API_PATH_INGEST_STATUS}")
     print(f"             POST {API_PATH_INGEST_EVENTS} · POST {API_PATH_INGEST_TOKENS}"
           f" · POST {API_PATH_INGEST_TOKENS}/<id>/revoke")
+    # 5.1 契约自检：声明的路径是否都挂进了分发（结论直接打进启动横幅，不拦启动）
+    contract = contract_selfcheck()
+    if contract["status"] == "ok":
+        print(f"  contract : {contract['declared']} 个声明路径全部挂载"
+              f"（契约 {contract['routes']} 条路由）")
+    elif contract["status"] == "absent":
+        print(f"  contract : 契约文件不在（冻结包正常；源码树请跑 "
+              f"`python tools/gen_api_contract.py --check`）")
+    else:
+        print(f"  contract : ⚠ 自检未过（{contract['status']}）—— 路由能起，但先修再发版：")
+        for item in contract["unmounted"]:
+            print(f"             - 声明未挂载：{item}")
+        for item in contract["stale"]:
+            print(f"             - 契约过期：{item}（跑 `python tools/gen_api_contract.py --write`）")
     ing = server.service.ingest_health_block()
     stream = server.service.stream_health_block()
     print(f"             ingest={'开' if ing['enabled'] else '关（--no-ingest）'}"

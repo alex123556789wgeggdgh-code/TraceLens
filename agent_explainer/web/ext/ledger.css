@@ -1,0 +1,1406 @@
+/* ================================================================== *
+ * ledger.css - the main action page, restyled to match the feature
+ * centre (docs/23-interface-redesign.md).
+ *
+ * Design language: warm paper, warm ink, one vermilion accent, serif
+ * display type, tabular numerals, hairline rules, zero rounded corners,
+ * zero shadows. Everything here is an override: the original styles.css
+ * keeps every behaviour, every breakpoint and every aria contract.
+ *
+ * All tokens (--ws-*) are declared in styles.css and swap automatically
+ * under prefers-color-scheme: dark; no second palette lives here.
+ * No CJK literals, no @font-face, no external URL, no keyframes.
+ * ================================================================== */
+
+/* ------------------------------------------------------------------ *
+ * 1. paper and ink
+ * ------------------------------------------------------------------ */
+
+.app {
+  background: var(--ws-paper);
+  color: var(--ws-ink);
+  font-family: var(--ws-sans);
+}
+
+.app .skip-link:focus {
+  background: var(--ws-paper-2);
+  color: var(--ws-ink);
+  border: 1px solid var(--ws-accent);
+}
+
+/* one shared "section mark": a 12px vermilion rule before every title */
+.app .sheet__title,
+.app .panel__title,
+.app .sidebar__name,
+.app .topbar__name {
+  font-family: var(--ws-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ws-ink);
+}
+
+/* ------------------------------------------------------------------ *
+ * 2. top bar -> running head (serif title + printed double rule)
+ * ------------------------------------------------------------------ */
+
+.app .topbar {
+  position: relative;
+  margin: 0;
+  padding: 10px 0 14px;
+  background: var(--ws-paper-2);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  gap: var(--space-2) var(--space-3);
+}
+
+.app .topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  border-top: 1px solid var(--ws-rule-2);
+  border-bottom: 1px solid var(--ws-rule);
+  pointer-events: none;
+}
+
+.app .topbar__name {
+  font-size: 23px;
+  line-height: 1.15;
+}
+
+.app .topbar__tagline {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+/* chips become plain marginal notes, not coloured pills */
+.app .topbar__chip,
+.app .topbar__status,
+.app .lang-switch {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 2px 0;
+}
+
+.app .topbar__chip + .topbar__chip,
+.app .topbar__status + .topbar__chip {
+  border-left: 1px solid var(--ws-rule);
+  padding-left: var(--space-2);
+}
+
+.app .topbar__chip-value {
+  color: var(--ws-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.app .lang-switch {
+  gap: var(--space-2);
+  border-left: 1px solid var(--ws-rule);
+  padding-left: var(--space-2);
+}
+
+.app .lang-switch__btn {
+  border-radius: 0;
+  padding: 1px 0;
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+}
+
+.app .lang-switch__btn.is-active {
+  background: transparent;
+  color: var(--ws-accent);
+  border-bottom: 1px solid var(--ws-accent);
+  font-weight: 700;
+}
+
+.app .topbar__refresh,
+.app .topbar__more,
+.app .workspace-entry {
+  border-radius: 0;
+  border: 1px solid var(--ws-rule-2);
+  background: transparent;
+  color: var(--ws-ink-2);
+  font-size: 11px;
+}
+
+.app .topbar__refresh:hover,
+.app .topbar__more:hover {
+  border-color: var(--ws-accent);
+  color: var(--ws-accent);
+}
+
+/* ------------------------------------------------------------------ *
+ * 3. left column -> the spine (numbered ledger, no card shell)
+ * ------------------------------------------------------------------ */
+
+.app .sidebar {
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--ws-rule);
+  border-radius: 0;
+  padding: 0 var(--space-4) 0 0;
+  gap: var(--space-3);
+  max-height: calc(100vh - (2 * var(--space-4)));
+  overflow-y: auto;
+}
+
+.app .sidebar__brand {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--ws-rule-2);
+}
+
+.app .sidebar__name {
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.app .sidebar__tagline {
+  color: var(--ws-ink-3);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.app .sidebar__nav {
+  gap: 0;
+}
+
+.app .sidebar__link {
+  display: flex;
+  align-items: center;
+  padding: 7px 0 7px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule);
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-2);
+  font-size: 12px;
+  transition: none;
+}
+
+.app .sidebar__link:hover {
+  background: var(--ws-paper-2);
+  border-left-color: var(--ws-rule-2);
+  color: var(--ws-ink);
+}
+
+.app .sidebar__link.is-active,
+.app .sidebar__link[aria-current="page"] {
+  border-left-color: var(--ws-accent);
+  color: var(--ws-accent);
+  background: transparent;
+}
+
+.app .sidebar__summary {
+  border-top: 1px solid var(--ws-rule-2);
+  padding-top: var(--space-2);
+  gap: 0;
+}
+
+.app .sidebar__stat {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--ws-rule);
+  font-size: 11px;
+  color: var(--ws-ink-2);
+}
+
+.app .sidebar__stat-value {
+  font-family: var(--ws-mono);
+  font-size: 12px;
+  color: var(--ws-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.app .sidebar__version {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+}
+
+.app .sidebar__block-title {
+  font-family: var(--ws-serif);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ws-ink);
+  margin-bottom: 4px;
+}
+
+.app .sidebar__block-hint {
+  color: var(--ws-ink-3);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.app .sidebar__listbox {
+  border: 0;
+  border-top: 1px solid var(--ws-rule);
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.app .sidebar__list {
+  gap: 0;
+}
+
+.app .sidebar__item {
+  border-bottom: 1px solid var(--ws-rule);
+  border-radius: 0;
+  background: transparent;
+  padding: 6px 0;
+}
+
+.app .sidebar__item-btn {
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink);
+}
+
+.app .sidebar__item-time,
+.app .sidebar__item-l1 {
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  color: var(--ws-ink-3);
+}
+
+.app .sidebar__item-l1 {
+  color: var(--ws-ink-2);
+}
+
+.app .filter,
+.app .filter__item,
+.app .sidebar__filter {
+  border-radius: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule);
+  background: transparent;
+}
+
+/* ------------------------------------------------------------------ *
+ * 4. demo banner -> one ruled marginal note instead of a big panel
+ * ------------------------------------------------------------------ */
+
+.app .banner--demo {
+  margin: 0;
+  padding: 6px 0 6px 12px;
+  border: 0;
+  border-left: 2px solid var(--ws-accent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-2);
+}
+
+.app .banner__row {
+  gap: var(--space-2);
+  flex-wrap: nowrap;
+}
+
+.app .banner__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 0;
+  background: var(--ws-accent);
+}
+
+.app .banner__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ws-ink);
+}
+
+.app .banner__text {
+  margin: 0;
+  font-size: 10px;
+  color: var(--ws-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app .banner__checks {
+  margin: 2px 0 0;
+  gap: var(--space-2);
+}
+
+.app .banner__checks .chip,
+.app .chip {
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  padding: 0 0 1px;
+}
+
+/* ------------------------------------------------------------------ *
+ * 5. centre timeline -> a compact ledger strip
+ * ------------------------------------------------------------------ */
+
+.app .timeline {
+  padding: 0 0 8px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule);
+  border-radius: 0;
+}
+
+.app .panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 17px;
+}
+
+.app .panel__title::before {
+  content: "";
+  flex: none;
+  width: 12px;
+  height: 1px;
+  background: var(--ws-accent);
+}
+
+.app .panel__hint {
+  margin: 2px 0 0;
+  font-size: 10px;
+  color: var(--ws-ink-3);
+}
+
+.app .timeline__scrub-box {
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.app .timeline__scrub-label,
+.app .timeline__scale {
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  color: var(--ws-ink-3);
+}
+
+.app .timeline__scrub {
+  height: 16px;
+}
+
+.app .timeline__scrub::-webkit-slider-runnable-track {
+  height: 1px;
+  border-radius: 0;
+  background: var(--ws-rule-2);
+}
+
+.app .timeline__scrub::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  margin-top: -4px;
+  border: 1px solid var(--ws-accent);
+  border-radius: 0;
+  background: var(--ws-paper-2);
+  box-shadow: none;
+}
+
+.app .timeline__scrub::-moz-range-track {
+  height: 1px;
+  border-radius: 0;
+  background: var(--ws-rule-2);
+}
+
+.app .timeline__scrub::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--ws-accent);
+  border-radius: 0;
+  background: var(--ws-paper-2);
+}
+
+.app .timeline__peek {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px var(--space-3);
+  margin: 4px 0 0;
+  padding: 6px 0 6px 12px;
+  border: 0;
+  border-left: 2px solid var(--ws-accent);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app .timeline__peek[data-color="ok"],
+.app .timeline__peek[data-color="pending"],
+.app .timeline__peek[data-color="progress"],
+.app .timeline__peek[data-color="danger"],
+.app .timeline__peek[data-color="neutral"] {
+  border-left-color: var(--ws-accent);
+}
+
+.app .timeline__peek-kicker,
+.app .timeline__peek-time {
+  margin: 0;
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  color: var(--ws-ink-3);
+  letter-spacing: 0.04em;
+}
+
+.app .timeline__peek-l1 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ws-ink);
+}
+
+.app .timeline__peek-badges {
+  margin: 0;
+  gap: var(--space-2);
+}
+
+/* ------------------------------------------------------------------ *
+ * 6. the action ledger (the core of this pass)
+ *
+ * Three zones become three ruled columns of one shared table. Each
+ * column scrolls on its own, so 513 finished rows no longer push the
+ * other two zones off the screen. Cards become single ledger lines.
+ * ------------------------------------------------------------------ */
+
+.app .sheet {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  color: var(--ws-ink);
+}
+
+.app .sheet__title {
+  font-size: 21px;
+  line-height: 1.2;
+  margin: 0 0 2px;
+}
+
+.app .sheet__subtitle {
+  margin: 0 0 var(--space-2);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ws-ink-3);
+}
+
+.app .sheet__foot,
+.app .import {
+  border: 0;
+  border-top: 1px solid var(--ws-rule);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-3);
+  font-size: 10px;
+  padding: var(--space-2) 0 0;
+  margin-top: var(--space-2);
+}
+
+.app .zones {
+  gap: 0;
+  max-width: none;
+  border-top: 1px solid var(--ws-rule-2);
+  border-bottom: 1px solid var(--ws-rule-2);
+  align-items: stretch;
+}
+
+.app .zone {
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--ws-rule);
+  border-radius: 0;
+  padding: 0 var(--space-3);
+  min-width: 0;
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
+.app .zone:last-child {
+  border-right: 0;
+}
+
+.app .zone__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--ws-rule-2);
+  background: var(--ws-paper);
+}
+
+.app .zone__title {
+  font-family: var(--ws-serif);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ws-ink);
+  white-space: nowrap;
+}
+
+.app .zone__title[data-top="true"]::before {
+  width: 10px;
+  height: 1px;
+  margin-right: 6px;
+  border-radius: 0;
+  background: var(--ws-accent);
+  vertical-align: middle;
+}
+
+.app .zone__count {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.app .zone__flag {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-accent);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+}
+
+.app .zone__hint,
+.app .zone__note,
+.app .zone__queued-note {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ws-ink-3);
+}
+
+.app .zone__hint {
+  display: none;
+}
+
+.app .zone__body {
+  gap: 0;
+}
+
+.app .zone__empty {
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule);
+  border-radius: 0;
+  font-size: 11px;
+  color: var(--ws-ink-3);
+  text-align: left;
+}
+
+.app .zone__queued {
+  gap: 0;
+  padding-top: 0;
+  border-top: 1px solid var(--ws-rule-2);
+}
+
+.app .zone__filtered,
+.app .zones__focus-note {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-3);
+  font-size: 10px;
+}
+
+/* one record = one ruled line, not a nested rounded card */
+.app .card {
+  padding: 7px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule);
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: none;
+}
+
+.app .card[data-color="pending"],
+.app .card[data-color="progress"] {
+  border-left-color: var(--ws-accent);
+}
+
+.app .card[data-color="ok"],
+.app .card[data-color="neutral"],
+.app .card[data-color="danger"] {
+  border-left-color: transparent;
+}
+
+.app .card--priority,
+.app .card.is-expanded {
+  background: var(--ws-paper-2);
+  box-shadow: none;
+}
+
+.app .card--compact {
+  padding: 5px 0;
+}
+
+.app .card__toggle {
+  gap: 6px;
+  align-items: baseline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.app .card__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 0;
+  background: var(--ws-ink-3);
+  flex: 0 0 auto;
+}
+
+.app .card[data-color="pending"] .card__dot,
+.app .card[data-color="progress"] .card__dot {
+  background: var(--ws-accent);
+}
+
+.app .card__l1 {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ws-ink);
+}
+
+.app .card__chevron {
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+}
+
+.app .card__badges {
+  gap: var(--space-2);
+  margin-top: 2px;
+}
+
+.app .badge {
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  padding: 0 0 1px;
+}
+
+.app .badge--needs-you,
+.app .badge--risk,
+.app .badge--irreversible,
+.app .badge--expired {
+  color: var(--ws-accent);
+  border-bottom-color: var(--ws-accent);
+}
+
+.app .card__meta {
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  color: var(--ws-ink-3);
+}
+
+.app .card__meta-sep {
+  color: var(--ws-rule-2);
+}
+
+.app .card__detail {
+  margin-top: 6px;
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid var(--ws-rule);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app .card__detail-title {
+  font-family: var(--ws-serif);
+  font-size: 13px;
+  color: var(--ws-ink);
+}
+
+.app .card__detail-hint {
+  font-size: 10px;
+  color: var(--ws-ink-3);
+}
+
+/* ------------------------------------------------------------------ *
+ * 7. right column -> margin notes (compact ticks, no card shell)
+ * ------------------------------------------------------------------ */
+
+.app .rail {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--ws-rule);
+  border-radius: 0;
+  padding: 0 0 0 var(--space-4);
+  max-height: calc(100vh - (2 * var(--space-4)));
+  overflow-y: auto;
+}
+
+.app .rail__hooks {
+  gap: 0;
+  margin-top: var(--space-2);
+  padding-top: 0;
+  border-top: 1px solid var(--ws-rule-2);
+}
+
+.app .rail__hook {
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app .rail__hook-title {
+  font-family: var(--ws-serif);
+  font-size: 14px;
+  color: var(--ws-ink);
+}
+
+.app .rail__hook-hint,
+.app .rail__hook-note,
+.app .rail__hook-meta,
+.app .rail__hook-feedback {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--ws-ink-3);
+}
+
+.app .timeline__strip {
+  gap: 0;
+  margin-top: 4px;
+}
+
+.app .timeline__tick {
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--ws-rule);
+  font-size: 10px;
+  color: var(--ws-ink-3);
+}
+
+.app .timeline__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 0;
+  background: var(--ws-rule-2);
+}
+
+.app .timeline__tick[data-color="ok"] .timeline__dot {
+  background: var(--ws-ink-2);
+}
+
+.app .timeline__tick[data-color="danger"] .timeline__dot,
+.app .timeline__tick[data-color="pending"] .timeline__dot,
+.app .timeline__tick[data-color="progress"] .timeline__dot {
+  background: var(--ws-accent);
+}
+
+.app .timeline__time {
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  color: var(--ws-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.app .rail__button {
+  border: 1px solid var(--ws-rule-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink);
+  font-size: 11px;
+}
+
+.app .rail__button:hover {
+  border-color: var(--ws-accent);
+  color: var(--ws-accent);
+}
+
+.app .compare {
+  border: 0;
+  border-top: 1px solid var(--ws-rule-2);
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-3) 0 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * 8. desktop: three ruled zone columns, tighter shell gutters
+ * ------------------------------------------------------------------ */
+
+@media (min-width: 1024px) {
+  .app {
+    grid-template-columns: 196px minmax(0, 1fr) 196px;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-5);
+  }
+
+  .app .main {
+    gap: 6px;
+  }
+
+  /* override the 320px auto-fit rule in styles.css: three equal columns
+   * of one ledger, separated by hairlines, never stacked cards. */
+  .app .zones {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .app .zone {
+    max-height: calc(100vh - 268px);
+  }
+
+  /* reclaim vertical space: the running head, the demo note and the
+   * scrubber together used to eat ~44% of a 768px window. */
+  .app .topbar {
+    padding: 6px 0 10px;
+    gap: 4px 6px;
+  }
+
+  .app .topbar__name {
+    font-size: 19px;
+  }
+
+  .app .topbar__tagline {
+    display: none;
+  }
+
+  .app .topbar__chip {
+    margin-inline-start: 0;
+    padding: 1px 0;
+  }
+
+  .app .banner--demo {
+    padding: 4px 0 4px 10px;
+  }
+
+  .app .banner__row {
+    gap: 6px;
+  }
+
+  .app .banner__title {
+    font-size: 11px;
+  }
+
+  .app .banner__text {
+    margin: 0;
+  }
+
+  .app .banner__checks {
+    margin: 1px 0 0;
+  }
+
+  .app .timeline .panel__hint,
+  .app .timeline__scrub-label {
+    display: none;
+  }
+
+  .app .timeline__peek {
+    margin-top: 2px;
+    padding: 3px 0 3px 10px;
+  }
+
+  .app .timeline {
+    padding-bottom: 4px;
+  }
+
+  .app .sheet__title {
+    font-size: 18px;
+  }
+
+  .app .sheet__subtitle {
+    margin-bottom: 4px;
+  }
+
+  /* the import block is rendered twice by design: one copy in the phone
+   * sheet, one in the desktop rail. On desktop only the rail copy is shown,
+   * otherwise the same form appears twice on one page. */
+  .app .sheet > .import,
+  .app .sheet > .sheet__foot {
+    display: none;
+  }
+}
+
+/* At 1080px (the window most screenshots come from) three equal columns
+ * leave ~157px per zone and the record titles wrap into four lines. Two
+ * columns keep the first two zones readable; the long finished list spans
+ * the full width and scrolls inside its own ruled band. */
+@media (min-width: 1024px) and (max-width: 1360px) {
+  .app {
+    grid-template-columns: 160px minmax(0, 1fr) 160px;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .app .zones,
+  .app[data-frame][data-frame-layout="desktop"] .zones {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app .zone,
+  .app[data-frame][data-frame-layout="desktop"] .zone {
+    max-height: 190px;
+    padding: 0 8px;
+  }
+
+  .app .zone:nth-child(2) {
+    border-right: 0;
+  }
+
+  .app .zone:nth-child(3),
+  .app[data-frame][data-frame-layout="desktop"] .zone:nth-child(3) {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--ws-rule-2);
+    max-height: 190px;
+  }
+
+  .app .rail,
+  .app[data-frame][data-frame-layout="desktop"] .rail {
+    padding-left: 8px;
+  }
+
+  .app .sidebar,
+  .app[data-frame][data-frame-layout="desktop"] .sidebar {
+    padding-right: 8px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 9. phone / tablet: keep the original stacking, only the skin changes
+ * ------------------------------------------------------------------ */
+
+@media (max-width: 1023px) {
+  .app .zones {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app .zone {
+    max-height: none;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--ws-rule);
+    padding: 0 0 var(--space-2);
+  }
+
+  .app .zone__head {
+    position: static;
+  }
+
+  .app .banner__row {
+    flex-wrap: wrap;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 10. status filter + feature-centre launcher (leftover coloured pills)
+ * ------------------------------------------------------------------ */
+
+.app .sidebar__filters,
+.app .filter__group {
+  gap: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.app .filter__btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-2);
+  font-size: 11px;
+}
+
+.app .filter__btn:hover,
+.app .filter__btn.is-on,
+.app .filter__btn.is-off {
+  background: transparent;
+  border-color: var(--ws-rule);
+  color: var(--ws-ink-2);
+}
+
+.app .filter__btn.is-off {
+  color: var(--ws-ink-3);
+}
+
+.app .filter__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 0;
+  background: var(--ws-ink-3);
+}
+
+.app .filter__dot[data-zone="needs_me"],
+.app .filter__dot[data-zone="running"] {
+  background: var(--ws-accent);
+}
+
+.app .filter__btn.is-off .filter__dot {
+  background: var(--ws-rule-2);
+}
+
+.app .filter__label {
+  color: inherit;
+}
+
+.app .filter__value {
+  margin-left: auto;
+  font-family: var(--ws-mono);
+  font-size: 11px;
+  color: var(--ws-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.app .zones__notice {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-3);
+  font-size: 10px;
+}
+
+.app .workspace-entry {
+  gap: 6px;
+  padding: 2px 8px;
+  border: 0;
+  border-left: 1px solid var(--ws-rule);
+  color: var(--ws-ink-2);
+}
+
+.app .workspace-entry__mark {
+  width: auto;
+  height: auto;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-accent);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.app .workspace-entry__label {
+  font-size: 11px;
+}
+
+.app .workspace-entry:hover {
+  background: transparent;
+  color: var(--ws-accent);
+}
+
+/* the import block on the right margin keeps its fields, but drops the
+ * rounded white textarea and the coloured chips that break the paper. */
+.app .import__title {
+  font-family: var(--ws-serif);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ws-ink);
+}
+
+.app .import__hint,
+.app .import__label,
+.app .import__size,
+.app .import__mode-note,
+.app .import__feedback {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--ws-ink-3);
+}
+
+.app .import__chip {
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ws-ink-3);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+  padding: 0 0 1px;
+}
+
+.app .import__chip-durable[data-durable="false"] {
+  color: var(--ws-accent);
+  border-bottom-color: var(--ws-accent);
+}
+
+.app .import__text,
+.app .import__select,
+.app .import__file,
+.app .import__filename {
+  border: 1px solid var(--ws-rule);
+  border-radius: 0;
+  background: var(--ws-paper-2);
+  color: var(--ws-ink);
+  font-family: var(--ws-mono);
+  font-size: 10px;
+}
+
+/* ------------------------------------------------------------------ *
+ * 11. the headless verification rig uses [data-frame] rules with four
+ * selectors in styles.css. Repeat the same selectors here (loaded later)
+ * so the measured layout is the same one the user actually sees.
+ * ------------------------------------------------------------------ */
+
+.app[data-frame][data-frame-layout="desktop"] .sidebar,
+.app[data-frame][data-frame-layout="desktop"] .rail,
+.app[data-frame][data-frame-layout="desktop"] .timeline,
+.app[data-frame][data-frame-layout="desktop"] .compare {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.app[data-frame][data-frame-layout="desktop"] .sidebar {
+  border-right: 1px solid var(--ws-rule);
+  padding-right: var(--space-4);
+  max-height: calc(100vh - (2 * var(--space-4)));
+  overflow-y: auto;
+}
+
+.app[data-frame][data-frame-layout="desktop"] .rail {
+  border-left: 1px solid var(--ws-rule);
+  padding-left: var(--space-4);
+  max-height: calc(100vh - (2 * var(--space-4)));
+  overflow-y: auto;
+}
+
+.app[data-frame][data-frame-layout="desktop"] .timeline {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ws-rule);
+}
+
+.app[data-frame][data-frame-layout="desktop"] .main {
+  gap: 6px;
+}
+
+.app[data-frame][data-frame-layout="desktop"] .zones {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  align-items: stretch;
+}
+
+.app[data-frame][data-frame-layout="desktop"] .zone {
+  max-height: calc(100vh - 268px);
+  overflow-y: auto;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  /* one running-head line: the serif title keeps its width, the small
+   * mono chips are the only things allowed to wrap. A squeezed brand
+   * breaks the title in the middle of a word, which is worse than two
+   * short lines of marginal notes. */
+  .app .topbar {
+    flex-wrap: nowrap;
+  }
+
+  .app .topbar__brand {
+    flex: 0 0 auto;
+  }
+
+  .app .topbar__name {
+    font-size: 21px;
+    white-space: nowrap;
+  }
+
+  .app .topbar__tagline {
+    white-space: nowrap;
+  }
+
+  .app .workspace-entry {
+    margin-left: auto;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1180px) {
+  /* wrapping is mandatory here: nowrap would push the mono chips over the
+   * right margin column. Let the brand and the notes share two lines
+   * instead of forcing the brand onto a line of its own. */
+  .app .topbar {
+    flex-wrap: wrap;
+  }
+
+  .app .topbar__brand {
+    flex: 0 0 auto;
+  }
+
+  .app .topbar__name {
+    font-size: 17px;
+  }
+
+  .app .topbar__chip,
+  .app .lang-switch__btn {
+    font-size: 9px;
+  }
+
+  .app .lang-switch {
+    gap: 4px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 12. narrow desktop: the height rules above are repeated here because
+ * section 11 carries four-selector [data-frame] rules. Specificity is
+ * raised by one so both the real window and the headless rig agree.
+ * ------------------------------------------------------------------ */
+
+@media (min-width: 1024px) and (max-width: 1360px) {
+  .app .zone,
+  .app.app[data-frame][data-frame-layout="desktop"] .zone {
+    max-height: 190px;
+    overflow-y: auto;
+  }
+
+  .app .zone:nth-child(3),
+  .app.app[data-frame][data-frame-layout="desktop"] .zone:nth-child(3) {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--ws-rule-2);
+    max-height: 190px;
+    overflow-y: auto;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 13. detail reading panel
+ *
+ * Measured on the real window (1280x860 CSS viewport): a card detail is
+ * 1004px tall and 421px wide, but its zone is capped at 190px, so only
+ * 52px of the detail was visible. Expanding a card now lifts the detail
+ * into a large centred reading panel, with the card head pinned above it
+ * as the title / collapse bar. Same surface as the feature centre: warm
+ * paper, hairline rules, zero rounded corners. Pure CSS: no state, no
+ * script, no dictionary keys, no change to the collapse handler.
+ * ------------------------------------------------------------------ */
+
+.app .card.is-expanded {
+  --dp-w: min(1040px, 92vw);
+  --dp-h: min(82vh, 780px);
+  --dp-top: max(18px, calc((100vh - var(--dp-h)) / 2));
+  --dp-left: calc((100vw - var(--dp-w)) / 2);
+  --dp-head: 52px;
+}
+
+/* dim the ledger behind the panel; pointer events pass through so the
+ * rest of the page stays usable while a detail is open. */
+.app:has(.card.is-expanded)::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 86;
+  background: rgba(28, 24, 18, 0.34);
+  pointer-events: none;
+}
+
+.app .card.is-expanded .card__toggle {
+  position: fixed;
+  left: var(--dp-left);
+  top: var(--dp-top);
+  width: var(--dp-w);
+  height: var(--dp-head);
+  z-index: 89;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 0 24px;
+  border: 0;
+  border-bottom: 1px solid var(--ws-rule-2);
+  border-radius: 0;
+  background: var(--ws-paper-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.app .card.is-expanded .card__toggle .card__l1 {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.app .card.is-expanded .card__toggle .card__chevron {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--ws-sans);
+  font-size: 12px;
+  color: var(--ws-accent);
+}
+
+.app .card.is-expanded .card__detail {
+  position: fixed;
+  left: var(--dp-left);
+  top: calc(var(--dp-top) + var(--dp-head));
+  width: var(--dp-w);
+  height: calc(var(--dp-h) - var(--dp-head));
+  z-index: 88;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 22px 26px 30px;
+  border: 0;
+  border-radius: 0;
+  background: var(--ws-paper);
+  box-shadow: 0 18px 60px rgba(28, 24, 18, 0.28);
+}
+
+.app .card.is-expanded .card__detail-title {
+  font-size: 18px;
+}
+
+.app .card.is-expanded .card__detail-hint {
+  font-size: 12px;
+}
+
+.app .card.is-expanded .kv {
+  grid-template-columns: minmax(150px, 200px) minmax(0, 1fr);
+  column-gap: 26px;
+  row-gap: 8px;
+  margin-top: 16px;
+}
+
+.app .card.is-expanded .kv__key {
+  font-size: 12px;
+}
+
+.app .card.is-expanded .kv__value {
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* The detail is lifted out of its zone, so the leftover badges / meta of
+ * the expanded card must not leave a stray strip in the ledger column. */
+.app .card.is-expanded > .card__badges,
+.app .card.is-expanded > .card__meta {
+  display: none;
+}

@@ -12,7 +12,9 @@
   4. 决定 ≠ 生效（裁决 Q2）：`execution_receipt` 不被 `/intervene` 改写；
   5. 幂等（02 Q6）、审计哈希链、并发只允许一次决定；
   6. 静态服务与离线口径（file:// 打开用本地模拟，页面无需后端）；
-  7. 服务只用标准库、不出网、日志与审计不含参数明文。
+  7. 服务只用标准库、不出网、日志与审计不含参数明文；
+  8. 干预写回即重签（D-resign / R1-2b）：被干预的目标记录在 verify 里仍 ``ok=true``，
+     幂等重放绝不重签（``InterveneResignOnWriteTests``，产品口径的签名服务器）。
 """
 from __future__ import annotations
 
@@ -23,18 +25,21 @@ import io
 import json
 import pathlib
 import re
+import shutil
 import sys
 import threading
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-for _p in (str(ROOT), str(ROOT / "tools")):
+for _p in (str(ROOT), str(ROOT / "tests"), str(ROOT / "tools")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 from agent_explainer import server as sv  # noqa: E402
+import http_fixture as fx  # noqa: E402  连接加固：端口就绪 + 瞬态一次性重试，断言级不重试
 import facts_hash  # noqa: E402
 from jsonschema_mini import MiniValidator  # noqa: E402
+from scratch import scratch_dir  # noqa: E402  临时目录一律走 scratch（见 tests/scratch.py）
 
 SCHEMA = json.loads((ROOT / "docs" / "schemas" / "action_record.schema.json").read_text(encoding="utf-8"))
 VALIDATOR = MiniValidator(SCHEMA)
@@ -63,8 +68,10 @@ def http_request(host: str, port: int, method: str, path: str, body=None,
                  content_type: str = "application/json", extra_headers: dict | None = None,
                  timeout: float = 8.0) -> tuple[int, dict, object]:
     """一发一收的 HTTP 调用（每次新建连接，避免 keep-alive 干扰）。"""
-    conn = http.client.HTTPConnection(host, port, timeout=timeout)
-    try:
+    # M2-PRE 4（PM-VERDICT-R1-9 裁决② / R5-1 接线）：连接生命周期交给 tests/http_fixture——
+    # 端口就绪等待 + 连接级瞬态一次性重试；POST/PUT/PATCH/DELETE 这类非幂等动词绝不重放
+    # （服务端可能已写入），断言级失败绝不重试。请求构造与响应解析逐行不动，返回形状一字不改。
+    def once(conn: http.client.HTTPConnection) -> tuple[int, dict, object]:
         payload = body
         if isinstance(payload, (dict, list)):
             payload = json.dumps(payload, ensure_ascii=False)
@@ -86,8 +93,8 @@ def http_request(host: str, port: int, method: str, path: str, body=None,
         elif raw:
             data = raw.decode("utf-8", "replace")
         return resp.status, {k.lower(): v for k, v in resp.getheaders()}, data
-    finally:
-        conn.close()
+
+    return fx.with_connection(host, port, once, verb=method, path=path, timeout=timeout)
 
 
 class ServerTestCase(unittest.TestCase):
@@ -741,6 +748,20 @@ class StaticAndOfflineTests(ServerTestCase):
             self.assertEqual(st, 200, path)
             self.assertTrue(hd.get("content-type", "").startswith(ctype), f"{path} -> {hd.get('content-type')}")
 
+    def test_static_responses_are_never_cached(self) -> None:
+        """界面可热更，静态资源就不许落缓存。
+
+        只给 ``Last-Modified`` 时，Chromium 会按启发式新鲜度直接复用磁盘缓存；
+        固定端口（``--port``）下 origin 不变，换版本后仍可能把旧界面拿出来显示。
+        这一条钉的是"装上了却看不到"的那条路。
+        """
+        for path in ("/", "/index.html", "/app.js", "/styles.css",
+                     "/ext/workspaces.js", "/i18n/embed.js"):
+            st, hd, _ = self.call("GET", path)
+            self.assertEqual(st, 200, path)
+            self.assertEqual("no-store", hd.get("cache-control"),
+                             f"{path} 缺 no-store：会落到磁盘缓存")
+
     def test_missing_file_uses_the_unified_error_body(self) -> None:
         st, hd, data = self.call("GET", "/no-such-file.js")
         self.assert_error(st, hd, data, "STATIC_NOT_FOUND", min_status=404)
@@ -893,6 +914,114 @@ class PurityTests(unittest.TestCase):
         self.assertEqual(sv.parse_params_summary("没有等号"), {})
         self.assertEqual(sv.parse_params_summary(None), {})
         self.assertEqual(sv.parse_params_summary(""), {})
+
+
+class InterveneResignOnWriteTests(unittest.TestCase):
+    """D-resign（PM-VERDICT-R1-2a §3.2，R1-2b 落地）：干预写回必须在授权写回点重签。
+
+    这台服务器是产品口径：持久化 store + 入库即签名（R4）。决定流改了目标记录的
+    ``status`` / ``user_intervention`` / ``human_readable`` —— 旧签名盖不住新 body，
+    于是被干预的那条记录在 ``/api/secretariat/verify`` 里当场复算失效（P-3 的根因）。
+    重签只发生在服务端自己授权的两个写回点（决定流 / 导入合并），幂等重放不重签。
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.root = scratch_dir("intervene-resign")
+        cls.store_path = cls.root / "records.jsonl"
+        cls.server, cls.thread = sv.start_background_server(
+            "127.0.0.1", 0, records=copy.deepcopy(NATIVE), quiet=True,
+            records_store_path=cls.store_path,
+            features_root=cls.root / "features",
+            audit_log_path=cls.root / "audit.jsonl",
+            ingest_token_path=cls.root / "ingest.json",
+            settings_path=cls.root / "settings.json",
+            auth_state_path=cls.root / "auth.json",
+            sign_on_write=True)
+        cls.host, cls.port = cls.server.server_address[:2]
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.thread.join(5)
+        shutil.rmtree(cls.root, ignore_errors=True)
+
+    def post(self, path: str, body: dict) -> tuple[int, dict, object]:
+        return http_request(self.host, self.port, "POST", path, body)
+
+    def stored(self, action_id: str) -> dict:
+        status, _hd, data = http_request(self.host, self.port, "GET",
+                                         f"/api/records/{action_id}")
+        self.assertEqual(200, status, data)
+        self.assertIsInstance(data, dict)
+        return data
+
+    def verify(self, record: dict) -> dict:
+        status, _hd, data = self.post("/api/secretariat/verify", {"record": record})
+        self.assertEqual(200, status, data)
+        return data["results"][0]
+
+    def test_intervened_target_record_still_verifies(self) -> None:
+        """正题：干预之后，被干预的目标记录 ``verify_record.ok = true``。"""
+        before = self.stored(PENDING[0])
+        baseline = self.verify(before)
+        self.assertEqual("absent", baseline["checks"]["signature"],
+                         "演示种子入库不签名：这是 P-3 的对照基线，不许假装它一直合规")
+
+        status, headers, data = self.post("/intervene", {"action_id": PENDING[0],
+                                                         "decision": "approve",
+                                                         "reason": "同意执行"})
+        self.assertEqual(200, status, data)
+        self.assertEqual("false", headers.get("x-intervene-replay"))
+
+        after = self.stored(PENDING[0])
+        self.assertEqual("approved", after["status"])
+        self.assertEqual("approve", (after.get("user_intervention") or {}).get("decision"),
+                         "user_intervention.decision 记决定动词，status 记流转后的状态")
+        first = self.verify(after)
+        self.assertTrue(first["ok"], f"干预后的目标记录必须验签通过：{first['problems']}")
+        self.assertEqual("valid", first["checks"]["signature"])
+        self.assertEqual("valid", first["checks"]["entry_hash"])
+        self.assertIn(first["checks"]["prev_hash"], ("continuous", "genesis"),
+                      "重签后的 prev_hash 必须接得上责任链（链头或链起点，不能是断点）")
+        self.assertEqual([], schema_errors(after), f"重签后的记录必须过 schema v1.1：{schema_errors(after)}")
+        self.assertTrue(after.get("signature"), "决定改了 body：签名必须重算，不能留着盖旧事实的签名")
+        self.assertEqual(0, self.server.service.sign_failures)
+        self.assertGreaterEqual(self.server.service.signed_on_write, 1)
+
+    def test_idempotent_replay_does_not_resign(self) -> None:
+        """幂等重放绝不重签：同一次决定只签一次，签名计数不撒谎。"""
+        key = "r12b-iv-resign-1"
+        status, _hd, first = self.post("/intervene", {"action_id": PENDING[1],
+                                                      "decision": "reject",
+                                                      "reason": "先不发送",
+                                                      "idempotency_key": key})
+        self.assertEqual(200, status, first)
+        signed_after_first = self.stored(PENDING[1])["signature"]
+        counters = (self.server.service.signed_on_write, self.server.service.sign_failures)
+
+        status, headers, replay = self.post("/intervene", {"action_id": PENDING[1],
+                                                           "decision": "reject",
+                                                           "reason": "先不发送",
+                                                           "idempotency_key": key})
+        self.assertEqual(200, status, replay)
+        self.assertEqual("true", headers.get("x-intervene-replay"))
+        self.assertEqual(signed_after_first, self.stored(PENDING[1])["signature"],
+                         "重放不得改写记录，也不得产生第二个签名")
+        self.assertEqual(counters,
+                         (self.server.service.signed_on_write,
+                          self.server.service.sign_failures),
+                         "重放不得增加签名计数：签名次数 = 真实写回次数")
+
+    def test_unsigned_server_is_unaffected(self) -> None:
+        """关签名的 t8 口径（本文件主套件用的那台）：重签是 no-op，不假装签了。"""
+        service = sv.InterveneService(records=copy.deepcopy(NATIVE))
+        self.assertFalse(service.sign_on_write)
+        record = service.store.get(PENDING[2])
+        signed = service.sign_on_write_record(record, record)
+        self.assertEqual(record.get("signature"), signed.get("signature"),
+                         "sign_on_write=False 时一个字都不动（包括不新增签名）")
 
 
 if __name__ == "__main__":  # pragma: no cover

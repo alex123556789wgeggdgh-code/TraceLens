@@ -1,1 +1,752 @@
-/* TraceLens 5.0 - insights styles (owner replaces this placeholder). */
+/*
+ * TraceLens 5.0 - extension styles for ext/insights.js (analytics + suggestions)
+ * -----------------------------------------------------------------------------
+ * Owner: this file, scoped to the two extension panels it renders. It never
+ * reaches into styles.css, core.css or cards.css, and it defines no palette of
+ * its own: every colour is a semantic variable styles.css already exports
+ * (core.css says the same thing about the shell). The R7-2 round added the
+ * suggestion switch row, the preference table note and the three-button
+ * decision toast; the toast node is appended to document.body, so its rules
+ * are scoped by the module's own class prefix (ext-sug-toast*) instead of the
+ * panel attribute selector.
+ */
+
+/* -- shared skeleton: only inside the two extension panels ---------------- */
+
+#trust-body[data-tab="analytics"],
+#trust-body[data-tab="suggestions"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+#trust-body[data-tab="analytics"] .ext-panel__head,
+#trust-body[data-tab="suggestions"] .ext-panel__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--c-border);
+}
+
+#trust-body[data-tab="analytics"] .ext-panel__title,
+#trust-body[data-tab="suggestions"] .ext-panel__title {
+  margin: 0;
+  font-size: var(--fs-3);
+  line-height: var(--lh-tight);
+}
+
+#trust-body[data-tab="analytics"] .ext-panel__sub,
+#trust-body[data-tab="suggestions"] .ext-panel__sub {
+  margin: 0;
+  font-size: var(--fs-1);
+  color: var(--c-text-dim);
+}
+
+#trust-body[data-tab="analytics"] .ext-panel__section,
+#trust-body[data-tab="suggestions"] .ext-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-2);
+  background: var(--c-surface);
+}
+
+#trust-body[data-tab="analytics"] .ext-panel__section h4,
+#trust-body[data-tab="analytics"] .ext-panel__section h5,
+#trust-body[data-tab="suggestions"] .ext-panel__section h4,
+#trust-body[data-tab="suggestions"] .ext-panel__section h5 {
+  margin: 0;
+  font-size: var(--fs-2);
+  line-height: var(--lh-tight);
+}
+
+#trust-body[data-tab="analytics"] .ext-note,
+#trust-body[data-tab="suggestions"] .ext-note {
+  margin: 0;
+  font-size: var(--fs-0);
+  line-height: var(--lh-base);
+  color: var(--c-text-dim);
+}
+
+#trust-body[data-tab="analytics"] .ext-note--warn,
+#trust-body[data-tab="suggestions"] .ext-note--warn {
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--c-progress);
+  border-radius: var(--radius-1);
+  background: var(--c-pending-soft);
+  color: var(--c-text);
+}
+
+#trust-body[data-tab="analytics"] .ext-form,
+#trust-body[data-tab="suggestions"] .ext-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+#trust-body[data-tab="analytics"] .ext-field,
+#trust-body[data-tab="suggestions"] .ext-field {
+  display: flex;
+  flex: 1 1 160px;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+#trust-body[data-tab="analytics"] .ext-field__label,
+#trust-body[data-tab="suggestions"] .ext-field__label {
+  font-size: var(--fs-0);
+  color: var(--c-text-dim);
+}
+
+#trust-body[data-tab="analytics"] .ext-input,
+#trust-body[data-tab="suggestions"] .ext-input {
+  padding: 6px 9px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-1);
+  background: var(--c-surface-2);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-1);
+}
+
+#trust-body[data-tab="analytics"] .ext-input:focus-visible,
+#trust-body[data-tab="suggestions"] .ext-input:focus-visible {
+  border-color: var(--c-focus);
+  outline: none;
+}
+
+#trust-body[data-tab="analytics"] .ext-metric,
+#trust-body[data-tab="suggestions"] .ext-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-1);
+  background: var(--c-surface-2);
+}
+
+#trust-body[data-tab="analytics"] .ext-metric__label,
+#trust-body[data-tab="suggestions"] .ext-metric__label {
+  font-size: var(--fs-0);
+  color: var(--c-text-dim);
+}
+
+#trust-body[data-tab="analytics"] .ext-metric__value,
+#trust-body[data-tab="suggestions"] .ext-metric__value {
+  font-size: var(--fs-4);
+  font-weight: 600;
+}
+
+/* -- suggestions: the service-level switch row --------------------------- */
+
+#trust-body[data-tab="suggestions"] .ext-sug {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__feature {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-2);
+  background: var(--c-surface-2);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__feature .ext-note {
+  flex: 1 1 100%;
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__feature-msg {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+#trust-body[data-tab="suggestions"] .ext-switch {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  width: 44px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-full);
+  background: var(--c-surface);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+#trust-body[data-tab="suggestions"] .ext-switch.is-on {
+  border-color: var(--c-ok-line);
+  background: var(--c-ok-soft);
+}
+
+#trust-body[data-tab="suggestions"] .ext-switch__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--c-neutral);
+  transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+#trust-body[data-tab="suggestions"] .ext-switch.is-on .ext-switch__knob {
+  background: var(--c-ok);
+  transform: translateX(22px);
+}
+
+#trust-body[data-tab="suggestions"] .ext-switch[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#trust-body[data-tab="suggestions"] .ext-switch__label {
+  margin-left: 52px;
+  font-size: var(--fs-1);
+}
+
+#trust-body[data-tab="suggestions"] .ext-switch__state {
+  font-size: var(--fs-0);
+  color: var(--c-text-dim);
+}
+
+/* -- suggestions: the list of open suggestions --------------------------- */
+
+#trust-body[data-tab="suggestions"] .ext-sug__items,
+#trust-body[data-tab="suggestions"] .ext-sug__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--c-border);
+  border-left: 3px solid var(--c-progress);
+  border-radius: var(--radius-1);
+  background: var(--c-surface);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug-card__name {
+  font-size: var(--fs-2);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug-card__badge,
+#trust-body[data-tab="suggestions"] .ext-sug-card__occ {
+  padding: 2px 8px;
+  border: 1px solid var(--c-neutral-line);
+  border-radius: var(--radius-full);
+  background: var(--c-neutral-soft);
+  color: var(--c-text-dim);
+  font-size: var(--fs-0);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug-card__badge {
+  border-color: var(--c-progress-line);
+  background: var(--c-pending-soft);
+  color: var(--c-text);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug-card__change {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug-card__value {
+  padding: 2px 6px;
+  border-radius: var(--radius-1);
+  background: var(--c-surface-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-1);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug-card__arrow {
+  color: var(--c-text-dim);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__feedback:empty {
+  display: none;
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__cooldown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius-1);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__cooldown-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__cooldown-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-1);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__cooldown-until {
+  color: var(--c-text-dim);
+  font-size: var(--fs-0);
+}
+
+/* -- suggestions: the preference table and the manual add form ----------- */
+
+#trust-body[data-tab="suggestions"] .ext-sug__prefs-host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__prefs {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-1);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__prefs th,
+#trust-body[data-tab="suggestions"] .ext-sug__prefs td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--c-border);
+  vertical-align: top;
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__prefs th {
+  color: var(--c-text-dim);
+  font-size: var(--fs-0);
+  font-weight: 600;
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__source {
+  padding: 2px 8px;
+  border: 1px solid var(--c-neutral-line);
+  border-radius: var(--radius-full);
+  background: var(--c-neutral-soft);
+  font-size: var(--fs-0);
+}
+
+#trust-body[data-tab="suggestions"] .ext-sug__add {
+  padding-top: var(--space-2);
+}
+
+/* -- the three-button decision toast (node lives on document.body) ------- *
+ * No backdrop, no focus trap, no .trust-modal: the rest of the page stays
+ * clickable while it is up (task R7-2 rule: non-modal). z-index 92 keeps it
+ * above the trust sheet (80) and below the shell modal (95).
+ */
+
+.ext-sug-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 96px;
+  z-index: 92;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(420px, calc(100vw - 32px));
+  padding: var(--space-3);
+  border: 1px solid var(--c-border);
+  border-left: 3px solid var(--c-progress);
+  border-radius: var(--radius-2);
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.28);
+}
+
+.ext-sug-toast[hidden] {
+  display: none;
+}
+
+.ext-sug-toast__text {
+  margin: 0;
+  font-size: var(--fs-1);
+  line-height: var(--lh-base);
+}
+
+.ext-sug-toast__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ext-sug-toast__note {
+  margin: 0;
+  font-size: var(--fs-0);
+  color: var(--c-text-dim);
+}
+
+.ext-sug-toast__note:not(:empty) {
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--c-border);
+}
+
+html[data-view="mobile"] .ext-sug-toast {
+  right: 8px;
+  left: 8px;
+  bottom: 76px;
+  max-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #trust-body[data-tab="suggestions"] .ext-switch,
+  #trust-body[data-tab="suggestions"] .ext-switch__knob {
+    transition: none;
+  }
+}
+
+/* -------------------------------------------------------------------- *
+ * R6-4: the analytics face (dashboard panel + data plane + export face)
+ * ---------------------------------------------------------------------
+ * The panel had markup and no styles of its own: every class below is the
+ * panel's, scoped to the analytics tab, painted by ext/insights.js. Like the
+ * rest of this file it defines no palette - colour, spacing and type all come
+ * from the semantic tokens styles.css exports, so the light/dark pair and the
+ * reduced-motion preference keep working. Nothing here reaches into
+ * styles.css, core.css, cards.css or the suggestion tab.
+ */
+
+/* -- layout ------------------------------------------------------------ */
+
+#trust-body[data-tab="analytics"] .ext-ana {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+  align-items: end;
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-2);
+  background: var(--c-surface);
+}
+
+/* -- metric cards ------------------------------------------------------ */
+
+#trust-body[data-tab="analytics"] .ext-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2);
+}
+
+#trust-body[data-tab="analytics"] .ext-metric__bar {
+  height: 4px;
+  margin-top: var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--c-neutral-soft);
+  overflow: hidden;
+}
+
+#trust-body[data-tab="analytics"] .ext-metric__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--c-pending);
+}
+
+#trust-body[data-tab="analytics"] .ext-metric__hint {
+  margin-top: var(--space-1);
+  font-size: var(--fs-0);
+  line-height: var(--lh-base);
+  color: var(--c-text-dim);
+}
+
+/* -- the data plane strip (R6-4: where these numbers came from) -------- */
+
+#trust-body[data-tab="analytics"] .ext-ana__plane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--c-border);
+  border-left: 3px solid var(--c-neutral);
+  border-radius: var(--radius-2);
+  background: var(--c-surface-2);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__plane[data-pre-aggregated="true"] {
+  border-left-color: var(--c-ok);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__plane[data-pre-aggregated="false"] {
+  border-left-color: var(--c-progress);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__plane-source {
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__plane-reason {
+  font-family: var(--font-mono);
+  font-size: var(--fs-0);
+}
+
+/* -- export face (R6-4: names and notes come from the served headers) -- */
+
+#trust-body[data-tab="analytics"] .ext-ana__export {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-2);
+  background: var(--c-surface);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__export-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__export-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__export-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-1);
+  background: var(--c-surface-2);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__export-result .ext-note {
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+/* -- trend chart ------------------------------------------------------- */
+
+#trust-body[data-tab="analytics"] .ext-ana__chart-host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-x: auto;
+}
+
+#trust-body[data-tab="analytics"] .ext-ana-chart {
+  display: block;
+  width: 100%;
+  min-width: 320px;
+  height: auto;
+}
+
+#trust-body[data-tab="analytics"] .ext-ana-chart__grid {
+  stroke: var(--c-border);
+  stroke-width: 1;
+}
+
+#trust-body[data-tab="analytics"] .ext-ana-chart__line {
+  fill: none;
+  stroke: var(--c-pending);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+#trust-body[data-tab="analytics"] .ext-ana-chart__dot {
+  fill: var(--c-pending);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana-chart__axis,
+#trust-body[data-tab="analytics"] .ext-ana-chart__tick,
+#trust-body[data-tab="analytics"] .ext-ana-chart__x {
+  fill: var(--c-text-dim);
+  font-size: 11px;
+  font-family: var(--font-ui);
+}
+
+/* -- heatmap ----------------------------------------------------------- */
+
+#trust-body[data-tab="analytics"] .ext-ana__heat-host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-x: auto;
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__heat {
+  border-collapse: collapse;
+  font-size: var(--fs-0);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__heat th {
+  padding: var(--space-1);
+  text-align: left;
+  color: var(--c-text-dim);
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__heat-cell {
+  position: relative;
+  min-width: 40px;
+  height: 28px;
+  padding: var(--space-1);
+  border: 1px solid var(--c-border);
+  text-align: center;
+  vertical-align: middle;
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__heat-cell.is-zero {
+  background: var(--c-neutral-soft);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__heat-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--c-pending);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__heat-count {
+  position: relative;
+  color: var(--c-text);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__heat-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__heat-legend-label {
+  font-size: var(--fs-0);
+  color: var(--c-text-dim);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__heat-swatch {
+  width: 16px;
+  height: 12px;
+  border-radius: var(--radius-1);
+  background: var(--c-pending);
+  border: 1px solid var(--c-border);
+}
+
+/* -- top lists --------------------------------------------------------- */
+
+#trust-body[data-tab="analytics"] .ext-ana__tops {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__top-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__top-list > li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-1);
+  background: var(--c-surface-2);
+  font-size: var(--fs-1);
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__top-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#trust-body[data-tab="analytics"] .ext-ana__top-count {
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+
+/* the offline copy fallback writes a throwaway textarea: never on screen */
+#trust-body[data-tab="analytics"] .ext-copy-area,
+#trust-body[data-tab="suggestions"] .ext-copy-area {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #trust-body[data-tab="analytics"] .ext-ana-chart__line,
+  #trust-body[data-tab="analytics"] .ext-metric__bar-fill {
+    transition: none;
+  }
+}

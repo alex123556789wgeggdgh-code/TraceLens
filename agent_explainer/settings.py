@@ -750,6 +750,31 @@ def default_settings_path(mode: str = "local") -> pathlib.Path:
         / DEFAULT_SETTINGS_FILENAME
 
 
+def normalise_server_base_url(value: Any) -> str:
+    """服务器自身 base 的规范形态：合法 → ``display``；空/坏值 → 空串（未配置）。
+
+    校验复用**既有**的 :func:`parse_base_url`，所以口径和 ``llm.base_url`` 完全一条：
+    只收 ``https``，``http`` 只允许本机回环（非回环的明文 ``http`` 报
+    ``SETTINGS_URL_INSECURE``）。R5-4 用它拼一次性邀请链接的前缀
+    （``server.invite_link``），所以这里存的就是能直接拼在 ``/share.html`` 前面的串。
+
+    分两条路径，故意的：
+
+    * **读盘**（本函数，``_merge`` 调用）：坏值**回落成未配置**、不抛异常。
+      配置文件是用户手改的，加载时炸掉等于整个服务端起不来；回落之后的形态
+      （相对路径链接）在最下面 ``public()`` 的 ``server.note`` 里如实写着。
+    * **写入**（``_apply_server``）：直接让 ``parse_base_url`` 抛
+      ``SETTINGS_URL_*``，用户当场看见被拒的原因。
+    """
+    raw = _clean(value)
+    if not raw:
+        return ""
+    try:
+        return str(parse_base_url(raw).get("display") or "")
+    except SettingsError:
+        return ""
+
+
 def defaults_doc() -> dict[str, Any]:
     """出厂默认：模板模式、无密钥、中文、默认零出网。"""
     return {
@@ -765,16 +790,24 @@ def defaults_doc() -> dict[str, Any]:
         "ui": {"language": LANGUAGE_DEFAULT, "granularity": "L1"},
         "data": {"reset_enabled": True, "export_enabled": True,
                  "record_source": "demo_fixture"},
+        # R5-4（PM-VERDICT-R5-1 §3.2 批准的 L1 事项）：服务器**自己**的 base_url。
+        # 只有一个字段，且**出厂为空**：空 = 邀请链接回落相对路径（R5-1 的既有形态，
+        # 零行为变化）。它存在的全部理由：同源部署下反向代理后面的 Host 头不一定是
+        # 浏览器看到的那个域名，运维需要一个显式声明"我的对外地址是这个"的地方。
+        "server": {"base_url": ""},
         "note": "默认零出网、模板模式；LLM 是可选增强（docs/2.3）",
     }
 
 
-#: 界面能改的字段（`llm.*` / `ui.*` / `data.*`）；其余键是服务端自己的
+#: 界面能改的字段（`llm.*` / `ui.*` / `data.*` / `server.*`）；其余键是服务端自己的
 WRITABLE_FIELDS: dict[str, tuple[str, ...]] = {
     "llm": ("mode", "provider", "base_url", "model", "apiKey", "timeout_s",
             "temperature", "max_tokens", "allow_outbound"),
     "ui": ("language", "granularity"),
     "data": ("reset_enabled", "export_enabled"),
+    # 只放得下这一个字段：base_url 是"我的对外地址"，不是策略开关，
+    # 别的服务器侧设置（端口、绑定地址）在启动参数里，不在这里改。
+    "server": ("base_url",),
 }
 GRANULARITIES: tuple[str, ...] = ("L1", "L2", "L3")
 #: 明文密钥的入参字段名（界面 / API 用驼峰；内部落盘是 `api_key_blob`）
@@ -856,7 +889,7 @@ class SettingsStore:
     def _merge(self, base: dict[str, Any], incoming: Mapping[str, Any]) -> dict[str, Any]:
         doc = json.loads(json.dumps(base, ensure_ascii=False))
         for key, value in incoming.items():
-            if key in ("llm", "ui", "data") and isinstance(value, Mapping):
+            if key in ("llm", "ui", "data", "server") and isinstance(value, Mapping):
                 for sub, sub_value in value.items():
                     if sub in doc[key]:
                         doc[key][sub] = sub_value
@@ -878,6 +911,8 @@ class SettingsStore:
         ui["language"] = ui["language"] if ui.get("language") in LANGS else LANGUAGE_DEFAULT
         ui["granularity"] = (ui["granularity"] if ui.get("granularity") in GRANULARITIES
                              else "L1")
+        #: 服务器自己的 base：坏值在这里就归零（见 ``normalise_server_base_url`` 的两条路径）
+        doc["server"]["base_url"] = normalise_server_base_url(doc["server"].get("base_url"))
         return doc
 
     # -- 环境变量注入 ----------------------------------------------------
@@ -1016,6 +1051,11 @@ class SettingsStore:
                 changed += self._apply_data(doc["data"], section)
             elif "data" in patch:
                 raise SettingsError("SETTINGS_FIELD_TYPE", "data 必须是一个对象", field="data")
+            section = patch.get("server")
+            if isinstance(section, Mapping):
+                changed += self._apply_server(doc.setdefault("server", {}), section)
+            elif "server" in patch:
+                raise SettingsError("SETTINGS_FIELD_TYPE", "server 必须是一个对象", field="server")
             if not changed:
                 raise SettingsError("SETTINGS_NO_CHANGES", "这次提交没有改变任何配置",
                                     detail={"hint": "改一个字段再保存，或不要点保存"})
@@ -1034,10 +1074,10 @@ class SettingsStore:
 
     def _check_unknown(self, patch: Mapping[str, Any]) -> None:
         for key in patch:
-            if key not in ("llm", "ui", "data"):
+            if key not in ("llm", "ui", "data", "server"):
                 raise SettingsError("SETTINGS_SECTION_UNKNOWN",
                                     f"不认识的一级字段：{key}", field=str(key),
-                                    hint="只接受 llm / ui / data")
+                                    hint="只接受 llm / ui / data / server")
         for section, fields in WRITABLE_FIELDS.items():
             raw = patch.get(section)
             if not isinstance(raw, Mapping):
@@ -1169,6 +1209,25 @@ class SettingsStore:
                 data[name] = value
         return changed
 
+    def _apply_server(self, server: dict[str, Any], section: Mapping[str, Any]) -> list[str]:
+        """``server.base_url`` 的写路径：**严格**校验（和 ``llm.base_url`` 同一把尺子）。
+
+        与读路径（``normalise_server_base_url`` 坏值归零）相反，这里让
+        ``parse_base_url`` 的 ``SETTINGS_URL_*`` 原样抛出去，用户当场看见原因 ——
+        含 ``SETTINGS_URL_INSECURE``：非本机回环的明文 ``http`` 一律拒。
+        这条 base 会被拼进一次性邀请链接的明文 token 前面（``server.invite_link``），
+        链接落点域名由服务端配置说了算，不接受调用方在请求体里指定。
+        空串 = 显式清除 = 回到相对路径回落（R5-1 的出厂形态）。
+        """
+        changed: list[str] = []
+        if "base_url" in section:
+            raw = _clean(section.get("base_url"))
+            value = str(parse_base_url(raw).get("display") or "") if raw else ""
+            if value != str(server.get("base_url") or ""):
+                changed.append("server.base_url")
+            server["base_url"] = value
+        return changed
+
     def _guard_effective(self, doc: dict[str, Any]) -> None:
         """落盘前的整体门禁：llm 模式必须凑齐地址 + 模型；出网开关只影响可达性判断。"""
         llm = doc["llm"]
@@ -1251,6 +1310,16 @@ class SettingsStore:
                      "export_enabled": bool(doc["data"].get("export_enabled")),
                      "actions": list(DATA_ACTIONS),
                      "record_source": _clean(doc["data"].get("record_source"))},
+            # R5-4：服务器自己的对外地址（一次性邀请链接的前缀来源）。
+            # 这里只读、不加工：值就是 _apply_server 落下来的规范形态（parse_base_url 的
+            # display），界面与测试读同一个形状，少一处"两处口径不一致"的机会。
+            "server": {
+                "base_url": _clean(doc.get("server", {}).get("base_url")),
+                "configured": bool(_clean(doc.get("server", {}).get("base_url"))),
+                "note": ("已配置：一次性邀请链接用这个前缀"
+                         if _clean(doc.get("server", {}).get("base_url")) else
+                         "未配置：邀请链接回落相对路径 /share.html#token=…"),
+            },
             "security": {
                 "key_storage": self.protector.backend if self.protector.available else source,
                 "key_storage_available": bool(self.protector.available),

@@ -13,16 +13,19 @@ import json
 import pathlib
 import re
 import subprocess
+import shutil
 import sys
-import tempfile
 import unittest
 import urllib.error
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-for extra in (ROOT, ROOT / "tools"):
+for extra in (ROOT, ROOT / "tests", ROOT / "tools"):
     if str(extra) not in sys.path:
         sys.path.insert(0, str(extra))
+
+from scratch import scratch_dir  # noqa: E402  临时目录一律走 scratch（见 tests/scratch.py）
+import http_fixture as fx  # noqa: E402  连接加固：端口就绪 + 瞬态一次性重试，断言级不重试
 
 from agent_explainer import auth as au  # noqa: E402
 from agent_explainer import crypto_sig as cs  # noqa: E402
@@ -86,12 +89,18 @@ def call(base: str, path: str, body: object | None = None, method: str = "GET",
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    request = urllib.request.Request(base + path, data=data, method=method, headers=headers)
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            return response.status, json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        return exc.code, json.loads(exc.read().decode("utf-8"))
+
+    def once():
+        request = urllib.request.Request(base + path, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                return response.status, json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+
+    # M2-PRE 4（PM-VERDICT-R1-9 裁决②）：连接级瞬态（10053/10054/10061…）只补一次，
+    # 且 GET/HEAD 这类幂等动词才重放；POST 写请求绝不重放，状态码与断言绝不重传。
+    return fx.urlopen_resilient(once, verb=method, path=path, timeout=15.0)
 
 
 def call_headers(base: str, path: str, body: object | None = None, method: str = "GET",
@@ -100,12 +109,17 @@ def call_headers(base: str, path: str, body: object | None = None, method: str =
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
     merged = {"Content-Type": "application/json"}
     merged.update(headers or {})
-    request = urllib.request.Request(base + path, data=data, method=method, headers=merged)
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            return response.status, json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        return exc.code, json.loads(exc.read().decode("utf-8"))
+
+    def once():
+        request = urllib.request.Request(base + path, data=data, method=method, headers=merged)
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                return response.status, json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+
+    # 同 call()：只加固传输层，返回形状一字不改。
+    return fx.urlopen_resilient(once, verb=method, path=path, timeout=15.0)
 
 
 def flat_leaves(obj: dict, prefix: str = "") -> dict[str, object]:
@@ -122,14 +136,14 @@ def flat_leaves(obj: dict, prefix: str = "") -> dict[str, object]:
 
 class SecretariatApiTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._temp.cleanup)
+        self.scratch = scratch_dir("secretariat-api")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
         self.server, self.thread = sv.start_background_server(
             "127.0.0.1", 0, records=None, quiet=True,
-            records_store_path=pathlib.Path(self._temp.name) / "records.jsonl",
-            features_root=pathlib.Path(self._temp.name) / "features",
-            audit_log_path=pathlib.Path(self._temp.name) / "audit.jsonl",
-            ingest_token_path=pathlib.Path(self._temp.name) / "ingest.json")
+            records_store_path=self.scratch / "records.jsonl",
+            features_root=self.scratch / "features",
+            audit_log_path=self.scratch / "audit.jsonl",
+            ingest_token_path=self.scratch / "ingest.json")
         self.base = self.server.url()
 
     def tearDown(self) -> None:
@@ -387,7 +401,7 @@ class SecretariatApiTests(unittest.TestCase):
                                {"subject": "离线 CLI 复核", "record_ids": [action_id]}, "POST")
         self.assertEqual(201, status, created)
         letter = created["letter"]
-        root = pathlib.Path(self._temp.name)
+        root = self.scratch
         good = root / "letter-good.json"
         good.write_text(json.dumps(letter, ensure_ascii=False), encoding="utf-8")
         tampered = json.loads(json.dumps(letter))
@@ -549,9 +563,9 @@ class SecretariatTeamModeTests(unittest.TestCase):
     VIEWER_PASSWORD = "R4-View-Serial-91"
 
     def setUp(self) -> None:
-        self._temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._temp.cleanup)
-        root = pathlib.Path(self._temp.name)
+        self.scratch = scratch_dir("secretariat-api-team")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        root = self.scratch
         (root / "auth").mkdir(parents=True, exist_ok=True)
         self.server, self.thread = sv.start_background_server(
             "127.0.0.1", 0, records=copy.deepcopy([sample_record("act-team-seed")]),

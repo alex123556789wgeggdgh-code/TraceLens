@@ -333,9 +333,23 @@ def vendor_wheels(target: pathlib.Path, index: str | None) -> int:
     return 0
 
 
-def write_entry(work: pathlib.Path) -> pathlib.Path:
+def write_entry(work: pathlib.Path, external_runtime: bool = False) -> pathlib.Path:
+    """写 PyInstaller 入口。
+
+    默认（`external_runtime=False`）是"把业务包冻进 exe"的老形态：入口直接
+    `from agent_explainer.__main__ import main`，业务模块靠 `--hidden-import` 全量进 PYZ。
+
+    `external_runtime=True` 换成**薄启动器**：exe 里只有解释器与第三方依赖，
+    `agent_explainer` 整个包以源码形态落在 `runtime/`，运行时从磁盘 import。
+    这是更新通道能热更 Python 层的唯一前提——代码冻在 PYZ 里就换不掉
+    （见 `docs/21-update-channel.md` §2）。代价是 exe 必须和 `runtime/` 一起分发，
+    少了它启动器会明确报 78 而不是假装起得来。
+    """
     work.mkdir(parents=True, exist_ok=True)
     entry = work / ENTRY_NAME
+    if external_runtime:
+        entry.write_text(LAUNCHER_SOURCE, encoding="utf-8")
+        return entry
     entry.write_text(
         '"""PyInstaller 入口：把 `python -m agent_explainer` 包成一个 exe。"""\n'
         "from agent_explainer.__main__ import main\n\n"
@@ -345,11 +359,101 @@ def write_entry(work: pathlib.Path) -> pathlib.Path:
     return entry
 
 
+# 薄启动器：只认标准库，绝不 import 业务包（一旦 import，PyInstaller 就会把
+# 整个 agent_explainer 分析进 PYZ，热更能力当场失效）
+LAUNCHER_SOURCE = '''"""PyInstaller 入口：薄启动器（--external-runtime）。
+
+业务代码不冻进 exe，而是从 exe 同级（或 --runtime / TRACELENS_RUNTIME 指定）的
+``runtime/`` 目录按源码加载。更新通道换掉 ``runtime/agent_explainer/`` 就等于换掉
+服务层，不需要重新安装。
+"""
+import os
+import runpy
+import sys
+from pathlib import Path
+
+RUNTIME_ENV = "TRACELENS_RUNTIME"
+
+
+def runtime_dir():
+    argv = sys.argv
+    for index, item in enumerate(argv):
+        if item == "--runtime" and index + 1 < len(argv):
+            return Path(argv[index + 1]).expanduser()
+    env = os.environ.get(RUNTIME_ENV)
+    if env:
+        return Path(env).expanduser()
+    return Path(sys.argv[0]).resolve().parent / "runtime"
+
+
+def main():
+    root = runtime_dir()
+    entry = root / "agent_explainer" / "__main__.py"
+    if not entry.is_file():
+        sys.stderr.write(
+            "[launcher] 找不到业务包：%s\\n"
+            "[launcher] 这个 exe 是 --external-runtime 构建的，必须和 runtime/ 目录一起分发。\\n"
+            % (entry,))
+        return 78
+    sys.path.insert(0, str(root))
+    runpy.run_path(str(entry), run_name="__main__")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
 def add_data_arg(local: pathlib.Path, arc: str) -> str:
     return f"{local}{os.pathsep}{arc}"
 
 
+def copy_runtime(target: pathlib.Path) -> None:
+    """把业务包按**源码形态**复制到 `runtime/`（外置模式专用）。
+
+    为什么连 `web/` 与 `samples/` 一起复制：`__main__.py` 里
+    `REPO_ROOT = PACKAGE_ROOT.parent`、`DEFAULT_WEB_DIR = PACKAGE_ROOT / "web"`、
+    `DEMO_ZH = REPO_ROOT / "samples" / …`。保持同样的相对布局，冻结态与源码态
+    的路径解析才会一致——否则"开发时能跑、打包后找不到夹具"。
+    """
+    def ignore(_dirname, names):
+        drop = set()
+        for name in names:
+            if name in {"__pycache__", ".pytest_cache", ".mypy_cache"}:
+                drop.add(name)
+            elif name.endswith((".pyc", ".pyo")):
+                drop.add(name)
+        return drop
+
+    shutil.copytree(PACKAGE, target / "agent_explainer", ignore=ignore)
+    if SAMPLES.exists():
+        shutil.copytree(SAMPLES, target / "samples", ignore=ignore)
+
+
+def contract_gate() -> int:
+    """发版硬门禁：`gen_api_contract.py --check` 非零退出就拒绝打包（0.5.1）。
+
+    `--check` 同时管四件事：契约与代码可重复生成、docs/03 §6.5 与契约一致、
+    **声明 vs 挂载**（`declared_unmounted` 非空 = 有常量没接进分发）、
+    **前端调用面**（`unknown_paths` 非空 = 界面在调不存在的路由）。
+    两张名单非空就中止构建——"声明 ≠ 挂载"的包不许出厂。
+    """
+    print("=== 发版硬门禁：tools/gen_api_contract.py --check ===")
+    rc = subprocess.run([sys.executable, "-X", "utf8",
+                         str(REPO / "tools" / "gen_api_contract.py"), "--check"],
+                        cwd=str(REPO)).returncode
+    if rc != 0:
+        print("打包中止：契约检查未通过（见上方逐条）。先修再发："
+              "改代码后 `python tools/gen_api_contract.py --write`；"
+              "unknown_paths / declared_unmounted 非空就把端点真的挂上。")
+    return rc
+
+
 def build(args: argparse.Namespace) -> int:
+    rc = contract_gate()
+    if rc != 0:
+        return rc
     ok, detail = importable()
     if not ok:
         print(f"构建中止：{detail}")
@@ -360,13 +464,21 @@ def build(args: argparse.Namespace) -> int:
     import PyInstaller.__main__ as pyi                          # noqa: N817
 
     layout = "onedir" if args.onedir else "onefile"
+    external = bool(getattr(args, "external_runtime", False))
     work = pathlib.Path(args.workdir).expanduser() / "pyinstaller"
     work.mkdir(parents=True, exist_ok=True)
-    entry = write_entry(work)
+    entry = write_entry(work, external)
     dist = work / "dist"
-    data = [add_data_arg(WEB, "agent_explainer/web"),
-            add_data_arg(SAMPLES, "samples"),
-            add_data_arg(PROMPTS, "agent_explainer/prompts")]
+    if external:
+        # 业务包外置：不打 --add-data，也不 hidden-import 任何 agent_explainer 模块。
+        # 第三方（reportlab 及其依赖）仍要显式收集：业务代码里那些 import 是
+        # importlib 动态取的，PyInstaller 静态分析看不见。
+        data = []
+        print("→ 外置 runtime 模式：业务包不进 exe，改由 runtime/ 目录从磁盘加载")
+    else:
+        data = [add_data_arg(WEB, "agent_explainer/web"),
+                add_data_arg(SAMPLES, "samples"),
+                add_data_arg(PROMPTS, "agent_explainer/prompts")]
     plan = [
         f"--{layout}",
         "--name", SIDECAR_NAME,
@@ -380,12 +492,15 @@ def build(args: argparse.Namespace) -> int:
     ]
     for item in data:
         plan += ["--add-data", item]
-    hidden_modules = package_modules()   # 扫盘全量，缺模块当场中止（见 REQUIRED_PACKAGE_MODULES）
+    hidden_modules = [] if external else package_modules()
     for hidden in hidden_modules:
         plan += ["--hidden-import", hidden]
-    print(f"→ hiddenimports：{len(hidden_modules)} 个 agent_explainer 模块"
-          f"（secretariat={'有' if 'agent_explainer.secretariat' in hidden_modules else '缺'}、"
-          f"crypto_sig={'有' if 'agent_explainer.crypto_sig' in hidden_modules else '缺'}）")
+    if external:
+        print("→ hiddenimports：0 个 agent_explainer 模块（外置模式，全在 runtime/ 里）")
+    else:
+        print(f"→ hiddenimports：{len(hidden_modules)} 个 agent_explainer 模块"
+              f"（secretariat={'有' if 'agent_explainer.secretariat' in hidden_modules else '缺'}、"
+              f"crypto_sig={'有' if 'agent_explainer.crypto_sig' in hidden_modules else '缺'}）")
     if not args.no_reportlab and module_available("reportlab"):
         plan += ["--collect-all", "reportlab"]
         print("→ 打包进 reportlab（审计导出 PDF 走原生 PDF；缺它时产品会退回可打印 HTML）")
@@ -416,6 +531,18 @@ def build(args: argparse.Namespace) -> int:
     if not target.exists():
         print(f"构建失败：PyInstaller 跑完但没产出 {target}")
         return 1
+
+    runtime_root = None
+    if external:
+        container = (SIDECAR_DIR / SIDECAR_NAME) if layout == "onedir" else SIDECAR_DIR
+        runtime_root = container / "runtime"
+        if runtime_root.exists():
+            shutil.rmtree(runtime_root)
+        runtime_root.mkdir(parents=True, exist_ok=True)
+        copy_runtime(runtime_root)
+        py_files = sum(1 for _ in runtime_root.rglob("*.py"))
+        print(f"→ runtime：{runtime_root}（{py_files} 个 .py，exe 从这里加载业务包）")
+
     size = target.stat().st_size
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     print(f"→ 产物：{target}（{size / 1024 / 1024:.1f} MiB，布局={layout}，"
@@ -432,7 +559,13 @@ def build(args: argparse.Namespace) -> int:
         "bytes": size,
         "sha256": digest,
         "seconds": round(time.time() - started, 1),
-        "add_data": ["agent_explainer/web", "samples", "agent_explainer/prompts"],
+        # 外置模式下 exe 里一个 add-data 都没有、hiddenimports 为空：
+        # 验收要能一眼看出"这个 exe 依赖 runtime/ 目录"，而不是靠猜。
+        "external_runtime": external,
+        "runtime_dir": (str(runtime_root.relative_to(REPO)).replace("\\", "/")
+                        if runtime_root else None),
+        "add_data": ([] if external else
+                     ["agent_explainer/web", "samples", "agent_explainer/prompts"]),
         # 验收要看的就是这两组事实：打进 exe 的模块清单（必须含 secretariat），
         # 以及 --add-data 的三个目录在构建时是否真的存在。0.4.5 的 BUILD-INFO 里
         # 一个都没有，所以「总裁办有没有被打进去」只能靠猜。
@@ -499,6 +632,9 @@ def decode_loose(raw: bytes | None) -> tuple[str, str]:
 
 def portable_zip(args: argparse.Namespace) -> int:
     """源码便携版：拷走目录 + 双击 start.cmd 就能跑（需要系统 Python，说清不藏）。"""
+    rc = contract_gate()
+    if rc != 0:
+        return rc
     version = args.version
     DIST.mkdir(parents=True, exist_ok=True)
     target = DIST / PORTABLE_NAME.format(version=version)
@@ -581,6 +717,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--onedir", action="store_true",
                         help="用 PyInstaller 单目录布局（官方推荐：不解压临时目录、"
                              "启动更快；沙箱里单文件模式跑不起来时用它）")
+    parser.add_argument("--external-runtime", action="store_true",
+                        help="业务包不进 exe：产出薄启动器 + runtime/ 目录（源码形态），"
+                             "让更新通道能热更 Python 层。必须与 runtime/ 一起分发。")
     parser.add_argument("--smoke-timeout", type=float, default=90.0)
     parser.add_argument("--version", default=DEFAULT_VERSION,
                         help=f"便携包命名用的版本号（默认 {DEFAULT_VERSION}，"

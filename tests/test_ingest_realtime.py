@@ -28,10 +28,13 @@ import unittest
 REPO = pathlib.Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+if str(REPO / "tests") not in sys.path:   # 裸 `python -m unittest tests.<模块>` 时也能 import scratch
+    sys.path.insert(0, str(REPO / "tests"))
 
 from agent_explainer import ingest as ing  # noqa: E402
 from agent_explainer import server as srv  # noqa: E402
 from agent_explainer.sdk import SdkTransportError, TraceLensClient, track  # noqa: E402
+import http_fixture as fx  # noqa: E402  连接加固：端口就绪 + 瞬态一次性重试，断言级不重试
 
 from scratch import scratch_dir  # 临时目录一律走系统临时目录（见 tests/scratch.py）
 
@@ -75,23 +78,27 @@ def grab(fn, *args, **kw):
 
 
 def http_request(port: int, method: str, path: str, body=None, headers=None):
-    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-    payload = None
-    hd = dict(headers or {})
-    if body is not None:
-        text = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)
-        payload = text.encode("utf-8")
-        hd.setdefault("Content-Type", "application/json")
-    conn.request(method, path, payload, hd)
-    resp = conn.getresponse()
-    raw = resp.read().decode("utf-8", "replace")
-    status, headers_out = resp.status, {k.lower(): v for k, v in resp.getheaders()}
-    conn.close()
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        data = raw
-    return status, headers_out, data
+    # M2-PRE 4（PM-VERDICT-R1-9 裁决② / R5-1 接线）：连接生命周期交给 tests/http_fixture——
+    # 端口就绪等待 + 连接级瞬态一次性重试；POST/PUT/PATCH/DELETE 绝不重放，断言级失败绝不重试。
+    # 请求构造与响应解析逐行不动，返回形状一字不改（建连与 close 交给夹具的 finally）。
+    def once(conn: http.client.HTTPConnection):
+        payload = None
+        hd = dict(headers or {})
+        if body is not None:
+            text = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)
+            payload = text.encode("utf-8")
+            hd.setdefault("Content-Type", "application/json")
+        conn.request(method, path, payload, hd)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8", "replace")
+        status, headers_out = resp.status, {k.lower(): v for k, v in resp.getheaders()}
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = raw
+        return status, headers_out, data
+
+    return fx.with_connection("127.0.0.1", port, once, verb=method, path=path, timeout=10)
 
 
 def http_post_events(port: int, body, *, token=None, key=None, extra=None):
@@ -105,16 +112,18 @@ def http_post_events(port: int, body, *, token=None, key=None, extra=None):
 
 def http_stream_headers(port: int, path: str, *, headers=None):
     """只读状态行与响应头（不读无限流的水体），用于证明它是真的 SSE。"""
-    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-    hd = {"Accept": "text/event-stream"}
-    hd.update(headers or {})
-    conn.request("GET", path, None, hd)
-    resp = conn.getresponse()
-    out = {"status": resp.status,
+    # 这条辅助只发一个"读状态行 + 响应头"的幂等 GET 短请求（不读无限流水体），可接夹具；
+    # 无限流水体的 read_sse_wire 与内联订阅连接不接（夹具的 finally 会在读完前关闭）。
+    def once(conn: http.client.HTTPConnection):
+        hd = {"Accept": "text/event-stream"}
+        hd.update(headers or {})
+        conn.request("GET", path, None, hd)
+        resp = conn.getresponse()
+        return {"status": resp.status,
            "content_type": dict(resp.getheaders()).get("Content-Type",
                                                        dict(resp.getheaders()).get("content-type", ""))}
-    conn.close()
-    return out
+
+    return fx.with_connection("127.0.0.1", port, once, verb="GET", path=path, timeout=10)
 
 
 _CHUNK = re.compile(r"^[0-9a-fA-F]{1,8}$")

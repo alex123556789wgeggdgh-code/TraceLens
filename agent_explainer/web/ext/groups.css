@@ -1,0 +1,455 @@
+/*
+ * TraceLens 5.0 - REQ-004 R4-2: styles for the merged multi-agent view.
+ * ------------------------------------------------------------------
+ * Scoped exactly like the other trust tabs: every rule is prefixed with
+ * `#trust-body[data-tab="groups"]`, so nothing on this screen can leak into
+ * the cards, the secretariat, the collaboration tab or the analytics tab.
+ *
+ * Colour is a token, never a fact: the agent chips carry the hex value of the
+ * backend palette inline (`ext/groups.js:GROUP_COLOR_PALETTE`, a copy of
+ * `groups.py:COLOR_PALETTE`, pinned against each other by selfcheck.mjs).
+ * Nothing in this file invents an agent colour, and no colour is used to mean
+ * "this agent is in this group" - the group is the server's `group_id`.
+ */
+
+#trust-body[data-tab="groups"] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__alias-host {
+  margin-top: 10px;
+}
+
+/* ---- alias provenance strip (the 0.4 discipline of this tab) ---------- */
+
+#trust-body[data-tab="groups"] .ext-grp__alias {
+  border: 1px dashed var(--c-border);
+  border-left: 3px solid var(--c-accent);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--c-surface-soft, rgba(0, 0, 0, 0.02));
+}
+
+#trust-body[data-tab="groups"] .ext-grp__alias h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--c-text-soft);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__alias-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__alias[data-note="missing"] .ext-grp__alias-note {
+  border-left: 3px solid var(--c-warn, #d97706);
+  padding-left: 6px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__alias-fields {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--c-text-soft);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__updated {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__updated-basis {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--c-border);
+  font-size: 11px;
+  color: var(--c-text-soft);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__updated[data-basis="created_at_fallback"] .ext-grp__updated-basis {
+  border-color: var(--c-warn, #d97706);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__updated[data-basis="absent"] .ext-grp__updated-basis {
+  border-style: dashed;
+}
+
+/* ---- zones ------------------------------------------------------------ */
+
+#trust-body[data-tab="groups"] .ext-grp__zone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__note {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__count {
+  margin: 0;
+  font-size: 12px;
+  color: var(--c-text-soft);
+}
+
+/* ---- group list ------------------------------------------------------- */
+
+#trust-body[data-tab="groups"] .ext-grp__table,
+#trust-body[data-tab="groups"] .ext-grp__timeline {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__table th,
+#trust-body[data-tab="groups"] .ext-grp__table td,
+#trust-body[data-tab="groups"] .ext-grp__timeline th,
+#trust-body[data-tab="groups"] .ext-grp__timeline td {
+  border-bottom: 1px solid var(--c-border);
+  padding: 5px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__table th,
+#trust-body[data-tab="groups"] .ext-grp__timeline th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--c-text-soft);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__table tr[data-selected="true"] td {
+  background: var(--c-accent-soft, rgba(37, 99, 235, 0.08));
+}
+
+/* ---- progress bar (the denominator is the view's own record count) ----- */
+
+#trust-body[data-tab="groups"] .ext-grp__bar {
+  position: relative;
+  display: block;
+  height: 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--c-surface-soft, rgba(0, 0, 0, 0.03));
+}
+
+#trust-body[data-tab="groups"] .ext-grp__bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--c-accent);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__progress-label {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* ---- agent legend ----------------------------------------------------- */
+
+#trust-body[data-tab="groups"] .ext-grp__agents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__agent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 3px;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__agent[data-hidden="true"] {
+  opacity: 0.45;
+  border-style: dashed;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__agent[data-stuck="true"] {
+  border-color: var(--c-danger, #dc2626);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__agent-name {
+  font-weight: 600;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__agent-count {
+  color: var(--c-text-soft);
+  font-size: 11px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__badge--stuck {
+  color: var(--c-danger, #dc2626);
+}
+
+/* the chip is the backend colour slot, rendered inline; the CSS owns no
+ * palette of its own (task R4-2 §1.4: one colour source) */
+#trust-body[data-tab="groups"] .ext-grp__chip {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  flex: none;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__chip--none {
+  background: transparent;
+  border-style: dashed;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__chip[data-shared]:not([data-shared="1"]) {
+  box-shadow: 0 0 0 2px var(--c-warn, #d97706);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__avatar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__avatar-abbr {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 4px;
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__avatar[data-shared]:not([data-shared="1"]) .ext-grp__avatar-abbr {
+  border-style: double;
+  border-width: 3px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__stuck {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__stuck-title {
+  margin: 2px 0 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--c-text-soft);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__stuck-since {
+  margin: 0;
+  font-size: 11px;
+}
+
+/* ---- filters ---------------------------------------------------------- */
+
+#trust-body[data-tab="groups"] .ext-grp__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__filters-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--c-text-soft);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__filters-hint {
+  font-size: 11px;
+  flex: 1 1 160px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__filter-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1 1 100%;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 4px;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.5;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__filter-btn.is-on {
+  opacity: 1;
+  border-color: var(--c-accent);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__filter-abbr {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 700;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__filter-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- merged timeline -------------------------------------------------- */
+
+#trust-body[data-tab="groups"] .ext-grp__timeline {
+  max-height: 340px;
+  display: block;
+  overflow-y: auto;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__cell-time {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__cell-time[data-parsable="false"] {
+  color: var(--c-warn, #d97706);
+  font-style: italic;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__cell-agent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* the list column that carries updated_at + its provenance label */
+#trust-body[data-tab="groups"] .ext-grp__cell-updated {
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__agent-id {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--c-text-soft);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__timeline-count {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--c-text-soft);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__timeline-none {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--c-text-soft);
+}
+
+/* ---- ungrouped column (never guessed into a group) -------------------- */
+
+#trust-body[data-tab="groups"] .ext-grp__ungrouped {
+  border-left: 3px dashed var(--c-warn, #d97706);
+  padding-left: 8px;
+  font-size: 12px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__ungrouped-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__ungrouped-list li {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__ungrouped-abbr {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 700;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__ungrouped-time {
+  color: var(--c-text-soft);
+}
+
+/* ---- create form (the route is not mounted in the baseline) ----------- */
+
+#trust-body[data-tab="groups"] .ext-grp__create {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__create textarea {
+  min-height: 48px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__create-feedback {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__create-feedback[data-state^="refused"] {
+  color: var(--c-danger, #dc2626);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__create-feedback[data-state="invalid"],
+#trust-body[data-tab="groups"] .ext-grp__create-feedback[data-state="over-max"] {
+  color: var(--c-warn, #d97706);
+}
+
+#trust-body[data-tab="groups"] .ext-grp__create-code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  margin-right: 6px;
+}
+
+#trust-body[data-tab="groups"] .ext-grp__note--unavailable,
+#trust-body[data-tab="groups"] .ext-grp__note--max,
+#trust-body[data-tab="groups"] .ext-grp__note--color,
+#trust-body[data-tab="groups"] .ext-grp__note--abbr,
+#trust-body[data-tab="groups"] .ext-grp__note--badtime {
+  border-left: 2px solid var(--c-warn, #d97706);
+  padding-left: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #trust-body[data-tab="groups"] .ext-grp__bar-fill {
+    transition: none;
+  }
+}

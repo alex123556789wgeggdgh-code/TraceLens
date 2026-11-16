@@ -12,7 +12,11 @@
  *   - dictionary lookup for the new i18n domains (zh/en, same files);
  *   - the card-decoration pipeline: every full repaint re-applies each
  *     registered feature's decoration to the cards it cares about, because
- *     app.js rebuilds cards from scratch on every render;
+ *     app.js rebuilds cards from scratch on every render. Two paths have no
+ *     repaint to ride on (R1-9 / R1-7 D-1): the first paint, which app.js
+ *     performs before this file is parsed, and a card expand, which rebuilds
+ *     the cards without notifying anyone - so boot forces one pass and a
+ *     debounced pass follows every change of the card tree;
  *   - toast + modal + honest empty/error states.
  *
  * Hard rules carried over from app.js:
@@ -49,6 +53,7 @@
     perms: [],
     offline: false,
     renders: 0,
+    decorated: 0,
     opens: 0,
     api: { requests: 0, errors: 0, lastRequestId: '', lastStatus: null }
   };
@@ -167,7 +172,43 @@
 
   /* One shape for every caller: {ok, status, data, code, message, requestId}.
    * A rejected transport promise is folded into the same shape, so a panel
-   * never has to write two error paths. */
+   * never has to write two error paths.
+   *
+   * R6-4 (additive only): the export face answers with an honest header family
+   * (`X-TraceLens-Export-Format` for the bytes actually served,
+   * `X-TraceLens-Export-Fallback` only on a real degradation,
+   * `X-TraceLens-Export-Sha256` for the fingerprint of those bytes). A panel may
+   * only name a file after it has read those headers, so the door passes
+   * `headers` and the raw `text` through. Every key an existing caller reads is
+   * unchanged; the single door stays the only way out. */
+  function headerValue(headers, name) {
+    var want = String(name || '').toLowerCase();
+    if (!headers || !want) return '';
+    try {
+      if (typeof headers.get === 'function') {
+        var viaGet = headers.get(want);
+        return typeof viaGet === 'string' ? viaGet : '';
+      }
+    } catch (e) { /* not a Headers object: fall through to the plain shape */ }
+    if (typeof headers === 'object') {
+      var keys = Object.keys(headers);
+      for (var i = 0; i < keys.length; i += 1) {
+        if (String(keys[i]).toLowerCase() === want) {
+          var value = headers[keys[i]];
+          return value === undefined || value === null ? '' : String(value);
+        }
+      }
+    }
+    return '';
+  }
+
+  function folded(res, ok, status, data, code, message) {
+    return { ok: ok, status: status, data: data, code: code, message: message,
+             requestId: requestIdOf(data),
+             headers: res && res.headers ? res.headers : null,
+             text: res && typeof res.text === 'string' ? res.text : '' };
+  }
+
   function call(target, body, opts) {
     state.api.requests += 1;
     return UI.extRequest(target, body, opts).then(function (res) {
@@ -179,13 +220,13 @@
       state.api.lastStatus = status;
       state.api.lastRequestId = requestIdOf(data);
       if (!ok) state.api.errors += 1;
-      return { ok: ok, status: status, data: data, code: code, message: message,
-               requestId: requestIdOf(data) };
+      return folded(res, ok, status, data, code, message);
     }, function (err) {
       state.api.errors += 1;
       var code = err && typeof err.code === 'string' ? err.code : 'NETWORK_ERROR';
       state.api.lastStatus = 0;
-      return { ok: false, status: 0, data: null, code: code, message: '', requestId: '' };
+      return { ok: false, status: 0, data: null, code: code, message: '', requestId: '',
+               headers: null, text: '' };
     });
   }
 
@@ -540,6 +581,12 @@
     cards.forEach(function (card) {
       var id = card.getAttribute('data-id') || String(card.id || '').replace(/^card-/, '');
       var record = index[id];
+      if (!record && typeof UI.recordById === 'function') {
+        /* R1-9 (D-1): a forced pass can run before this shell has ever been
+         * notified, so `records` is still empty while the cards are already on
+         * screen. The app owns the record a card shows; ask it, do not guess. */
+        try { record = UI.recordById(id); } catch (e0) { record = null; }
+      }
       if (!record) return;
       plugins.forEach(function (plugin) {
         if (typeof plugin.decorate !== 'function') return;
@@ -550,6 +597,60 @@
         }
       });
     });
+  }
+
+  /* R1-9 (D-1): the first screen and every rebuild without a notify.
+   * ------------------------------------------------------------------
+   * Two real paths left a painted card list with no decoration at all, both
+   * measured on a real machine by R1-7 (§5 A4 / §9 D-1):
+   *
+   *   - the first paint: app.js boots itself at the end of its own script, and
+   *     the browser evaluates it before this file is parsed, so the notify()
+   *     of that first renderAll() runs over an empty listener list;
+   *   - a card expand/collapse: app.js calls renderZones() on its own. Since
+   *     M2-PRE 1 (PM-VERDICT-R1-9 ruling 3) renderZones ends with notify(), so
+   *     this path is now covered by the main path; a rebuild that lands with
+   *     no notify at all (the page appends cards outside the app) is left to
+   *     the watcher below.
+   *
+   * The shell owns the decoration pipeline, so the repair stays here: boot
+   * forces one pass over the cards that are already on screen, and a debounced
+   * pass follows any change of the card tree as the fallback. `decorate` is
+   * idempotent (every injected node carries `data-trust-decorated` and each
+   * surface checks it first), so the pass that adds nothing ends the chain -
+   * no feedback loop. */
+  function decorateNow() {
+    state.decorated += 1;
+    try {
+      decorate(state.records);
+    } catch (e) {
+      /* decoration stays additive: a broken pass is a cosmetic miss */
+    }
+  }
+
+  var decorateTimer = null;
+  var cardWatcher = null;
+
+  function scheduleDecorate() {
+    if (typeof global.setTimeout !== 'function') { decorateNow(); return; }
+    if (decorateTimer !== null) return;
+    decorateTimer = global.setTimeout(function () {
+      decorateTimer = null;
+      decorateNow();
+    }, 16);
+  }
+
+  function watchCardTree() {
+    var target = global.document ? global.document.body : null;
+    if (!target || typeof global.MutationObserver !== 'function' || cardWatcher) return;
+    try {
+      cardWatcher = new global.MutationObserver(function (records) {
+        if (records && records.length) scheduleDecorate();
+      });
+      cardWatcher.observe(target, { childList: true, subtree: true });
+    } catch (e) {
+      cardWatcher = null;
+    }
   }
 
   /* ---------------------------------------------------------------- *
@@ -600,6 +701,10 @@
     try {
       decorate(state.records);
     } catch (e) { /* decoration is additive */ }
+    /* R1-9 (D-1): one debounced pass after the repaint, so a rebuild that
+     * lands after this notify (the panel appends its own nodes, the phone
+     * sheet re-renders) is never left with a card list nobody decorated. */
+    scheduleDecorate();
     if (state.open) {
       statusLine(null);
       var host = global.document.getElementById('trust-body');
@@ -628,6 +733,12 @@
       try { plugin.boot(ctx); } catch (e) { /* keep the shell alive */ }
     });
     statusLine(null);
+    /* R1-9 (D-1): force the decoration onto the screen that is already
+     * painted. This boot runs after app.js's own first renderAll(), and the
+     * page may never repaint again (file://, no SSE, no dictionary refresh),
+     * so the first screen gets its rollback entry here and not "next time". */
+    decorateNow();
+    watchCardTree();
   }
 
   function download(path, filename) {
@@ -636,9 +747,14 @@
     var anchor = el('a', { attrs: { href: target, rel: 'noopener' } });
     if (filename) anchor.setAttribute('download', String(filename));
     global.document.body.appendChild(anchor);
-    anchor.click();
+    /* app.js (the audit export) uses the same guard: an environment without a
+     * clickable anchor reports "not shipped" instead of throwing. */
+    var clicked = false;
+    if (typeof anchor.click === 'function') {
+      try { anchor.click(); clicked = true; } catch (e) { clicked = false; }
+    }
     global.document.body.removeChild(anchor);
-    return true;
+    return clicked;
   }
 
   /* ---------------------------------------------------------------- *
@@ -673,6 +789,10 @@
     renderError: renderError,
     renderEmpty: renderEmpty,
     panelError: panelError,
+    /* R6-4: read one response header out of the folded result (works on a
+     * fetch `Headers` object and on the plain-object shape the transport
+     * hands over). Export copy may only be written from these values. */
+    header: headerValue,
     open: open,
     close: close,
     showTab: showTab,
@@ -704,7 +824,11 @@
     ctx: ctx,
     state: function () {
       return { open: state.open, tab: state.tab, lang: state.lang,
-               renders: state.renders, opens: state.opens, plugins: plugins.length,
+               renders: state.renders, decorated: state.decorated,
+               opens: state.opens, plugins: plugins.length,
+               /* R1-9 (D-1): which re-decoration path this page has: a
+                * MutationObserver watcher, or only the notify + boot passes. */
+               watcher: cardWatcher ? 'mutation' : 'notify',
                api: ctx.apiState() };
     }
   };

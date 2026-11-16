@@ -202,7 +202,7 @@ case("N32_unknown_top_level_field", "出现 schema 未定义字段", "additional
 
 m = base(DEL); m["schema_version"] = "1.0"
 case("N33_old_schema_version", "schema_version 不是 1.1", "写入前必须校验版本，禁止静默兼容旧格式",
-     m, ["const"], "升级到 1.1 并跑迁移脚本")
+     m, ["const"], "手工升级到 1.1（仓库没有自动迁移脚本）")
 
 m = base(DEL); m["latency_ms"] = -5
 case("N34_negative_latency", "耗时为负数", "latency_ms ≥ 0（K-04 性能指标的输入必须可信）",
